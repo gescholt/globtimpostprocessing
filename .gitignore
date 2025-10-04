@@ -1,0 +1,38 @@
+# Julia
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+/Manifest.toml
+/.julia/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+/docs/build/
+/docs/site/
+
+# Temporary files
+*.tmp
+*.bak
+
+# Plots and outputs
+*.png
+*.pdf
+*.svg
+!docs/src/assets/*.png
+!docs/src/assets/*.svg
+
+# Data files (optional - uncomment if you don't want to track data)
+# *.csv
+# *.json
+# *.h5
+# *.jld2
