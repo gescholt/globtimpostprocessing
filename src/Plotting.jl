@@ -19,6 +19,132 @@ Enum for plot backend selection.
 end
 
 """
+    generate_experiment_labels(campaign::CampaignResults) -> Vector{String}
+
+Generate concise, informative labels for experiments in a campaign.
+Automatically detects which parameter varies and creates labels accordingly.
+
+# Strategy
+1. Identify which parameters vary across experiments
+2. If only one parameter varies, label by that parameter value
+3. If multiple parameters vary, create compact multi-parameter labels
+4. Handle common parameter types (domain_size_param, parameter_set, etc.)
+"""
+function generate_experiment_labels(campaign::CampaignResults)
+    labels = String[]
+    n_exp = length(campaign.experiments)
+
+    if n_exp == 0
+        return labels
+    end
+
+    # Extract parameter dictionaries from all experiments
+    param_dicts = [get(exp.metadata, "params_dict", Dict()) for exp in campaign.experiments]
+
+    # Find parameters that vary across experiments
+    all_keys = Set{String}()
+    for pd in param_dicts
+        union!(all_keys, keys(pd))
+    end
+
+    varying_params = String[]
+    param_values = Dict{String, Vector{Any}}()
+
+    # Parameters to exclude from automatic labeling (not informative)
+    excluded_params = Set(["experiment_id", "timestamp"])
+
+    for key in all_keys
+        # Skip excluded parameters
+        if key in excluded_params
+            continue
+        end
+
+        values = [get(pd, key, missing) for pd in param_dicts]
+        unique_values = unique(skipmissing(values))
+
+        if length(unique_values) > 1
+            push!(varying_params, key)
+            param_values[key] = values
+        end
+    end
+
+    # Generate labels based on varying parameters
+    if isempty(varying_params)
+        # No varying parameters - use experiment IDs
+        for (idx, exp) in enumerate(campaign.experiments)
+            exp_id = get(get(exp.metadata, "params_dict", Dict()), "experiment_id", "exp_$idx")
+            push!(labels, string(exp_id))
+        end
+    elseif length(varying_params) == 1
+        # Single varying parameter - use clean value labels
+        param = varying_params[1]
+        label_prefix = get_param_label_prefix(param)
+
+        for value in param_values[param]
+            label = format_param_value(param, value, label_prefix)
+            push!(labels, label)
+        end
+    else
+        # Multiple varying parameters - create compact multi-param labels
+        for i in 1:n_exp
+            parts = String[]
+            for param in sort(varying_params)
+                value = param_values[param][i]
+                if value !== missing
+                    formatted = format_param_value(param, value, "")
+                    push!(parts, formatted)
+                end
+            end
+            push!(labels, join(parts, ", "))
+        end
+    end
+
+    return labels
+end
+
+"""
+    get_param_label_prefix(param_name::String) -> String
+
+Get a human-readable prefix for a parameter name.
+"""
+function get_param_label_prefix(param_name::String)
+    prefixes = Dict(
+        "domain_size_param" => "domain=",
+        "domain_size" => "domain=",
+        "parameter_set" => "",  # No prefix for parameter sets
+        "GN" => "GN=",
+        "max_time" => "t=",
+        "experiment_id" => ""
+    )
+
+    return get(prefixes, param_name, "$param_name=")
+end
+
+"""
+    format_param_value(param_name::String, value::Any, prefix::String) -> String
+
+Format a parameter value for display in labels.
+"""
+function format_param_value(param_name::String, value::Any, prefix::String)
+    if value === missing
+        return "N/A"
+    end
+
+    # Special formatting for specific parameter types
+    if param_name == "domain_size_param" || param_name == "domain_size"
+        return "$(prefix)±$(value)"
+    elseif param_name == "parameter_set"
+        # Capitalize first letter for parameter sets
+        return uppercasefirst(string(value))
+    elseif isa(value, AbstractFloat)
+        # Format floats nicely
+        return "$(prefix)$(round(value, digits=3))"
+    else
+        return "$(prefix)$(value)"
+    end
+end
+
+"""
     create_experiment_plots(result::ExperimentResult, stats::Dict; backend::PlotBackend=Static) -> Figure
 
 Create adaptive plots based on available tracking labels.
@@ -202,7 +328,8 @@ end
 Plot timing breakdown by degree.
 """
 function create_timing_plot!(gridpos, Makie, stats::Dict, title::String)
-    per_degree = stats["per_degree_data"]
+    data = stats["timing"]
+    per_degree = data["per_degree_data"]
     degrees = sort(collect(keys(per_degree)))
 
     poly_times = [get(per_degree[d], "polynomial_construction_time", 0.0) for d in degrees]
@@ -260,6 +387,9 @@ function create_campaign_comparison_plot(campaign::CampaignResults, campaign_sta
     MakieModule.Label(fig[0, :], "Campaign: $(campaign.campaign_id)",
                      fontsize=20, font=:bold)
 
+    # Generate intelligent labels for experiments
+    exp_labels = generate_experiment_labels(campaign)
+
     # Extract data from all experiments
     num_experiments = length(campaign.experiments)
 
@@ -284,9 +414,8 @@ function create_campaign_comparison_plot(campaign::CampaignResults, campaign_sta
                 valid = .!isnan.(errors)
 
                 if any(valid)
-                    exp_name = split(exp_result.experiment_id, "_")[end]
                     MakieModule.scatterlines!(ax1, degrees[valid], errors[valid],
-                        label=exp_name,
+                        label=exp_labels[idx],
                         color=colors[mod1(idx, length(colors))],
                         markersize=10, linewidth=2)
                 end
@@ -315,9 +444,8 @@ function create_campaign_comparison_plot(campaign::CampaignResults, campaign_sta
                 valid = .!isnan.(errors)
 
                 if any(valid)
-                    exp_name = split(exp_result.experiment_id, "_")[end]
                     MakieModule.scatterlines!(ax2, degrees[valid], errors[valid],
-                        label=exp_name,
+                        label=exp_labels[idx],
                         color=colors[mod1(idx, length(colors))],
                         markersize=10, linewidth=2)
                 end
@@ -335,19 +463,14 @@ function create_campaign_comparison_plot(campaign::CampaignResults, campaign_sta
         yscale=log10
     )
 
-    exp_names = []
     total_times = Float64[]
-
     for exp_result in campaign.experiments
-        exp_name = split(exp_result.experiment_id, "_")[end]
-        push!(exp_names, exp_name)
-
         total_time = get(exp_result.metadata, "total_time", 0.0)
         push!(total_times, total_time)
     end
 
-    MakieModule.barplot!(ax3, 1:length(exp_names), total_times, color=:orange)
-    ax3.xticks = (1:length(exp_names), exp_names)
+    MakieModule.barplot!(ax3, 1:length(exp_labels), total_times, color=:orange)
+    ax3.xticks = (1:length(exp_labels), exp_labels)
     ax3.xticklabelrotation = π/4
 
     # Plot 4: Critical points comparison
@@ -358,14 +481,13 @@ function create_campaign_comparison_plot(campaign::CampaignResults, campaign_sta
     )
 
     critical_points = Int[]
-
     for exp_result in campaign.experiments
         total_cp = get(exp_result.metadata, "total_critical_points", 0)
         push!(critical_points, total_cp)
     end
 
-    MakieModule.barplot!(ax4, 1:length(exp_names), critical_points, color=:purple)
-    ax4.xticks = (1:length(exp_names), exp_names)
+    MakieModule.barplot!(ax4, 1:length(exp_labels), critical_points, color=:purple)
+    ax4.xticks = (1:length(exp_labels), exp_labels)
     ax4.xticklabelrotation = π/4
 
     return fig

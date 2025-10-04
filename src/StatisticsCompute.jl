@@ -34,48 +34,6 @@ function extract_per_degree_data(result::ExperimentResult)
 end
 
 """
-    compute_statistics(result::ExperimentResult) -> Dict{String, Any}
-
-Compute all available statistics based on enabled tracking labels.
-"""
-function compute_statistics(result::ExperimentResult)
-    stats = Dict{String, Any}()
-    stats["experiment_id"] = result.experiment_id
-    stats["enabled_tracking"] = result.enabled_tracking
-
-    # Extract per-degree data
-    per_degree = extract_per_degree_data(result)
-    stats["per_degree_data"] = per_degree
-
-    # Compute aggregate statistics across all labels
-    if "approximation_quality" in result.enabled_tracking
-        stats["approximation_quality"] = compute_approximation_quality(result, per_degree)
-    end
-
-    if "numerical_stability" in result.enabled_tracking
-        stats["numerical_stability"] = compute_numerical_stability(result, per_degree)
-    end
-
-    if "parameter_recovery" in result.enabled_tracking
-        stats["parameter_recovery"] = compute_parameter_recovery(result, per_degree)
-    end
-
-    if "polynomial_timing" in result.enabled_tracking || "solving_timing" in result.enabled_tracking
-        stats["performance"] = result.performance_metrics
-    end
-
-    if "refinement_quality" in result.enabled_tracking
-        stats["refinement"] = result.tolerance_validation
-    end
-
-    if "critical_point_count" in result.enabled_tracking || "refined_critical_points" in result.enabled_tracking
-        stats["critical_points"] = compute_critical_points_summary(result, per_degree)
-    end
-
-    return stats
-end
-
-"""
     compute_approximation_quality(result::ExperimentResult, per_degree::Dict) -> Dict{String, Any}
 
 Analyze L2 approximation error across degrees.
@@ -417,6 +375,281 @@ function compute_critical_point_statistics(result::ExperimentResult)
         stats["function_value_mean"] = mean(function_values)
         stats["function_value_std"] = std(function_values)
     end
+
+    return stats
+end
+
+"""
+    compute_approximation_quality_statistics(result::ExperimentResult) -> Dict{String, Any}
+
+Compute approximation quality statistics from l2_approx_error across degrees.
+"""
+function compute_approximation_quality_statistics(result::ExperimentResult)
+    stats = Dict{String, Any}("label" => "approximation_quality", "available" => false)
+
+    results_summary = get(result.metadata, "results_summary", Dict())
+    if isempty(results_summary)
+        return stats
+    end
+
+    errors = Float64[]
+    degrees = Int[]
+
+    for (degree_key, degree_data) in results_summary
+        if haskey(degree_data, "l2_approx_error")
+            error_val = degree_data["l2_approx_error"]
+            if error_val !== nothing && !isnan(error_val)
+                push!(errors, error_val)
+                # Extract degree number from key like "degree_3"
+                deg = parse(Int, replace(degree_key, "degree_" => ""))
+                push!(degrees, deg)
+            end
+        end
+    end
+
+    if isempty(errors)
+        return stats
+    end
+
+    stats["available"] = true
+    stats["mean_error"] = mean(errors)
+    stats["min_error"] = minimum(errors)
+    stats["max_error"] = maximum(errors)
+    best_idx = argmin(errors)
+    stats["best_degree"] = degrees[best_idx]
+    stats["l2_errors"] = errors  # Field name expected by plotting
+    stats["degrees"] = degrees
+
+    return stats
+end
+
+"""
+    compute_parameter_recovery_statistics(result::ExperimentResult) -> Dict{String, Any}
+
+Compute parameter recovery statistics from recovery_error across degrees.
+"""
+function compute_parameter_recovery_statistics(result::ExperimentResult)
+    stats = Dict{String, Any}("label" => "parameter_recovery", "available" => false)
+
+    results_summary = get(result.metadata, "results_summary", Dict())
+    if isempty(results_summary)
+        return stats
+    end
+
+    errors = Float64[]
+    degrees = Int[]
+
+    for (degree_key, degree_data) in results_summary
+        if haskey(degree_data, "recovery_error")
+            error_val = degree_data["recovery_error"]
+            if error_val !== nothing && !isnan(error_val)
+                push!(errors, error_val)
+                deg = parse(Int, replace(degree_key, "degree_" => ""))
+                push!(degrees, deg)
+            end
+        end
+    end
+
+    if isempty(errors)
+        return stats
+    end
+
+    # Get true parameters from system_info if available
+    system_info = get(result.metadata, "system_info", Dict())
+    true_params = get(system_info, "true_parameters", nothing)
+
+    stats["available"] = true
+    stats["mean_error"] = mean(errors)
+    stats["min_error"] = minimum(errors)
+    stats["max_error"] = maximum(errors)
+    best_idx = argmin(errors)
+    stats["best_degree"] = degrees[best_idx]
+    stats["recovery_errors"] = errors  # Field name expected by plotting
+    stats["degrees"] = degrees
+    stats["true_parameters"] = true_params
+
+    return stats
+end
+
+"""
+    compute_numerical_stability_statistics(result::ExperimentResult) -> Dict{String, Any}
+
+Compute numerical stability statistics from condition_number across degrees.
+"""
+function compute_numerical_stability_statistics(result::ExperimentResult)
+    stats = Dict{String, Any}("label" => "numerical_stability", "available" => false)
+
+    results_summary = get(result.metadata, "results_summary", Dict())
+    if isempty(results_summary)
+        return stats
+    end
+
+    condition_numbers = Float64[]
+    degrees = Int[]
+
+    for (degree_key, degree_data) in results_summary
+        if haskey(degree_data, "condition_number")
+            cond_val = degree_data["condition_number"]
+            if cond_val !== nothing && !isnan(cond_val)
+                push!(condition_numbers, cond_val)
+                deg = parse(Int, replace(degree_key, "degree_" => ""))
+                push!(degrees, deg)
+            end
+        end
+    end
+
+    if isempty(condition_numbers)
+        return stats
+    end
+
+    stats["available"] = true
+    stats["mean_condition_number"] = mean(condition_numbers)
+    stats["max_condition_number"] = maximum(condition_numbers)
+    stats["condition_numbers"] = condition_numbers
+    stats["degrees"] = degrees
+
+    return stats
+end
+
+"""
+    compute_timing_statistics(result::ExperimentResult, label::String) -> Dict{String, Any}
+
+Compute timing statistics for a specific timing label.
+"""
+function compute_timing_statistics(result::ExperimentResult, label::String)
+    stats = Dict{String, Any}("label" => label, "available" => false)
+
+    results_summary = get(result.metadata, "results_summary", Dict())
+    if isempty(results_summary)
+        return stats
+    end
+
+    # Map label to field name in results_summary
+    field_map = Dict(
+        "polynomial_timing" => "polynomial_construction_time",
+        "solving_timing" => "critical_point_solving_time",
+        "refinement_timing" => "refinement_time",
+        "total_timing" => "total_computation_time"
+    )
+
+    field_name = get(field_map, label, nothing)
+    if field_name === nothing
+        return stats
+    end
+
+    times = Float64[]
+    degrees = Int[]
+
+    for (degree_key, degree_data) in results_summary
+        if haskey(degree_data, field_name)
+            time_val = degree_data[field_name]
+            if time_val !== nothing && !isnan(time_val)
+                push!(times, time_val)
+                deg = parse(Int, replace(degree_key, "degree_" => ""))
+                push!(degrees, deg)
+            end
+        end
+    end
+
+    if isempty(times)
+        return stats
+    end
+
+    stats["available"] = true
+    stats["mean_time"] = mean(times)
+    stats["total_time"] = sum(times)
+    stats["max_time"] = maximum(times)
+    stats["min_time"] = minimum(times)
+    stats["times"] = times
+    stats["degrees"] = degrees
+
+    return stats
+end
+
+"""
+    compute_refinement_quality_statistics(result::ExperimentResult) -> Dict{String, Any}
+
+Compute refinement quality statistics from refinement_stats across degrees.
+"""
+function compute_refinement_quality_statistics(result::ExperimentResult)
+    stats = Dict{String, Any}("label" => "refinement_quality", "available" => false)
+
+    results_summary = get(result.metadata, "results_summary", Dict())
+    if isempty(results_summary)
+        return stats
+    end
+
+    total_converged = 0
+    total_failed = 0
+    mean_improvements = Float64[]
+
+    for (degree_key, degree_data) in results_summary
+        if haskey(degree_data, "refinement_stats")
+            ref_stats = degree_data["refinement_stats"]
+            total_converged += get(ref_stats, "converged", 0)
+            total_failed += get(ref_stats, "failed", 0)
+            mean_imp = get(ref_stats, "mean_improvement", nothing)
+            if mean_imp !== nothing && !isnan(mean_imp)
+                push!(mean_improvements, mean_imp)
+            end
+        end
+    end
+
+    if total_converged == 0 && total_failed == 0
+        return stats
+    end
+
+    stats["available"] = true
+    stats["total_converged"] = total_converged
+    stats["total_failed"] = total_failed
+    stats["success_rate"] = total_converged / (total_converged + total_failed)
+    if !isempty(mean_improvements)
+        stats["mean_improvement"] = mean(mean_improvements)
+    end
+
+    return stats
+end
+
+"""
+    compute_optimization_quality_statistics(result::ExperimentResult) -> Dict{String, Any}
+
+Compute optimization quality statistics from best_objective across degrees.
+"""
+function compute_optimization_quality_statistics(result::ExperimentResult)
+    stats = Dict{String, Any}("label" => "optimization_quality", "available" => false)
+
+    results_summary = get(result.metadata, "results_summary", Dict())
+    if isempty(results_summary)
+        return stats
+    end
+
+    objectives = Float64[]
+    degrees = Int[]
+
+    for (degree_key, degree_data) in results_summary
+        if haskey(degree_data, "best_objective")
+            obj_val = degree_data["best_objective"]
+            if obj_val !== nothing && !isnan(obj_val) && obj_val != 1000000  # Filter out placeholder values
+                push!(objectives, obj_val)
+                deg = parse(Int, replace(degree_key, "degree_" => ""))
+                push!(degrees, deg)
+            end
+        end
+    end
+
+    if isempty(objectives)
+        # If all are placeholder, still report availability but note it
+        stats["available"] = true
+        stats["note"] = "All objectives are placeholder values (1000000)"
+        return stats
+    end
+
+    stats["available"] = true
+    stats["mean_objective"] = mean(objectives)
+    stats["best_objective"] = minimum(objectives)
+    stats["worst_objective"] = maximum(objectives)
+    stats["objectives"] = objectives
+    stats["degrees"] = degrees
 
     return stats
 end

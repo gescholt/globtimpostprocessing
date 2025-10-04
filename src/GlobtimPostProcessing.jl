@@ -49,14 +49,7 @@ export ExperimentResult, CampaignResults
 export PlotBackend, Interactive, Static
 export create_experiment_plots, create_campaign_comparison_plot, save_plot
 
-# Include submodules
-include("ResultsLoader.jl")
-include("LabelDispatcher.jl")
-include("StatisticsCompute.jl")
-include("ReportGenerator.jl")
-include("CampaignAnalysis.jl")
-include("Plotting.jl")
-
+# Define types first
 """
     ExperimentResult
 
@@ -100,5 +93,13 @@ struct CampaignResults
     campaign_metadata::Dict{String, Any}
     collection_timestamp::DateTime
 end
+
+# Include submodules (after type definitions)
+include("ResultsLoader.jl")
+include("LabelDispatcher.jl")
+include("StatisticsCompute.jl")
+include("ReportGenerator.jl")
+include("CampaignAnalysis.jl")
+include("Plotting.jl")
 
 end # module GlobtimPostProcessing

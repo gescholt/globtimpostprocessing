@@ -136,7 +136,8 @@ function load_from_results_summary(dir_path::String, results_file::String)
         "total_time" => get(data, "total_time", nothing),
         "success_rate" => get(data, "success_rate", nothing),
         "total_critical_points" => get(data, "total_critical_points", nothing),
-        "degrees_processed" => get(data, "degrees_processed", nothing)
+        "degrees_processed" => get(data, "degrees_processed", nothing),
+        "results_summary" => get(data, "results_summary", Dict())
     )
 
     # Discover tracking labels from data
