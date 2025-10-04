@@ -36,3 +36,4 @@ Thumbs.db
 # *.json
 # *.h5
 # *.jld2
+.glab-env
