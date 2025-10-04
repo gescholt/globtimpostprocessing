@@ -356,6 +356,157 @@ function create_timing_plot!(gridpos, Makie, stats::Dict, title::String)
 end
 
 """
+    create_single_plot(result::ExperimentResult, stats::Dict, plot_type::Symbol, title::String; backend::PlotBackend=Interactive) -> Figure
+
+Create a single plot window for a specific plot type.
+"""
+function create_single_plot(result::ExperimentResult, stats::Dict, plot_type::Symbol, title::String; backend::PlotBackend=Interactive)
+    MakieModule = backend == Interactive ? GLMakie : CairoMakie
+
+    fig = MakieModule.Figure(size=(1000, 700))
+
+    # Add experiment ID as title
+    MakieModule.Label(fig[0, :], "$(result.experiment_id): $title",
+                     fontsize=20, font=:bold)
+
+    # Create the plot in the main area
+    if plot_type == :approximation_quality
+        create_approximation_plot!(fig[1, 1], MakieModule, stats, title)
+    elseif plot_type == :parameter_recovery
+        create_parameter_recovery_plot!(fig[1, 1], MakieModule, stats, title)
+    elseif plot_type == :numerical_stability
+        create_stability_plot!(fig[1, 1], MakieModule, stats, title)
+    elseif plot_type == :critical_points
+        create_critical_points_plot!(fig[1, 1], MakieModule, stats, title)
+    elseif plot_type == :timing
+        create_timing_plot!(fig[1, 1], MakieModule, stats, title)
+    elseif plot_type == :convergence_trajectory
+        create_convergence_trajectory_plot!(fig[1, 1], MakieModule, stats, title)
+    elseif plot_type == :residual_distribution
+        create_residual_distribution_plot!(fig[1, 1], MakieModule, stats, title)
+    else
+        error("Unknown plot type: $plot_type")
+    end
+
+    return fig
+end
+
+"""
+    create_convergence_trajectory_plot!(gridpos, Makie, stats::Dict, title::String)
+
+Plot convergence trajectories showing improvement rates across degrees.
+"""
+function create_convergence_trajectory_plot!(gridpos, Makie, stats::Dict, title::String)
+    # Check if we have approximation quality data
+    if !haskey(stats, "approximation_quality")
+        ax = Makie.Axis(gridpos, title="$title (No Data)")
+        Makie.text!(ax, "No approximation quality data available",
+            position=(0.5, 0.5), align=(:center, :center))
+        return ax
+    end
+
+    data = stats["approximation_quality"]
+    degrees = data["degrees"]
+    l2_errors = data["l2_errors"]
+
+    valid = .!isnan.(l2_errors)
+
+    if !any(valid) || sum(valid) < 2
+        ax = Makie.Axis(gridpos, title="$title (Insufficient Data)")
+        Makie.text!(ax, "Need at least 2 valid data points",
+            position=(0.5, 0.5), align=(:center, :center))
+        return ax
+    end
+
+    valid_degrees = degrees[valid]
+    valid_errors = l2_errors[valid]
+
+    # Calculate improvement factors
+    improvements = Float64[]
+    for i in 2:length(valid_errors)
+        ratio = valid_errors[i-1] / valid_errors[i]
+        push!(improvements, ratio)
+    end
+
+    ax = Makie.Axis(gridpos,
+        title=title,
+        xlabel="Degree Transition",
+        ylabel="Improvement Factor",
+        yscale=log10
+    )
+
+    # Plot improvement factors
+    transition_labels = ["$(valid_degrees[i])→$(valid_degrees[i+1])" for i in 1:length(improvements)]
+
+    Makie.barplot!(ax, 1:length(improvements), improvements,
+        color=:orange, strokecolor=:black, strokewidth=1)
+
+    ax.xticks = (1:length(improvements), transition_labels)
+    ax.xticklabelrotation = π/4
+
+    # Add reference line at 1.0 (no improvement)
+    Makie.hlines!(ax, [1.0], color=:red, linestyle=:dash, linewidth=2, label="No improvement")
+
+    Makie.axislegend(ax, position=:lt)
+
+    return ax
+end
+
+"""
+    create_residual_distribution_plot!(gridpos, Makie, stats::Dict, title::String)
+
+Plot histogram of residuals/errors to show distribution quality.
+"""
+function create_residual_distribution_plot!(gridpos, Makie, stats::Dict, title::String)
+    # For now, we'll create a simplified version using available data
+    # In the future, this could show spatial distribution of approximation errors
+
+    if !haskey(stats, "approximation_quality")
+        ax = Makie.Axis(gridpos, title="$title (No Data)")
+        Makie.text!(ax, "No approximation quality data available",
+            position=(0.5, 0.5), align=(:center, :center))
+        return ax
+    end
+
+    data = stats["approximation_quality"]
+    degrees = data["degrees"]
+    l2_errors = data["l2_errors"]
+
+    valid = .!isnan.(l2_errors)
+
+    if !any(valid)
+        ax = Makie.Axis(gridpos, title="$title (No Valid Data)")
+        return ax
+    end
+
+    valid_degrees = degrees[valid]
+    valid_errors = l2_errors[valid]
+
+    ax = Makie.Axis(gridpos,
+        title=title,
+        xlabel="Polynomial Degree",
+        ylabel="Log10(Error)"
+    )
+
+    # Create a scatter plot showing error distribution
+    log_errors = log10.(valid_errors)
+
+    Makie.scatter!(ax, valid_degrees, log_errors,
+        color=:teal, markersize=20, marker=:circle)
+
+    # Add trend line if we have enough points
+    if length(valid_errors) >= 2
+        # Fit a line to show convergence trend
+        Makie.lines!(ax, valid_degrees, log_errors,
+            color=:gray, linestyle=:dash, linewidth=2, label="Trend")
+    end
+
+    Makie.axislegend(ax, position=:rt)
+
+    return ax
+end
+
+"""
     save_plot(fig::Figure, output_path::String; format=:png)
 
 Save a Makie figure to file.
@@ -370,125 +521,199 @@ function save_plot(fig::Figure, output_path::String; format=:png)
     else
         error("Unsupported format: $format. Use :png, :pdf, or :svg")
     end
-
-    println("Saved plot to: $output_path")
 end
 
 """
-    create_campaign_comparison_plot(campaign::CampaignResults, stats::Vector; backend::PlotBackend=Static) -> Figure
+    create_campaign_comparison_plot(campaign::CampaignResults, stats::Vector; backend::PlotBackend=Static) -> Figure or Vector{Figure}
 
 Create comparison plots across multiple experiments in a campaign.
+For Interactive backend, returns a vector of separate figures (one per window).
+For Static backend, returns a single combined figure.
 """
 function create_campaign_comparison_plot(campaign::CampaignResults, campaign_stats::Dict; backend::PlotBackend=Static)
     MakieModule = backend == Interactive ? GLMakie : CairoMakie
 
-    fig = MakieModule.Figure(size=(1600, 1200))
-
-    MakieModule.Label(fig[0, :], "Campaign: $(campaign.campaign_id)",
-                     fontsize=20, font=:bold)
-
     # Generate intelligent labels for experiments
     exp_labels = generate_experiment_labels(campaign)
-
-    # Extract data from all experiments
-    num_experiments = length(campaign.experiments)
-
-    # Plot 1: L2 errors comparison
-    ax1 = MakieModule.Axis(fig[1, 1],
-        title="L2 Approximation Error Comparison",
-        xlabel="Polynomial Degree",
-        ylabel="L2 Error (log scale)",
-        yscale=log10
-    )
-
     colors = Makie.wong_colors()
 
-    for (idx, exp_result) in enumerate(campaign.experiments)
-        if haskey(campaign_stats, exp_result.experiment_id)
-            exp_stats = campaign_stats[exp_result.experiment_id]
+    if backend == Interactive
+        # Create separate windows for interactive mode
+        figures = []
 
-            if haskey(exp_stats, "approximation_quality")
-                data = exp_stats["approximation_quality"]
-                degrees = data["degrees"]
-                errors = data["l2_errors"]
-                valid = .!isnan.(errors)
+        # Window 1: L2 errors and parameter recovery
+        fig1 = MakieModule.Figure(size=(1200, 500))
+        MakieModule.Label(fig1[0, :], "Campaign: $(campaign.campaign_id) - Approximation Quality",
+                         fontsize=18, font=:bold)
 
-                if any(valid)
-                    MakieModule.scatterlines!(ax1, degrees[valid], errors[valid],
-                        label=exp_labels[idx],
-                        color=colors[mod1(idx, length(colors))],
-                        markersize=10, linewidth=2)
+        ax1 = MakieModule.Axis(fig1[1, 1],
+            title="L2 Approximation Error Comparison",
+            xlabel="Polynomial Degree",
+            ylabel="L2 Error (log scale)",
+            yscale=log10
+        )
+
+        for (idx, exp_result) in enumerate(campaign.experiments)
+            if haskey(campaign_stats, exp_result.experiment_id)
+                exp_stats = campaign_stats[exp_result.experiment_id]
+
+                if haskey(exp_stats, "approximation_quality")
+                    data = exp_stats["approximation_quality"]
+                    degrees = data["degrees"]
+                    errors = data["l2_errors"]
+                    valid = .!isnan.(errors)
+
+                    if any(valid)
+                        MakieModule.scatterlines!(ax1, degrees[valid], errors[valid],
+                            label=exp_labels[idx],
+                            color=colors[mod1(idx, length(colors))],
+                            markersize=10, linewidth=2)
+                    end
                 end
             end
         end
-    end
 
-    MakieModule.axislegend(ax1, position=:rt)
+        ax2 = MakieModule.Axis(fig1[1, 2],
+            title="Parameter Recovery Error Comparison",
+            xlabel="Polynomial Degree",
+            ylabel="Recovery Error (log scale)",
+            yscale=log10
+        )
 
-    # Plot 2: Parameter recovery comparison
-    ax2 = MakieModule.Axis(fig[1, 2],
-        title="Parameter Recovery Error Comparison",
-        xlabel="Polynomial Degree",
-        ylabel="Recovery Error (log scale)",
-        yscale=log10
-    )
+        for (idx, exp_result) in enumerate(campaign.experiments)
+            if haskey(campaign_stats, exp_result.experiment_id)
+                exp_stats = campaign_stats[exp_result.experiment_id]
 
-    for (idx, exp_result) in enumerate(campaign.experiments)
-        if haskey(campaign_stats, exp_result.experiment_id)
-            exp_stats = campaign_stats[exp_result.experiment_id]
+                if haskey(exp_stats, "parameter_recovery")
+                    data = exp_stats["parameter_recovery"]
+                    degrees = data["degrees"]
+                    errors = data["recovery_errors"]
+                    valid = .!isnan.(errors)
 
-            if haskey(exp_stats, "parameter_recovery")
-                data = exp_stats["parameter_recovery"]
-                degrees = data["degrees"]
-                errors = data["recovery_errors"]
-                valid = .!isnan.(errors)
-
-                if any(valid)
-                    MakieModule.scatterlines!(ax2, degrees[valid], errors[valid],
-                        label=exp_labels[idx],
-                        color=colors[mod1(idx, length(colors))],
-                        markersize=10, linewidth=2)
+                    if any(valid)
+                        MakieModule.scatterlines!(ax2, degrees[valid], errors[valid],
+                            label=exp_labels[idx],
+                            color=colors[mod1(idx, length(colors))],
+                            markersize=10, linewidth=2)
+                    end
                 end
             end
         end
+
+        MakieModule.Legend(fig1[2, 1:2], ax1, "Experiments", orientation=:horizontal,
+                          tellwidth=false, tellheight=true, nbanks=2)
+        push!(figures, fig1)
+
+        # Window 2: Critical points
+        fig2 = MakieModule.Figure(size=(800, 500))
+        MakieModule.Label(fig2[0, :], "Campaign: $(campaign.campaign_id) - Critical Points",
+                         fontsize=18, font=:bold)
+
+        ax3 = MakieModule.Axis(fig2[1, 1],
+            title="Total Critical Points Found",
+            xlabel="Experiment",
+            ylabel="Number of Critical Points"
+        )
+
+        critical_points = Int[]
+        for exp_result in campaign.experiments
+            total_cp = get(exp_result.metadata, "total_critical_points", 0)
+            push!(critical_points, total_cp)
+        end
+
+        MakieModule.barplot!(ax3, 1:length(exp_labels), critical_points,
+            color=[colors[mod1(i, length(colors))] for i in 1:length(exp_labels)])
+        ax3.xticks = (1:length(exp_labels), exp_labels)
+        ax3.xticklabelrotation = π/4
+
+        push!(figures, fig2)
+
+        return figures
+    else
+        # Static backend: single combined figure
+        fig = MakieModule.Figure(size=(1600, 800))
+
+        MakieModule.Label(fig[0, :], "Campaign: $(campaign.campaign_id)",
+                         fontsize=20, font=:bold)
+
+        # Plot 1: L2 errors comparison
+        ax1 = MakieModule.Axis(fig[1, 1],
+            title="L2 Approximation Error Comparison",
+            xlabel="Polynomial Degree",
+            ylabel="L2 Error (log scale)",
+            yscale=log10
+        )
+
+        for (idx, exp_result) in enumerate(campaign.experiments)
+            if haskey(campaign_stats, exp_result.experiment_id)
+                exp_stats = campaign_stats[exp_result.experiment_id]
+
+                if haskey(exp_stats, "approximation_quality")
+                    data = exp_stats["approximation_quality"]
+                    degrees = data["degrees"]
+                    errors = data["l2_errors"]
+                    valid = .!isnan.(errors)
+
+                    if any(valid)
+                        MakieModule.scatterlines!(ax1, degrees[valid], errors[valid],
+                            label=exp_labels[idx],
+                            color=colors[mod1(idx, length(colors))],
+                            markersize=10, linewidth=2)
+                    end
+                end
+            end
+        end
+
+        # Plot 2: Parameter recovery comparison
+        ax2 = MakieModule.Axis(fig[1, 2],
+            title="Parameter Recovery Error Comparison",
+            xlabel="Polynomial Degree",
+            ylabel="Recovery Error (log scale)",
+            yscale=log10
+        )
+
+        for (idx, exp_result) in enumerate(campaign.experiments)
+            if haskey(campaign_stats, exp_result.experiment_id)
+                exp_stats = campaign_stats[exp_result.experiment_id]
+
+                if haskey(exp_stats, "parameter_recovery")
+                    data = exp_stats["parameter_recovery"]
+                    degrees = data["degrees"]
+                    errors = data["recovery_errors"]
+                    valid = .!isnan.(errors)
+
+                    if any(valid)
+                        MakieModule.scatterlines!(ax2, degrees[valid], errors[valid],
+                            label=exp_labels[idx],
+                            color=colors[mod1(idx, length(colors))],
+                            markersize=10, linewidth=2)
+                    end
+                end
+            end
+        end
+
+        # Plot 3: Critical points comparison
+        ax3 = MakieModule.Axis(fig[1, 3],
+            title="Total Critical Points Found",
+            xlabel="Experiment",
+            ylabel="Number of Critical Points"
+        )
+
+        critical_points = Int[]
+        for exp_result in campaign.experiments
+            total_cp = get(exp_result.metadata, "total_critical_points", 0)
+            push!(critical_points, total_cp)
+        end
+
+        MakieModule.barplot!(ax3, 1:length(exp_labels), critical_points,
+            color=[colors[mod1(i, length(colors))] for i in 1:length(exp_labels)])
+        ax3.xticks = (1:length(exp_labels), exp_labels)
+        ax3.xticklabelrotation = π/4
+
+        # Single legend at the bottom for all plots
+        MakieModule.Legend(fig[2, 1:3], ax1, "Experiments", orientation=:horizontal,
+                          tellwidth=false, tellheight=true, nbanks=2)
+
+        return fig
     end
-
-    MakieModule.axislegend(ax2, position=:rt)
-
-    # Plot 3: Total computation time comparison
-    ax3 = MakieModule.Axis(fig[2, 1],
-        title="Total Computation Time",
-        xlabel="Experiment",
-        ylabel="Time (seconds)",
-        yscale=log10
-    )
-
-    total_times = Float64[]
-    for exp_result in campaign.experiments
-        total_time = get(exp_result.metadata, "total_time", 0.0)
-        push!(total_times, total_time)
-    end
-
-    MakieModule.barplot!(ax3, 1:length(exp_labels), total_times, color=:orange)
-    ax3.xticks = (1:length(exp_labels), exp_labels)
-    ax3.xticklabelrotation = π/4
-
-    # Plot 4: Critical points comparison
-    ax4 = MakieModule.Axis(fig[2, 2],
-        title="Total Critical Points Found",
-        xlabel="Experiment",
-        ylabel="Number of Critical Points"
-    )
-
-    critical_points = Int[]
-    for exp_result in campaign.experiments
-        total_cp = get(exp_result.metadata, "total_critical_points", 0)
-        push!(critical_points, total_cp)
-    end
-
-    MakieModule.barplot!(ax4, 1:length(exp_labels), critical_points, color=:purple)
-    ax4.xticks = (1:length(exp_labels), exp_labels)
-    ax4.xticklabelrotation = π/4
-
-    return fig
 end

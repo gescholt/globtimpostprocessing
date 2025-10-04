@@ -47,7 +47,7 @@ export analyze_campaign, aggregate_campaign_statistics
 export generate_report, generate_campaign_report
 export ExperimentResult, CampaignResults
 export PlotBackend, Interactive, Static
-export create_experiment_plots, create_campaign_comparison_plot, save_plot
+export create_experiment_plots, create_campaign_comparison_plot, create_single_plot, save_plot
 
 # Define types first
 """

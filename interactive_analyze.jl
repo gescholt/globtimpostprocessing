@@ -159,7 +159,7 @@ function analyze_single_experiment(result::ExperimentResult)
     println("="^80)
 
     # Display metadata
-    println("\n📋 Metadata:")
+    println("\nMetadata:")
     system_info = get(result.metadata, "system_info", Dict())
     for (key, value) in system_info
         if key != "true_parameters"
@@ -169,11 +169,10 @@ function analyze_single_experiment(result::ExperimentResult)
 
     true_params = get(system_info, "true_parameters", nothing)
     if true_params !== nothing
-        println("\n🎯 True Parameters: $true_params")
+        println("\nTrue Parameters: $true_params")
     end
 
     # Compute statistics
-    println("\n📊 Computing statistics...")
     stats = compute_statistics(result)
 
     println("\nEnabled tracking labels:")
@@ -184,57 +183,159 @@ function analyze_single_experiment(result::ExperimentResult)
     # Display summary statistics
     if haskey(stats, "approximation_quality")
         qual = stats["approximation_quality"]
-        println("\n🔬 Approximation Quality:")
+        println("\nApproximation Quality:")
         println("  Mean L2 error: $(qual["mean_error"])")
         println("  Min L2 error: $(qual["min_error"]) (degree $(qual["best_degree"]))")
     end
 
     if haskey(stats, "parameter_recovery")
         rec = stats["parameter_recovery"]
-        println("\n🎯 Parameter Recovery:")
+        println("\nParameter Recovery:")
         println("  Mean recovery error: $(rec["mean_error"])")
         println("  Min recovery error: $(rec["min_error"]) (degree $(rec["best_degree"]))")
     end
 
     if haskey(stats, "critical_points")
         cp = stats["critical_points"]
-        println("\n🔍 Critical Points:")
+        println("\nCritical Points:")
         println("  Total refined: $(cp["total_refined"])")
     end
 
     # Plotting options
-    println("\n" * "="^80)
-    println("PLOTTING OPTIONS:")
-    println("[1] Interactive plot (GLMakie)")
-    println("[2] Save static plot (PNG)")
-    println("[3] Both")
-    println("[b] Back")
-    println("="^80)
-    print("Selection: ")
+    while true
+        println("\n" * "="^80)
+        println("PLOTTING OPTIONS:")
+        println("[1] Interactive plots - navigate by category")
+        println("[2] Interactive plot - all in one window")
+        println("[3] Save static plot (PNG)")
+        println("[b] Back")
+        println("="^80)
+        print("Selection: ")
 
-    plot_choice = strip(readline())
+        plot_choice = strip(readline())
 
-    if lowercase(plot_choice) == "b"
+        if lowercase(plot_choice) == "b"
+            return
+        elseif plot_choice == "1"
+            navigate_experiment_plots(result, stats)
+        elseif plot_choice == "2"
+            fig = create_experiment_plots(result, stats, backend=Interactive)
+            display(fig)
+            println("\nPress Enter to continue...")
+            readline()
+        elseif plot_choice == "3"
+            output_file = joinpath(result.source_path, "analysis_plot.png")
+            println("\nSaving to: $output_file")
+            fig = create_experiment_plots(result, stats, backend=Static)
+            save_plot(fig, output_file)
+            println("\nPress Enter to continue...")
+            readline()
+        end
+    end
+end
+
+"""
+Navigate through experiment plots by category.
+"""
+function navigate_experiment_plots(result::ExperimentResult, stats::Dict)
+    # Build list of available plot categories
+    available_plots = []
+
+    if haskey(stats, "approximation_quality")
+        push!(available_plots, ("approximation_quality", "L2 Approximation Error"))
+    end
+
+    if haskey(stats, "parameter_recovery")
+        push!(available_plots, ("parameter_recovery", "Parameter Recovery Error"))
+    end
+
+    if haskey(stats, "numerical_stability")
+        push!(available_plots, ("numerical_stability", "Condition Number"))
+    end
+
+    if haskey(stats, "critical_points")
+        push!(available_plots, ("critical_points", "Critical Points"))
+    end
+
+    if haskey(stats, "timing")
+        push!(available_plots, ("timing", "Computation Time"))
+    end
+
+    # Add new advanced plot types
+    if haskey(stats, "approximation_quality")
+        push!(available_plots, ("convergence_trajectory", "Convergence Rate Analysis"))
+        push!(available_plots, ("residual_distribution", "Error Distribution"))
+    end
+
+    if isempty(available_plots)
+        println("No plots available for this experiment")
         return
     end
 
-    if plot_choice in ["1", "3"]
-        println("\n🎨 Creating interactive plot...")
-        fig = create_experiment_plots(result, stats, backend=Interactive)
+    current_idx = 1
+
+    while true
+        plot_type, plot_title = available_plots[current_idx]
+
+        println("\n" * "="^80)
+        println("VIEWING: $plot_title ($(current_idx)/$(length(available_plots)))")
+        println("="^80)
+
+        # Create single plot window
+        fig = create_single_plot(result, stats, plot_type, plot_title, backend=Interactive)
         display(fig)
-        println("✓ Close window to continue")
-    end
 
-    if plot_choice in ["2", "3"]
-        output_file = joinpath(result.source_path, "analysis_plot.png")
-        println("\n💾 Saving static plot to: $output_file")
-        fig = create_experiment_plots(result, stats, backend=Static)
-        save_plot(fig, output_file)
-        println("✓ Saved")
-    end
+        println("\n" * "="^80)
+        println("NAVIGATION:")
+        println("[n/j] Next plot  |  [p/k] Previous plot  |  [s] Save current plot")
+        println("[a] Save all plots  |  [1-$(length(available_plots))] Jump to plot  |  [b/q] Back/Quit")
+        println("="^80)
 
-    println("\nPress Enter to continue...")
-    readline()
+        for (idx, (_, title)) in enumerate(available_plots)
+            marker = idx == current_idx ? "→" : " "
+            println("$marker [$idx] $title")
+        end
+
+        print("\nSelection: ")
+        choice = strip(readline())
+
+        if lowercase(choice) == "b" || lowercase(choice) == "q"
+            break
+        elseif lowercase(choice) == "n" || lowercase(choice) == "j"
+            current_idx = mod1(current_idx + 1, length(available_plots))
+        elseif lowercase(choice) == "p" || lowercase(choice) == "k"
+            current_idx = mod1(current_idx - 1, length(available_plots))
+        elseif lowercase(choice) == "s"
+            # Save current plot
+            plot_type, plot_title = available_plots[current_idx]
+            output_file = joinpath(result.source_path, "plot_$(plot_type).png")
+            println("\n💾 Saving to: $output_file")
+            fig_to_save = create_single_plot(result, stats, plot_type, plot_title, backend=Static)
+            save_plot(fig_to_save, output_file)
+            println("✓ Saved!")
+            println("\nPress Enter to continue...")
+            readline()
+        elseif lowercase(choice) == "a"
+            # Save all plots
+            println("\n💾 Saving all plots...")
+            for (plot_type, plot_title) in available_plots
+                output_file = joinpath(result.source_path, "plot_$(plot_type).png")
+                println("  Saving $plot_title...")
+                fig_to_save = create_single_plot(result, stats, plot_type, plot_title, backend=Static)
+                save_plot(fig_to_save, output_file)
+            end
+            println("✓ All plots saved to: $(result.source_path)")
+            println("\nPress Enter to continue...")
+            readline()
+        elseif tryparse(Int, choice) !== nothing
+            idx = parse(Int, choice)
+            if 1 <= idx <= length(available_plots)
+                current_idx = idx
+            else
+                println("Invalid plot number")
+            end
+        end
+    end
 end
 
 """
@@ -246,8 +347,6 @@ function analyze_full_campaign(campaign::CampaignResults)
     println("="^80)
 
     # Compute statistics for all experiments
-    println("\n📊 Computing statistics for all experiments...")
-
     campaign_stats = Dict{String, Any}()
 
     for exp in campaign.experiments
@@ -255,10 +354,8 @@ function analyze_full_campaign(campaign::CampaignResults)
         campaign_stats[exp.experiment_id] = stats
     end
 
-    println("✓ Statistics computed for $(length(campaign.experiments)) experiments")
-
     # Display summary
-    println("\n📈 Campaign Summary:")
+    println("\nCampaign Summary:")
     println("  Total experiments: $(length(campaign.experiments))")
 
     total_time = sum(get(exp.metadata, "total_time", 0.0) for exp in campaign.experiments)
@@ -284,18 +381,23 @@ function analyze_full_campaign(campaign::CampaignResults)
     end
 
     if plot_choice in ["1", "3"]
-        println("\n🎨 Creating interactive comparison plot...")
-        fig = create_campaign_comparison_plot(campaign, campaign_stats, backend=Interactive)
-        display(fig)
-        println("✓ Close window to continue")
+        figs = create_campaign_comparison_plot(campaign, campaign_stats, backend=Interactive)
+        # Interactive backend returns a vector of figures - display each one
+        if figs isa Vector
+            for (idx, fig) in enumerate(figs)
+                println("\n📊 Displaying comparison plot $(idx)/$(length(figs))...")
+                display(fig)
+            end
+        else
+            display(figs)
+        end
     end
 
     if plot_choice in ["2", "3"]
         output_file = joinpath(dirname(campaign.experiments[1].source_path), "campaign_comparison.png")
-        println("\n💾 Saving comparison plot to: $output_file")
+        println("\nSaving to: $output_file")
         fig = create_campaign_comparison_plot(campaign, campaign_stats, backend=Static)
         save_plot(fig, output_file)
-        println("✓ Saved")
     end
 
     println("\nPress Enter to continue...")
