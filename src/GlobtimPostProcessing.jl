@@ -45,6 +45,7 @@ export load_experiment_results, load_campaign_results
 export compute_statistics, compute_statistics_for_label
 export analyze_campaign, aggregate_campaign_statistics
 export generate_report, generate_campaign_report
+export save_report, generate_and_save_report, save_campaign_report
 export ExperimentResult, CampaignResults
 export PlotBackend, Interactive, Static
 export create_experiment_plots, create_campaign_comparison_plot, create_single_plot, save_plot

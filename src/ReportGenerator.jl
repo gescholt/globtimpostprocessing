@@ -190,3 +190,73 @@ function generate_latex_report(result::ExperimentResult, stats::Dict{String, Any
     # Future implementation
     return "% LaTeX report generation not yet implemented"
 end
+
+"""
+    save_report(report_content::String, output_path::String; format::String="markdown")
+
+Save a report to a file.
+
+# Arguments
+- `report_content::String`: The report content to save
+- `output_path::String`: Path where report should be saved
+- `format::String`: Report format ("markdown", "latex", "html")
+
+# Examples
+```julia
+report = generate_report(result, stats)
+save_report(report, "experiment_report.md")
+```
+"""
+function save_report(report_content::String, output_path::String; format::String="markdown")
+    # Ensure directory exists
+    output_dir = dirname(output_path)
+    if !isempty(output_dir) && !isdir(output_dir)
+        mkpath(output_dir)
+    end
+
+    # Write to file
+    open(output_path, "w") do f
+        write(f, report_content)
+    end
+
+    println("✓ Report saved to: $output_path")
+end
+
+"""
+    generate_and_save_report(result::ExperimentResult, stats::Dict{String, Any}, output_path::String; format::String="markdown")
+
+Generate and save a report in one step.
+
+# Arguments
+- `result::ExperimentResult`: Experiment data
+- `stats::Dict{String, Any}`: Computed statistics
+- `output_path::String`: Path where report should be saved
+- `format::String`: Output format ("markdown", "latex")
+
+# Returns
+- `String`: The generated report content (also saved to file)
+"""
+function generate_and_save_report(result::ExperimentResult, stats::Dict{String, Any}, output_path::String; format::String="markdown")
+    report = generate_report(result, stats, format=format)
+    save_report(report, output_path, format=format)
+    return report
+end
+
+"""
+    save_campaign_report(campaign::CampaignResults, output_path::String; format::String="markdown")
+
+Generate and save a campaign report.
+
+# Arguments
+- `campaign::CampaignResults`: Campaign to report on
+- `output_path::String`: Path where report should be saved
+- `format::String`: Output format ("markdown", "latex")
+
+# Returns
+- `String`: The generated report content (also saved to file)
+"""
+function save_campaign_report(campaign::CampaignResults, output_path::String; format::String="markdown")
+    report = generate_campaign_report(campaign, format=format)
+    save_report(report, output_path, format=format)
+    return report
+end
