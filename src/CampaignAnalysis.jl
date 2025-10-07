@@ -25,7 +25,10 @@ Aggregates:
   - `"campaign_summary"`: Overall campaign statistics
   - `"parameter_variations"`: Parameters that vary across experiments
 """
-function aggregate_campaign_statistics(campaign::CampaignResults)
+function aggregate_campaign_statistics(
+    campaign::CampaignResults;
+    progress_callback::Union{Function, Nothing}=nothing
+)
     agg_stats = Dict{String, Any}()
 
     # Store individual experiment statistics
@@ -33,14 +36,26 @@ function aggregate_campaign_statistics(campaign::CampaignResults)
 
     println("📊 Aggregating statistics across $(length(campaign.experiments)) experiments...")
 
+    total_experiments = length(campaign.experiments)
+
     # Compute statistics for each experiment
-    for exp in campaign.experiments
+    for (idx, exp) in enumerate(campaign.experiments)
         try
             stats = compute_statistics(exp)
             exp_stats[exp.experiment_id] = stats
+
+            # Call progress callback if provided
+            if !isnothing(progress_callback)
+                progress_callback(idx, total_experiments, exp.experiment_id)
+            end
         catch e
             @warn "Failed to compute statistics for $(exp.experiment_id): $e"
             exp_stats[exp.experiment_id] = Dict("error" => string(e))
+
+            # Still report progress on error
+            if !isnothing(progress_callback)
+                progress_callback(idx, total_experiments, exp.experiment_id)
+            end
         end
     end
 

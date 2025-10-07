@@ -617,7 +617,7 @@ function create_campaign_comparison_plot(campaign::CampaignResults, campaign_sta
 
         critical_points = Int[]
         for exp_result in campaign.experiments
-            total_cp = get(exp_result.metadata, "total_critical_points", 0)
+            total_cp = something(get(exp_result.metadata, "total_critical_points", nothing), 0)
             push!(critical_points, total_cp)
         end
 
@@ -701,7 +701,7 @@ function create_campaign_comparison_plot(campaign::CampaignResults, campaign_sta
 
         critical_points = Int[]
         for exp_result in campaign.experiments
-            total_cp = get(exp_result.metadata, "total_critical_points", 0)
+            total_cp = something(get(exp_result.metadata, "total_critical_points", nothing), 0)
             push!(critical_points, total_cp)
         end
 

@@ -3,7 +3,13 @@
 
 Handles loading experiment results from various formats (JSON, CSV, JLD2).
 Automatically discovers and parses globtimcore output structure.
+
+Includes fallback loading for truncated/corrupted JSON files using CSV data.
 """
+
+# Include CSV fallback loader
+include("CSVFallbackLoader.jl")
+using .CSVFallbackLoader: can_use_csv_fallback, load_experiment_from_csv_fallback
 
 """
     load_experiment_results(path::String) -> ExperimentResult
@@ -96,13 +102,28 @@ end
     load_from_directory(dir_path::String) -> ExperimentResult
 
 Load experiment result from a directory containing globtimcore outputs.
+
+Tries multiple loading strategies:
+1. results_summary.json (primary format)
+2. experiment_result_*.json (alternative format)
+3. CSV fallback (for truncated/missing JSON)
 """
 function load_from_directory(dir_path::String)
     # Look for results_summary.json first (primary format)
     results_file = joinpath(dir_path, "results_summary.json")
 
     if isfile(results_file)
-        return load_from_results_summary(dir_path, results_file)
+        # Try to load from results_summary, but catch JSON parse errors
+        try
+            return load_from_results_summary(dir_path, results_file)
+        catch e
+            if e isa JSON.ParseError || e isa ArgumentError
+                @warn "Failed to parse results_summary.json (possibly truncated), trying CSV fallback" exception=e
+                # Fall through to CSV fallback
+            else
+                rethrow(e)
+            end
+        end
     end
 
     # Fall back to experiment_result_*.json format
@@ -110,6 +131,12 @@ function load_from_directory(dir_path::String)
 
     if !isempty(result_files)
         return load_from_experiment_result(dir_path, joinpath(dir_path, result_files[1]))
+    end
+
+    # Final fallback: Try to load from CSV files if available
+    if can_use_csv_fallback(dir_path)
+        @info "Using CSV fallback loader for $dir_path"
+        return load_from_csv_fallback_wrapper(dir_path)
     end
 
     error("No recognized result files found in $dir_path")
@@ -370,8 +397,8 @@ function extract_tolerance_validation(data::Dict)
     if !isempty(refinement_stats)
         validation["refinement_stats"] = refinement_stats
 
-        total_converged = sum(get(stat, "converged", 0) for stat in refinement_stats)
-        total_failed = sum(get(stat, "failed", 0) for stat in refinement_stats)
+        total_converged = sum(something(get(stat, "converged", nothing), 0) for stat in refinement_stats)
+        total_failed = sum(something(get(stat, "failed", nothing), 0) for stat in refinement_stats)
 
         validation["convergence_summary"] = Dict(
             "total_converged" => total_converged,
@@ -422,5 +449,25 @@ function load_from_file(file_path::String)
         performance_metrics,
         tolerance_validation,
         file_path
+    )
+end
+
+"""
+    load_from_csv_fallback_wrapper(dir_path::String) -> ExperimentResult
+
+Wrapper to convert CSV fallback loader output to ExperimentResult struct.
+"""
+function load_from_csv_fallback_wrapper(dir_path::String)
+    result_nt = load_experiment_from_csv_fallback(dir_path)
+
+    return ExperimentResult(
+        result_nt.experiment_id,
+        result_nt.metadata,
+        result_nt.enabled_tracking,
+        result_nt.tracking_capabilities,
+        result_nt.critical_points,
+        result_nt.performance_metrics,
+        result_nt.tolerance_validation,
+        result_nt.source_path
     )
 end

@@ -39,6 +39,7 @@ using LinearAlgebra
 using Printf
 using Dates
 using CSV
+using ProgressMeter
 
 # Core functionality exports
 export load_experiment_results, load_campaign_results
@@ -49,6 +50,20 @@ export save_report, generate_and_save_report, save_campaign_report
 export ExperimentResult, CampaignResults
 export PlotBackend, Interactive, Static
 export create_experiment_plots, create_campaign_comparison_plot, create_single_plot, save_plot
+
+# Phase 2: Batch processing exports
+export batch_analyze_campaign, load_campaign_with_progress
+export aggregate_campaign_statistics_with_progress, batch_analyze_campaign_with_progress
+
+# VegaLite + Tidier exports
+export campaign_to_dataframe, create_interactive_campaign_explorer
+export campaign_to_tidy_dataframe, compute_campaign_summary_stats
+export compute_convergence_analysis, compute_efficiency_metrics
+export compute_parameter_sensitivity, filter_best_experiments
+export pivot_metrics_longer, add_comparison_baseline
+export create_convergence_dashboard, create_parameter_sensitivity_plot
+export create_multi_metric_comparison, create_efficiency_analysis
+export create_outlier_detection_plot, create_baseline_comparison
 
 # Define types first
 """
@@ -102,5 +117,7 @@ include("StatisticsCompute.jl")
 include("ReportGenerator.jl")
 include("CampaignAnalysis.jl")
 include("Plotting.jl")
+include("BatchProcessing.jl")  # Phase 2: Batch processing functionality
+include("VegaPlotting.jl")      # VegaLite + Tidier interactive visualizations
 
 end # module GlobtimPostProcessing
