@@ -117,7 +117,8 @@ function load_from_directory(dir_path::String)
         try
             return load_from_results_summary(dir_path, results_file)
         catch e
-            if e isa JSON.ParseError || e isa ArgumentError
+            # JSON.jl throws ErrorException for parse errors, not a specific ParseError type
+            if e isa ErrorException || e isa ArgumentError
                 @warn "Failed to parse results_summary.json (possibly truncated), trying CSV fallback" exception=e
                 # Fall through to CSV fallback
             else
