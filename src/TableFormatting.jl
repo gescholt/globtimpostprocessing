@@ -122,19 +122,26 @@ function format_compact_summary(agg_stats::Dict)
     println(io, "Quick Summary:")
 
     if haskey(metrics, "approximation_quality")
-        aq = metrics["approximation_quality"]
+        aq_by_deg = metrics["approximation_quality"]
+        # Find overall best/worst across all degrees
+        all_mins = [d["min"] for d in values(aq_by_deg)]
+        all_maxs = [d["max"] for d in values(aq_by_deg)]
+        all_means = [d["mean"] for d in values(aq_by_deg)]
         @printf(io, "  L2 Error:       %10s (best) → %10s (worst)  [mean: %10s]\n",
-                format_value(aq["min"]),
-                format_value(aq["max"]),
-                format_value(aq["mean"]))
+                format_value(minimum(all_mins)),
+                format_value(maximum(all_maxs)),
+                format_value(mean(all_means)))
     end
 
     if haskey(metrics, "parameter_recovery")
-        pr = metrics["parameter_recovery"]
+        pr_by_deg = metrics["parameter_recovery"]
+        all_mins = [d["min"] for d in values(pr_by_deg)]
+        all_maxs = [d["max"] for d in values(pr_by_deg)]
+        all_means = [d["mean"] for d in values(pr_by_deg)]
         @printf(io, "  Param Recovery: %10s (best) → %10s (worst)  [mean: %10s]\n",
-                format_value(pr["min"]),
-                format_value(pr["max"]),
-                format_value(pr["mean"]))
+                format_value(minimum(all_mins)),
+                format_value(maximum(all_maxs)),
+                format_value(mean(all_means)))
     end
 
     @printf(io, "  Success Rate:   %.0f%% (%d/%d experiments converged)\n",
@@ -214,7 +221,7 @@ end
 """
     format_metric_group(io::IO, metrics::Dict, metric_list::Vector, max_width::Int)
 
-Format a group of related metrics as a table.
+Format a group of related metrics as a table, organized by polynomial degree.
 """
 function format_metric_group(io::IO, metrics::Dict, metric_list::Vector, max_width::Int)
     # Column widths
@@ -231,19 +238,33 @@ function format_metric_group(io::IO, metrics::Dict, metric_list::Vector, max_wid
             3, "N")
     println(io, "─"^max_width)
 
-    # Data rows
+    # Data rows - now organized by degree
     for metric_key in metric_list
         if haskey(metrics, metric_key)
-            m = metrics[metric_key]
+            metric_by_degree = metrics[metric_key]
             label = get(METRIC_LABELS, metric_key, metric_key)
 
-            @printf(io, "%-*s %*s %*s %*s %*s %*d\n",
-                    name_width, truncate_string(label, name_width),
-                    num_width, format_value(m["mean"]),
-                    num_width, format_value(m["min"]),
-                    num_width, format_value(m["max"]),
-                    num_width, format_value(m["std"]),
-                    3, m["num_experiments"])
+            # Get all degrees for this metric
+            degrees = sort(collect(keys(metric_by_degree)))
+
+            for (idx, deg) in enumerate(degrees)
+                m = metric_by_degree[deg]
+
+                # Format metric name: add "Deg X" suffix, or "Overall" for degree=0
+                if deg == 0
+                    display_label = label
+                else
+                    display_label = idx == 1 ? label * " (deg $deg)" : "  deg $deg"
+                end
+
+                @printf(io, "%-*s %*s %*s %*s %*s %*d\n",
+                        name_width, truncate_string(display_label, name_width),
+                        num_width, format_value(m["mean"]),
+                        num_width, format_value(m["min"]),
+                        num_width, format_value(m["max"]),
+                        num_width, format_value(m["std"]),
+                        3, m["num_experiments"])
+            end
         end
     end
 end
@@ -251,7 +272,7 @@ end
 """
     format_best_performers(io::IO, agg_stats::Dict, max_width::Int)
 
-Display best performing experiments for each metric, showing experiment parameters.
+Display best performing experiments for each metric and degree, showing experiment parameters.
 """
 function format_best_performers(io::IO, agg_stats::Dict, max_width::Int)
     metrics = agg_stats["aggregated_metrics"]
@@ -261,22 +282,51 @@ function format_best_performers(io::IO, agg_stats::Dict, max_width::Int)
     exp_width = min(30, div(max_width, 3))
     val_width = 12
 
-    for (metric_name, metric_data) in sort(collect(metrics), by=x->x[1])
-        if haskey(metric_data, "best_experiment")
-            label = get(METRIC_LABELS, metric_name, metric_name)
+    for (metric_name, metric_by_degree) in sort(collect(metrics), by=x->x[1])
+        label = get(METRIC_LABELS, metric_name, metric_name)
 
-            # Get the best experiment ID and extract parameters
-            best_exp_id = metric_data["best_experiment"]
+        # Get all degrees for this metric
+        degrees = sort(collect(keys(metric_by_degree)))
 
-            # Try to extract parameters from experiment stats
-            best_exp_display = extract_experiment_params(best_exp_id, exp_stats, exp_width)
+        # For metrics with multiple degrees, show best overall (min across all degrees)
+        if length(degrees) > 1 && all(deg != 0 for deg in degrees)
+            # Find best performer across all degrees
+            best_val = Inf
+            best_exp_id = ""
+            best_deg = 0
 
-            best_val = format_value(metric_data["min"])
+            for deg in degrees
+                metric_data = metric_by_degree[deg]
+                if haskey(metric_data, "min") && metric_data["min"] < best_val
+                    best_val = metric_data["min"]
+                    best_exp_id = metric_data["best_experiment"]
+                    best_deg = deg
+                end
+            end
 
-            @printf(io, "%-*s: %-*s → %*s\n",
-                    name_width, truncate_string(label, name_width),
-                    exp_width, truncate_string(best_exp_display, exp_width),
-                    val_width, best_val)
+            if best_exp_id != ""
+                best_exp_display = extract_experiment_params(best_exp_id, exp_stats, exp_width)
+                @printf(io, "%-*s: %-*s → %*s (deg %d)\n",
+                        name_width, truncate_string(label, name_width),
+                        exp_width, truncate_string(best_exp_display, exp_width),
+                        val_width, format_value(best_val),
+                        best_deg)
+            end
+        else
+            # Single degree or degree=0 (overall metric)
+            deg = first(degrees)
+            metric_data = metric_by_degree[deg]
+
+            if haskey(metric_data, "best_experiment")
+                best_exp_id = metric_data["best_experiment"]
+                best_exp_display = extract_experiment_params(best_exp_id, exp_stats, exp_width)
+                best_val = format_value(metric_data["min"])
+
+                @printf(io, "%-*s: %-*s → %*s\n",
+                        name_width, truncate_string(label, name_width),
+                        exp_width, truncate_string(best_exp_display, exp_width),
+                        val_width, best_val)
+            end
         end
     end
 end

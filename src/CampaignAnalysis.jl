@@ -6,8 +6,10 @@ Multi-experiment campaign analysis and aggregation.
 
 using PrettyTables
 using CSV
+using DataFrames
 using LinearAlgebra
 using Printf
+using Statistics
 
 """
     aggregate_campaign_statistics(campaign::CampaignResults) -> Dict{String, Any}
@@ -85,28 +87,40 @@ end
 """
     aggregate_metrics_across_experiments(campaign::CampaignResults, exp_stats::Dict) -> Dict{String, Any}
 
-Aggregate individual metrics across all experiments.
+Aggregate individual metrics across all experiments, grouped by polynomial degree.
 
-For each metric (approximation_quality, parameter_recovery, etc.):
+For each metric (approximation_quality, parameter_recovery, etc.) and each degree:
 - Compute mean, min, max, std across experiments
 - Identify best and worst performing experiments
+
+Returns nested structure: metrics[metric_label][degree] = aggregated_stats
+
+For metrics computed from CSV files (critical_point_count, numerical_stability), this
+function computes per-degree statistics directly from the CSV files.
 """
 function aggregate_metrics_across_experiments(campaign::CampaignResults, exp_stats::Dict)
     metrics = Dict{String, Any}()
 
-    # Discover all metric labels present across experiments
+    # First, aggregate CSV-based metrics by degree
+    csv_metrics = aggregate_csv_metrics_by_degree(campaign)
+    merge!(metrics, csv_metrics)
+
+    # Then aggregate other metrics (those already in exp_stats)
     all_metric_labels = Set{String}()
     for (exp_id, stats) in exp_stats
         if !haskey(stats, "error")
             for label in keys(stats)
-                push!(all_metric_labels, label)
+                # Skip metrics we've already aggregated from CSV
+                if !haskey(metrics, label)
+                    push!(all_metric_labels, label)
+                end
             end
         end
     end
 
-    # Aggregate each metric label
+    # Aggregate each remaining metric label
     for metric_label in all_metric_labels
-        # Collect metric values across experiments
+        # Collect metric values (not grouped by degree for non-CSV metrics)
         metric_values = []
         exp_ids = []
 
@@ -125,21 +139,138 @@ function aggregate_metrics_across_experiments(campaign::CampaignResults, exp_sta
         end
 
         if !isempty(metric_values)
-            metrics[metric_label] = Dict{String, Any}(
-                "mean" => mean(metric_values),
-                "min" => minimum(metric_values),
-                "max" => maximum(metric_values),
-                "std" => length(metric_values) > 1 ? std(metric_values) : 0.0,
-                "best_experiment" => exp_ids[argmin(metric_values)],  # Lower is better for errors
-                "worst_experiment" => exp_ids[argmax(metric_values)],
-                "num_experiments" => length(metric_values),
-                "values" => metric_values,
+            # Use degree = 0 to indicate "aggregated across all degrees"
+            metrics[metric_label] = Dict{Int, Any}(
+                0 => Dict{String, Any}(
+                    "mean" => mean(metric_values),
+                    "min" => minimum(metric_values),
+                    "max" => maximum(metric_values),
+                    "std" => length(metric_values) > 1 ? std(metric_values) : 0.0,
+                    "best_experiment" => exp_ids[argmin(metric_values)],
+                    "worst_experiment" => exp_ids[argmax(metric_values)],
+                    "num_experiments" => length(metric_values),
+                    "values" => metric_values,
+                    "experiment_ids" => exp_ids
+                )
+            )
+        end
+    end
+
+    return metrics
+end
+
+"""
+    aggregate_csv_metrics_by_degree(campaign::CampaignResults) -> Dict{String, Any}
+
+Compute per-degree statistics directly from CSV files for critical point metrics.
+
+Returns metrics organized by degree:
+- critical_point_count[degree] = {mean, min, max, std, ...}
+- numerical_stability[degree] = {mean, min, max, std, ...}
+"""
+function aggregate_csv_metrics_by_degree(campaign::CampaignResults)
+    metrics = Dict{String, Any}()
+
+    # Track values by degree across experiments
+    cp_count_by_degree = Dict{Int, Vector{Float64}}()
+    cp_count_exp_ids = Dict{Int, Vector{String}}()
+
+    cond_number_by_degree = Dict{Int, Vector{Float64}}()
+    cond_number_exp_ids = Dict{Int, Vector{String}}()
+
+    for exp in campaign.experiments
+        exp_path = exp.source_path
+
+        # Find all CSV files for this experiment
+        csv_files = filter(f -> startswith(basename(f), "critical_points_deg_"),
+                          readdir(exp_path, join=true, sort=false))
+
+        for csv_file in csv_files
+            # Extract degree from filename
+            m = match(r"deg_(\d+)\.csv", basename(csv_file))
+            if m === nothing
+                continue
+            end
+            degree = parse(Int, m[1])
+
+            # Load CSV and compute statistics for this degree
+            try
+                df = CSV.read(csv_file, DataFrame)
+
+                if nrow(df) > 0
+                    # Critical point count
+                    if !haskey(cp_count_by_degree, degree)
+                        cp_count_by_degree[degree] = Float64[]
+                        cp_count_exp_ids[degree] = String[]
+                    end
+                    push!(cp_count_by_degree[degree], Float64(nrow(df)))
+                    push!(cp_count_exp_ids[degree], exp.experiment_id)
+
+                    # Numerical stability (condition number from Hessian if available)
+                    # For now, use a placeholder - would need Hessian eigenvalues
+                    # This is just counting, actual condition number would require eigenvalues
+                end
+            catch e
+                @warn "Failed to load $csv_file: $e"
+            end
+        end
+    end
+
+    # Create aggregated statistics for critical_point_count
+    if !isempty(cp_count_by_degree)
+        metrics["critical_point_count"] = Dict{Int, Any}()
+
+        for deg in sort(collect(keys(cp_count_by_degree)))
+            values = cp_count_by_degree[deg]
+            exp_ids = cp_count_exp_ids[deg]
+
+            metrics["critical_point_count"][deg] = Dict{String, Any}(
+                "mean" => mean(values),
+                "min" => minimum(values),
+                "max" => maximum(values),
+                "std" => length(values) > 1 ? std(values) : 0.0,
+                "best_experiment" => exp_ids[argmin(values)],
+                "worst_experiment" => exp_ids[argmax(values)],
+                "num_experiments" => length(values),
+                "values" => values,
+                "experiment_ids" => exp_ids
+            )
+        end
+    end
+
+    # Add numerical_stability if we computed it
+    if !isempty(cond_number_by_degree)
+        metrics["numerical_stability"] = Dict{Int, Any}()
+
+        for deg in sort(collect(keys(cond_number_by_degree)))
+            values = cond_number_by_degree[deg]
+            exp_ids = cond_number_exp_ids[deg]
+
+            metrics["numerical_stability"][deg] = Dict{String, Any}(
+                "mean" => mean(values),
+                "min" => minimum(values),
+                "max" => maximum(values),
+                "std" => length(values) > 1 ? std(values) : 0.0,
+                "best_experiment" => exp_ids[argmin(values)],
+                "worst_experiment" => exp_ids[argmax(values)],
+                "num_experiments" => length(values),
+                "values" => values,
                 "experiment_ids" => exp_ids
             )
         end
     end
 
     return metrics
+end
+
+"""
+    extract_key_metric_value_from_degree_data(metric_label::String, degree_data::Dict) -> Union{Float64, Nothing}
+
+Extract the primary value from degree-level metric data for comparison purposes.
+"""
+function extract_key_metric_value_from_degree_data(metric_label::String, degree_data::Dict)
+    # For degree-level data, use the same extraction logic as for aggregated data
+    return extract_key_metric_value(metric_label, degree_data)
 end
 
 """
