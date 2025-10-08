@@ -87,17 +87,18 @@ For each metric (approximation_quality, parameter_recovery, etc.):
 function aggregate_metrics_across_experiments(campaign::CampaignResults, exp_stats::Dict)
     metrics = Dict{String, Any}()
 
-    # Common metric labels to aggregate
-    metric_labels = [
-        "approximation_quality",
-        "parameter_recovery",
-        "numerical_stability",
-        "critical_points",
-        "refinement_quality",
-        "optimization_quality"
-    ]
+    # Discover all metric labels present across experiments
+    all_metric_labels = Set{String}()
+    for (exp_id, stats) in exp_stats
+        if !haskey(stats, "error")
+            for label in keys(stats)
+                push!(all_metric_labels, label)
+            end
+        end
+    end
 
-    for metric_label in metric_labels
+    # Aggregate each metric label
+    for metric_label in all_metric_labels
         # Collect metric values across experiments
         metric_values = []
         exp_ids = []
@@ -148,10 +149,18 @@ function extract_key_metric_value(metric_label::String, metric_data::Dict)
         return get(metric_data, "mean_condition_number", nothing)
     elseif metric_label == "critical_points"
         return Float64(get(metric_data, "total_refined", 0))
+    elseif metric_label == "critical_point_count"
+        return Float64(get(metric_data, "total_points", 0))
+    elseif metric_label == "refined_critical_points"
+        return Float64(get(metric_data, "total_points", 0))
     elseif metric_label == "refinement_quality"
         return get(metric_data, "success_rate", nothing)
     elseif metric_label == "optimization_quality"
         return get(metric_data, "best_objective", nothing)
+    elseif metric_label in ["polynomial_timing", "solving_timing", "refinement_timing", "total_timing"]
+        return get(metric_data, "mean_time", nothing)
+    elseif metric_label == "timing"
+        return get(metric_data, "total_time", nothing)
     end
 
     return nothing
@@ -306,19 +315,26 @@ function analyze_campaign(campaign::CampaignResults)
 
     # Print metric aggregations
     metrics = agg_stats["aggregated_metrics"]
-    if haskey(metrics, "approximation_quality")
-        println("\n📉 Approximation Quality (L2 Error):")
-        aq = metrics["approximation_quality"]
-        println("  Mean: $(format_scientific(aq["mean"]))")
-        println("  Range: [$(format_scientific(aq["min"])), $(format_scientific(aq["max"]))]")
-        println("  Best: $(aq["best_experiment"])")
-    end
 
-    if haskey(metrics, "parameter_recovery")
-        println("\n🎯 Parameter Recovery:")
-        pr = metrics["parameter_recovery"]
-        println("  Mean error: $(format_scientific(pr["mean"]))")
-        println("  Best: $(pr["best_experiment"])")
+    if !isempty(metrics)
+        println("\n📊 Aggregated Metrics Across Experiments:")
+        println("-" ^ 80)
+
+        for (metric_name, metric_data) in sort(collect(metrics), by=x->x[1])
+            println("\n$(metric_name):")
+            for (key, value) in metric_data
+                if key in ["values", "experiment_ids"]
+                    # Skip printing raw arrays
+                    continue
+                elseif value isa Number
+                    println("  $key: $(format_scientific(Float64(value)))")
+                else
+                    println("  $key: $value")
+                end
+            end
+        end
+    else
+        println("\n⚠️  No aggregated metrics available")
     end
 
     println("\n" * "="^80)
