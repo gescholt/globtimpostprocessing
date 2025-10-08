@@ -151,8 +151,41 @@ Load from results_summary.json format (primary globtimcore output).
 function load_from_results_summary(dir_path::String, results_file::String)
     data = JSON.parsefile(results_file)
 
+    # Handle two formats:
+    # 1. Array format: [{degree: 4, ...}, {degree: 5, ...}]
+    # 2. Dict format: {results_summary: {degree_4: {...}, degree_5: {...}}}
+    if data isa Vector
+        # Convert array format to dict format
+        normalized_data = Dict{String, Any}(
+            "results_summary" => Dict{String, Any}(
+                "degree_$(result["degree"])" => result
+                for result in data if haskey(result, "degree")
+            )
+        )
+        data = normalized_data
+    end
+
     # Extract experiment ID
     experiment_id = get(data, "experiment_id", basename(dir_path))
+
+    # Extract degrees from results_summary if not explicitly provided
+    results_summary = get(data, "results_summary", Dict())
+    degrees_processed = get(data, "degrees_processed", nothing)
+
+    # If degrees_processed not found, extract from results_summary keys
+    if degrees_processed === nothing && !isempty(results_summary)
+        extracted_degrees = Int[]
+        for key in keys(results_summary)
+            # Extract degree number from "degree_N" keys
+            degree_str = replace(string(key), "degree_" => "")
+            try
+                push!(extracted_degrees, parse(Int, degree_str))
+            catch
+                # Skip non-numeric keys
+            end
+        end
+        degrees_processed = sort(extracted_degrees)
+    end
 
     # Build metadata
     metadata = Dict{String, Any}(
@@ -164,8 +197,8 @@ function load_from_results_summary(dir_path::String, results_file::String)
         "total_time" => get(data, "total_time", nothing),
         "success_rate" => get(data, "success_rate", nothing),
         "total_critical_points" => get(data, "total_critical_points", nothing),
-        "degrees_processed" => get(data, "degrees_processed", nothing),
-        "results_summary" => get(data, "results_summary", Dict())
+        "degrees_processed" => degrees_processed,
+        "results_summary" => results_summary
     )
 
     # Discover tracking labels from data

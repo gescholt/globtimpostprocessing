@@ -4,6 +4,11 @@
 Multi-experiment campaign analysis and aggregation.
 """
 
+using PrettyTables
+using CSV
+using LinearAlgebra
+using Printf
+
 """
     aggregate_campaign_statistics(campaign::CampaignResults) -> Dict{String, Any}
 
@@ -42,6 +47,8 @@ function aggregate_campaign_statistics(
     for (idx, exp) in enumerate(campaign.experiments)
         try
             stats = compute_statistics(exp)
+            # Include metadata for parameter extraction in reporting
+            stats["metadata"] = exp.metadata
             exp_stats[exp.experiment_id] = stats
 
             # Call progress callback if provided
@@ -317,29 +324,96 @@ function analyze_campaign(campaign::CampaignResults)
     metrics = agg_stats["aggregated_metrics"]
 
     if !isempty(metrics)
-        println("\n📊 Aggregated Metrics Across Experiments:")
-        println("-" ^ 80)
+        # Use new grouped formatting by default
+        # To use old PrettyTables format, set ENV["GLOBTIM_TABLE_STYLE"] = "pretty"
+        use_pretty_tables = get(ENV, "GLOBTIM_TABLE_STYLE", "grouped") == "pretty"
 
-        for (metric_name, metric_data) in sort(collect(metrics), by=x->x[1])
-            println("\n$(metric_name):")
-            for (key, value) in metric_data
-                if key in ["values", "experiment_ids"]
-                    # Skip printing raw arrays
-                    continue
-                elseif value isa Number
-                    println("  $key: $(format_scientific(Float64(value)))")
-                else
-                    println("  $key: $value")
-                end
-            end
+        if use_pretty_tables
+            println("\n📊 Aggregated Metrics Across Experiments:")
+            println("=" ^ 80)
+            format_metrics_pretty_table(metrics, metric_labels)
+        else
+            # Use new grouped formatting
+            formatted_table = format_metrics_table(
+                agg_stats,
+                style=:grouped,
+                max_width=100
+            )
+            print(formatted_table)
         end
     else
         println("\n⚠️  No aggregated metrics available")
     end
 
+    # Add parameter recovery convergence analysis if CSV files are available
+    print_parameter_recovery_table(campaign)
+
     println("\n" * "="^80)
 
     return agg_stats
+end
+
+"""
+    format_metrics_pretty_table(metrics::Dict, _metric_labels::Dict)
+
+Legacy PrettyTables formatting (kept for compatibility).
+Use TableFormatting module for new grouped format.
+"""
+function format_metrics_pretty_table(metrics::Dict, _metric_labels::Dict)
+    # Metric name mappings for better readability
+    metric_labels = Dict(
+        "approximation_quality" => "Approximation Quality (L2 Error)",
+        "parameter_recovery" => "Parameter Recovery Error",
+        "numerical_stability" => "Numerical Stability (Cond. #)",
+        "critical_points" => "Critical Points (Total)",
+        "critical_point_count" => "Critical Points (Raw)",
+        "refined_critical_points" => "Critical Points (Refined)",
+        "refinement_quality" => "Refinement Success Rate",
+        "optimization_quality" => "Optimization Quality",
+        "polynomial_timing" => "Polynomial Construction Time (s)",
+        "solving_timing" => "Solving Time (s)",
+        "refinement_timing" => "Refinement Time (s)",
+        "total_timing" => "Total Computation Time (s)",
+        "timing" => "Total Time (s)"
+    )
+
+    # Create a table with all metrics
+    metric_names = String[]
+    means = String[]
+    mins = String[]
+    maxs = String[]
+    stds = String[]
+    num_exps = Int[]
+    best_exps = String[]
+
+    for (metric_name, metric_data) in sort(collect(metrics), by=x->x[1])
+        # Use human-readable label
+        readable_name = get(metric_labels, metric_name, metric_name)
+        push!(metric_names, readable_name)
+
+        # Format values
+        push!(means, format_scientific(get(metric_data, "mean", NaN)))
+        push!(mins, format_scientific(get(metric_data, "min", NaN)))
+        push!(maxs, format_scientific(get(metric_data, "max", NaN)))
+        push!(stds, format_scientific(get(metric_data, "std", NaN)))
+        push!(num_exps, get(metric_data, "num_experiments", 0))
+
+        # Extract short readable label from best experiment
+        best_exp = get(metric_data, "best_experiment", "N/A")
+        best_exp_short = best_exp == "N/A" ? "N/A" : extract_experiment_label(best_exp, max_length=30)
+        push!(best_exps, best_exp_short)
+    end
+
+    # Display table
+    header = ["Metric", "Mean", "Min", "Max", "Std Dev", "N", "Best Experiment"]
+    data = hcat(metric_names, means, mins, maxs, stds, num_exps, best_exps)
+
+    pretty_table(data,
+                header=header,
+                alignment=[:l, :r, :r, :r, :r, :c, :l],
+                crop=:none,
+                header_crayon=crayon"bold cyan",
+                border_crayon=crayon"cyan")
 end
 
 """
@@ -515,18 +589,237 @@ function generate_campaign_markdown_report(campaign::CampaignResults, agg_stats:
 end
 
 """
+    extract_experiment_label(exp_path::String) -> String
+
+Extract a short, readable label from experiment path or ID.
+Tries to extract key parameters like domain size, GN, degree range.
+
+# Examples
+- "4dlv_param_recovery_unified_GN_val=14_deg=3:12" → "GN=14_deg=3:12"
+- "/path/to/lv4d_exp1_range0.4_20251005" → "exp1_range0.4"
+- "very_long_experiment_name_with_lots_of_details" → "very_long_experi..."
+"""
+function extract_experiment_label(exp_path::String; max_length::Int=25)
+    # Get basename (remove directory path)
+    name = basename(exp_path)
+
+    # Try to extract key parameters
+    key_params = String[]
+
+    # Extract GN parameter
+    m = match(r"GN[_=](\d+)", name)
+    if m !== nothing
+        push!(key_params, "GN=$(m[1])")
+    end
+
+    # Extract domain/range parameter
+    m = match(r"(?:domain|range)[_=]?([\d.]+)", name)
+    if m !== nothing
+        push!(key_params, "dom=$(m[1])")
+    end
+
+    # Extract degree range
+    m = match(r"deg[_=]?(\d+:\d+|\d+)", name)
+    if m !== nothing
+        push!(key_params, "deg=$(m[1])")
+    end
+
+    # Extract experiment number
+    m = match(r"exp[_]?(\d+)", name)
+    if m !== nothing
+        push!(key_params, "exp$(m[1])")
+    end
+
+    # If we extracted key parameters, use those
+    if !isempty(key_params)
+        label = join(key_params, "_")
+    else
+        # Otherwise use the full name
+        label = name
+    end
+
+    # Truncate if still too long
+    if length(label) > max_length
+        label = label[1:max_length-3] * "..."
+    end
+
+    return label
+end
+
+"""
     format_scientific(x::Float64) -> String
 
 Format a float in scientific notation for reports.
+Uses scientific notation for very small (< 1e-3) or very large (> 1e4) values.
 """
 function format_scientific(x::Float64)
     if isnan(x)
         return "N/A"
-    elseif abs(x) < 1e-10
-        return @sprintf("%.2e", x)
-    elseif abs(x) < 0.01
+    elseif isinf(x)
+        return x > 0 ? "+Inf" : "-Inf"
+    elseif abs(x) < 1e-3 || abs(x) > 1e4
+        # Use scientific notation for very small or very large values
         return @sprintf("%.2e", x)
     else
+        # Use fixed notation for moderate values
         return @sprintf("%.4f", x)
+    end
+end
+
+"""
+    print_parameter_recovery_table(campaign::CampaignResults)
+
+Print parameter recovery convergence table showing best distances by degree.
+Loads critical points from CSV files and computes L2 distances to true parameters.
+"""
+function print_parameter_recovery_table(campaign::CampaignResults)
+    # Try to load CSV files for each experiment
+    exp_data = []
+
+    for exp in campaign.experiments
+        exp_path = exp.source_path
+
+        # Load experiment config to get true parameters
+        config_file = joinpath(exp_path, "experiment_config.json")
+        if !isfile(config_file)
+            continue
+        end
+
+        config = JSON.parsefile(config_file)
+
+        # Get true parameters
+        p_true = if haskey(config, "p_true")
+            collect(config["p_true"])
+        elseif haskey(config, "p_center")
+            collect(config["p_center"])
+        else
+            continue  # Skip if no true parameters
+        end
+
+        # Load critical points by degree
+        csv_files = filter(f -> startswith(basename(f), "critical_points_deg_"),
+                          readdir(exp_path, join=true))
+
+        if isempty(csv_files)
+            continue
+        end
+
+        cp_by_degree = Dict{Int, DataFrame}()
+        for csv_file in csv_files
+            m = match(r"deg_(\d+)\.csv", basename(csv_file))
+            if m !== nothing
+                degree = parse(Int, m[1])
+                try
+                    df = CSV.read(csv_file, DataFrame)
+                    cp_by_degree[degree] = df
+                catch
+                    # Skip files that can't be loaded
+                end
+            end
+        end
+
+        if !isempty(cp_by_degree)
+            push!(exp_data, (
+                exp_id = exp.experiment_id,
+                p_true = p_true,
+                cp_by_degree = cp_by_degree
+            ))
+        end
+    end
+
+    if isempty(exp_data)
+        # No CSV data available, skip this section
+        return
+    end
+
+    println("\n📉 PARAMETER RECOVERY CONVERGENCE")
+    println("="^80)
+
+    # Helper function to compute parameter distance
+    function param_distance(cp_row, p_true)
+        n_params = length(p_true)
+        p_found = [cp_row[Symbol("x$i")] for i in 1:n_params]
+        return norm(p_found .- p_true)
+    end
+
+    # Collect all degrees
+    all_degrees = Set{Int}()
+    for exp in exp_data
+        union!(all_degrees, keys(exp.cp_by_degree))
+    end
+    degrees = sort(collect(all_degrees))
+
+    if isempty(degrees)
+        return
+    end
+
+    # Print table header
+    @printf("%-8s", "Degree")
+    for (i, _) in enumerate(exp_data)
+        short_id = length(exp_data) > 1 ? "Exp$i" : "Distance"
+        @printf(" | %15s", short_id)
+    end
+    println()
+    println("-"^(8 + length(exp_data) * 18))
+
+    # Print rows for each degree
+    for deg in degrees
+        @printf("%-8d", deg)
+
+        for exp in exp_data
+            if haskey(exp.cp_by_degree, deg)
+                df = exp.cp_by_degree[deg]
+                if nrow(df) > 0
+                    distances = [param_distance(row, exp.p_true) for row in eachrow(df)]
+                    min_dist = minimum(distances)
+                    @printf(" | %15.6e", min_dist)
+                else
+                    @printf(" | %15s", "N/A")
+                end
+            else
+                @printf(" | %15s", "-")
+            end
+        end
+        println()
+    end
+
+    println()
+
+    # Print best critical points for each degree (if only one experiment)
+    if length(exp_data) == 1
+        println("\n📊 BEST CRITICAL POINTS BY DEGREE")
+        println("="^80)
+
+        exp = exp_data[1]
+
+        for deg in degrees
+            if !haskey(exp.cp_by_degree, deg)
+                continue
+            end
+
+            df = exp.cp_by_degree[deg]
+            if nrow(df) == 0
+                continue
+            end
+
+            # Find best point for this degree
+            distances = [param_distance(row, exp.p_true) for row in eachrow(df)]
+            best_idx = argmin(distances)
+            best_row = df[best_idx, :]
+            best_dist = distances[best_idx]
+
+            n_params = length(exp.p_true)
+            p_found = [best_row[Symbol("x$i")] for i in 1:n_params]
+
+            println("\nDegree $deg:")
+            println("  Best distance: $(round(best_dist, sigdigits=6))")
+            println("  Objective value: $(round(best_row.z, sigdigits=6))")
+            println("  Parameters found: [$(join([round(p, sigdigits=6) for p in p_found], ", "))]")
+            println("  True parameters:  [$(join([round(p, sigdigits=6) for p in exp.p_true], ", "))]")
+
+            # Component-wise errors
+            errors = abs.(p_found .- exp.p_true)
+            println("  Component errors: [$(join([round(e, sigdigits=4) for e in errors], ", "))]")
+        end
     end
 end

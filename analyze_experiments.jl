@@ -349,8 +349,10 @@ function generate_detailed_table(campaign_path::String)
             continue
         end
 
-        p_true = collect(config.p_center)  # Convert JSON3.Array to Vector
-        sample_range = config.sample_range
+        # Use p_true if available, otherwise use p_center
+        p_true = haskey(config, :p_true) ? collect(config.p_true) : collect(config.p_center)
+        # Use domain_range if available, otherwise use sample_range
+        sample_range = haskey(config, :domain_range) ? config.domain_range : config.sample_range
 
         # Load all critical points
         cp_by_degree = load_all_critical_points(exp_path)
@@ -443,8 +445,15 @@ function generate_detailed_table(campaign_path::String)
 
     # Create convergence table
     @printf("%-8s", "Degree")
-    for exp in exp_data
-        short_name = replace(exp.name, r".*_exp(\d+)_.*" => s"Exp\1")
+    for (i, exp) in enumerate(exp_data)
+        # Try to extract exp number from name, otherwise use index
+        m = match(r"_exp(\d+)_", exp.name)
+        if m !== nothing
+            short_name = "Exp$(m[1])"
+        else
+            # Use range and index for experiments with same range
+            short_name = "±$(exp.sample_range) #$i"
+        end
         @printf(" | %15s", short_name)
     end
     println()

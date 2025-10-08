@@ -115,6 +115,7 @@ include("ResultsLoader.jl")
 include("LabelDispatcher.jl")
 include("StatisticsCompute.jl")
 include("ReportGenerator.jl")
+include("TableFormatting.jl")   # Terminal-friendly table formatting
 include("CampaignAnalysis.jl")
 include("Plotting.jl")
 include("BatchProcessing.jl")  # Phase 2: Batch processing functionality
