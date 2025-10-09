@@ -38,10 +38,62 @@ const RED = "\033[31m"
 const CYAN = "\033[36m"
 
 """
+    is_experiment_directory(path::String) -> Bool
+
+Check if a directory is a single experiment (contains CSV files directly).
+"""
+function is_experiment_directory(path::String)
+    if !isdir(path)
+        return false
+    end
+
+    # Check for experiment indicators: CSV files or results_summary.json
+    files = readdir(path)
+    has_csv = any(f -> endswith(f, ".csv") && startswith(f, "critical_points_deg_"), files)
+    has_results = "results_summary.json" in files || "results_summary.jld2" in files
+
+    return has_csv || has_results
+end
+
+"""
+    is_campaign_directory(path::String) -> Bool
+
+Check if a directory is a campaign (contains multiple experiment subdirectories).
+A true campaign should have at least 2 experiments with related parameters.
+"""
+function is_campaign_directory(path::String)
+    if !isdir(path)
+        return false
+    end
+
+    # Get subdirectories that look like experiments
+    subdirs = filter(d -> isdir(joinpath(path, d)), readdir(path))
+    exp_dirs = filter(d -> is_experiment_directory(joinpath(path, d)), subdirs)
+
+    # Need at least 2 experiments to be a campaign
+    # (Single experiment should be analyzed as such, not as a 1-experiment "campaign")
+    if length(exp_dirs) < 2
+        return false
+    end
+
+    # Additional heuristic: check if experiments share common naming pattern
+    # indicating they're part of a designed study (e.g., exp1, exp2, exp3 or GN=X variations)
+    # For now, just require >= 2 experiments
+    return true
+end
+
+"""
     discover_campaigns(root_path::String) -> Vector{Tuple{String, Float64}}
 
 Recursively discover all campaign directories containing experiment results.
 Returns tuples of (path, modification_time) sorted by modification time (newest first).
+
+A campaign must:
+1. Have "hpc_results" as a subdirectory (not be hpc_results itself)
+2. Contain at least 2 experiment subdirectories
+3. Not be the top-level hpc_results collection directory
+
+Single experiments and the top-level hpc_results collection are excluded.
 """
 function discover_campaigns(root_path::String)
     campaigns = Tuple{String, Float64}[]
@@ -50,13 +102,30 @@ function discover_campaigns(root_path::String)
         error("Path does not exist: $root_path")
     end
 
-    for (root, dirs, files) in walkdir(root_path)
-        # Check if this directory contains hpc_results
+    for (root, dirs, _) in walkdir(root_path)
+        # Check if this directory contains hpc_results subdirectory
         if "hpc_results" in dirs
             hpc_path = joinpath(root, "hpc_results")
-            # Count experiment directories
-            exp_count = count(isdir(joinpath(hpc_path, d)) for d in readdir(hpc_path))
-            if exp_count > 0
+
+            # Skip flat collection directories (hpc_results at top level of globtimcore, Examples, etc.)
+            # A true campaign should have hpc_results nested within a study/config directory
+            root_basename = basename(root)
+
+            # Heuristic: True campaigns are typically in directories named like:
+            # - configs_YYYYMMDD_HHMMSS (timestamp-based config directories)
+            # - *_study, *_campaign, *_experiment directories
+            # - batch_* directories
+            # Skip if hpc_results is directly under globtimcore, Examples, archives, etc.
+            is_likely_collection = root_basename in ["globtimcore", "Examples", "hpc_results"] ||
+                                  contains(root, "/archives/") ||
+                                  (contains(root, "/Examples/") && !startswith(root_basename, "configs_"))
+
+            if is_likely_collection
+                continue
+            end
+
+            # Check if this is a true campaign (multiple related experiments)
+            if is_campaign_directory(hpc_path)
                 # Get modification time of the hpc_results directory
                 mtime = stat(hpc_path).mtime
                 push!(campaigns, (hpc_path, mtime))
@@ -386,7 +455,7 @@ function generate_detailed_table(campaign_path::String)
 
         # Find best parameter recovery across all degrees
         best_dist = Inf
-        for (deg, df) in exp.cp_by_degree
+        for (_, df) in exp.cp_by_degree
             if nrow(df) > 0
                 distances = [param_distance(row, exp.p_true) for row in eachrow(df)]
                 best_dist = min(best_dist, minimum(distances))
