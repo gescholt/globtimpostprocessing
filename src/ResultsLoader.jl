@@ -41,11 +41,32 @@ function load_experiment_results(path::String)
 end
 
 """
+    is_single_experiment(path::String) -> Bool
+
+Check if a directory is a single experiment (contains CSV/JSON result files directly).
+"""
+function is_single_experiment(path::String)
+    if !isdir(path)
+        return false
+    end
+
+    files = readdir(path)
+    has_csv = any(f -> endswith(f, ".csv") && startswith(f, "critical_points_deg_"), files)
+    has_results = "results_summary.json" in files || "results_summary.jld2" in files
+
+    return has_csv || has_results
+end
+
+"""
     load_campaign_results(campaign_dir::String) -> CampaignResults
 
-Load multiple experiment results from a campaign directory.
+Load experiment results from a campaign directory or single experiment.
 
-Expects directory structure:
+Auto-detects whether the path is:
+- A single experiment (contains CSV/JSON files directly) → loads as 1-experiment campaign
+- A campaign directory (contains experiment subdirectories) → loads all experiments
+
+Expects directory structure (campaign):
 ```
 campaign_dir/
 ├── experiment_1/
@@ -53,11 +74,19 @@ campaign_dir/
 └── campaign_metadata.json (optional)
 ```
 
+Or single experiment:
+```
+experiment_dir/
+├── critical_points_deg_4.csv
+├── critical_points_deg_5.csv
+└── results_summary.json
+```
+
 # Arguments
-- `campaign_dir::String`: Path to campaign directory containing multiple experiments
+- `campaign_dir::String`: Path to campaign directory or single experiment
 
 # Returns
-- `CampaignResults`: Collection of all experiment results
+- `CampaignResults`: Collection of experiment results (1 or more)
 """
 function load_campaign_results(campaign_dir::String)
     if !isdir(campaign_dir)
@@ -69,21 +98,35 @@ function load_campaign_results(campaign_dir::String)
     experiments = ExperimentResult[]
     campaign_metadata = Dict{String, Any}()
 
-    # Look for campaign metadata
-    campaign_meta_path = joinpath(campaign_dir, "campaign_metadata.json")
-    if isfile(campaign_meta_path)
-        campaign_metadata = JSON.parsefile(campaign_meta_path)
-    end
+    # Auto-detect: is this a single experiment or a campaign directory?
+    if is_single_experiment(campaign_dir)
+        # This is a single experiment - load it as a 1-experiment campaign
+        println("  ℹ️  Detected single experiment (will load as 1-experiment campaign)")
+        try
+            exp_result = load_experiment_results(campaign_dir)
+            push!(experiments, exp_result)
+            println("  ✓ Loaded: $(exp_result.experiment_id)")
+        catch e
+            error("Failed to load experiment: $e")
+        end
+    else
+        # This is a campaign directory - look for experiment subdirectories
+        # Look for campaign metadata
+        campaign_meta_path = joinpath(campaign_dir, "campaign_metadata.json")
+        if isfile(campaign_meta_path)
+            campaign_metadata = JSON.parsefile(campaign_meta_path)
+        end
 
-    # Find all experiment subdirectories
-    for entry in readdir(campaign_dir, join=true)
-        if isdir(entry)
-            try
-                exp_result = load_experiment_results(entry)
-                push!(experiments, exp_result)
-                println("  ✓ Loaded: $(exp_result.experiment_id)")
-            catch e
-                println("  ⚠ Skipped $(basename(entry)): $e")
+        # Find all experiment subdirectories
+        for entry in readdir(campaign_dir, join=true)
+            if isdir(entry)
+                try
+                    exp_result = load_experiment_results(entry)
+                    push!(experiments, exp_result)
+                    println("  ✓ Loaded: $(exp_result.experiment_id)")
+                catch e
+                    println("  ⚠ Skipped $(basename(entry)): $e")
+                end
             end
         end
     end

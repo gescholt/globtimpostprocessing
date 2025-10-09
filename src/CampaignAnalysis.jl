@@ -425,16 +425,25 @@ prints a human-readable summary to stdout.
 - `Dict{String, Any}`: Aggregated campaign statistics
 """
 function analyze_campaign(campaign::CampaignResults)
+    # Check if this is a single experiment (show per-degree stats) or multi-experiment campaign
+    is_single_experiment = length(campaign.experiments) == 1
+
     println("\n" * "="^80)
-    println("📊 CAMPAIGN ANALYSIS: $(campaign.campaign_id)")
-    println("="^80)
+    if is_single_experiment
+        println("📊 SINGLE EXPERIMENT ANALYSIS: $(campaign.campaign_id)")
+        println("="^80)
+        println("\nNote: Showing per-degree statistics (1 experiment)")
+    else
+        println("📊 CAMPAIGN ANALYSIS: $(campaign.campaign_id)")
+        println("="^80)
+    end
 
     # Compute aggregated statistics
     agg_stats = aggregate_campaign_statistics(campaign)
 
     # Print summary
     summary = agg_stats["campaign_summary"]
-    println("\n📋 Campaign Summary:")
+    println("\n📋 $(is_single_experiment ? "Experiment" : "Campaign") Summary:")
     println("  Total experiments: $(summary["num_experiments"])")
     println("  Successful: $(summary["successful_experiments"]) ($(round(summary["success_rate"]*100, digits=1))%)")
     println("  Total computation time: $(round(summary["total_computation_hours"], digits=2)) hours")
