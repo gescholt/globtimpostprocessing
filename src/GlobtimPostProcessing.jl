@@ -48,22 +48,10 @@ export analyze_campaign, aggregate_campaign_statistics
 export generate_report, generate_campaign_report
 export save_report, generate_and_save_report, save_campaign_report
 export ExperimentResult, CampaignResults
-export PlotBackend, Interactive, Static
-export create_experiment_plots, create_campaign_comparison_plot, create_single_plot, save_plot
 
 # Phase 2: Batch processing exports
 export batch_analyze_campaign, load_campaign_with_progress
 export aggregate_campaign_statistics_with_progress, batch_analyze_campaign_with_progress
-
-# VegaLite + Tidier exports
-export campaign_to_dataframe, create_interactive_campaign_explorer
-export campaign_to_tidy_dataframe, compute_campaign_summary_stats
-export compute_convergence_analysis, compute_efficiency_metrics
-export compute_parameter_sensitivity, filter_best_experiments
-export pivot_metrics_longer, add_comparison_baseline
-export create_convergence_dashboard, create_parameter_sensitivity_plot
-export create_multi_metric_comparison, create_efficiency_analysis
-export create_outlier_detection_plot, create_baseline_comparison
 
 # Define types first
 """
@@ -117,8 +105,26 @@ include("StatisticsCompute.jl")
 include("ReportGenerator.jl")
 include("TableFormatting.jl")   # Terminal-friendly table formatting
 include("CampaignAnalysis.jl")
-include("Plotting.jl")
 include("BatchProcessing.jl")  # Phase 2: Batch processing functionality
-include("VegaPlotting.jl")      # VegaLite + Tidier interactive visualizations
+
+# Import GlobtimPlots after our types are defined
+# Campaign plotting functionality is now properly exported by GlobtimPlots
+# (CampaignPlotting.jl, VegaPlotting.jl, VegaPlottingMinimal.jl, TidierTransforms.jl)
+# These functions work with our ExperimentResult and CampaignResults types via duck typing
+using GlobtimPlots
+
+# Re-export plotting functions from GlobtimPlots for backward compatibility
+# Users can do: using GlobtimPostProcessing; create_experiment_plots(...)
+export PlotBackend, Interactive, Static
+export create_experiment_plots, create_campaign_comparison_plot, create_single_plot, save_plot
+export generate_experiment_labels
+
+# Note: VegaLite-based plotting functions are temporarily unavailable
+# due to VegaLite dependency conflicts. Use Makie-based functions above instead.
+# These will be re-enabled once compatibility is resolved:
+# - campaign_to_dataframe, create_interactive_campaign_explorer
+# - campaign_to_tidy_dataframe, compute_campaign_summary_stats
+# - create_convergence_dashboard, create_parameter_sensitivity_plot
+# - create_multi_metric_comparison, create_efficiency_analysis
 
 end # module GlobtimPostProcessing
