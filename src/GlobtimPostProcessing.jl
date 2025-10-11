@@ -107,24 +107,18 @@ include("TableFormatting.jl")   # Terminal-friendly table formatting
 include("CampaignAnalysis.jl")
 include("BatchProcessing.jl")  # Phase 2: Batch processing functionality
 
-# Import GlobtimPlots after our types are defined
-# Campaign plotting functionality is now properly exported by GlobtimPlots
-# (CampaignPlotting.jl, VegaPlotting.jl, VegaPlottingMinimal.jl, TidierTransforms.jl)
-# These functions work with our ExperimentResult and CampaignResults types via duck typing
-using GlobtimPlots
-
-# Re-export plotting functions from GlobtimPlots for backward compatibility
-# Users can do: using GlobtimPostProcessing; create_experiment_plots(...)
-export PlotBackend, Interactive, Static
-export create_experiment_plots, create_campaign_comparison_plot, create_single_plot, save_plot
-export generate_experiment_labels
-
-# Note: VegaLite-based plotting functions are temporarily unavailable
-# due to VegaLite dependency conflicts. Use Makie-based functions above instead.
-# These will be re-enabled once compatibility is resolved:
-# - campaign_to_dataframe, create_interactive_campaign_explorer
-# - campaign_to_tidy_dataframe, compute_campaign_summary_stats
-# - create_convergence_dashboard, create_parameter_sensitivity_plot
-# - create_multi_metric_comparison, create_efficiency_analysis
+# NOTE: Plotting functionality has been moved to GlobtimPlots package
+# To create visualizations, use:
+#     using GlobtimPostProcessing
+#     using GlobtimPlots
+#     plots = create_experiment_plots(experiment_result)
+#
+# GlobtimPlots provides:
+# - create_experiment_plots, create_campaign_comparison_plot, create_single_plot, save_plot
+# - PlotBackend types: Interactive, Static
+# - generate_experiment_labels
+#
+# This separation ensures GlobtimPostProcessing remains a pure data analysis package
+# without heavy plotting dependencies.
 
 end # module GlobtimPostProcessing
