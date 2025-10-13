@@ -1,0 +1,57 @@
+Lotka-Volterra 4D Experiment 1 Summary
+============================================================
+Generated: 2025-10-09T15:41:59.523
+
+Configuration:
+  Experiment ID: 1
+  Domain Range: 0.4
+  Dimension: 4
+  GN (samples per dim): 16
+  Degree range tested: 4 to 12
+  True parameters: [0.2, 0.3, 0.5, 0.6]
+  Domain center: [0.22400297579961453, 0.27321104265283463, 0.4733957065001409, 0.5776746672054316]
+
+Results Summary:
+  Successful degrees: 9/9
+  Best degree (lowest L2 norm): 12
+    L2 norm: 3865.4588492387734
+    Condition number: 16.0000000000001
+    Critical points: 30
+
+Timing Summary:
+─────────────────────────────────────────────────────────────────────────────────────────────
+                                                    Time                    Allocations      
+                                           ───────────────────────   ────────────────────────
+             Tot / % measured:                   449s /  97.0%           68.1GiB /  93.9%    
+
+Section                            ncalls     time    %tot     avg     alloc    %tot      avg
+─────────────────────────────────────────────────────────────────────────────────────────────
+constructor_deg_12                      1     197s   45.2%    197s   12.7GiB   19.8%  12.7GiB
+  solve_polynomial_deg_12               1     186s   42.7%    186s   7.78GiB   12.2%  7.78GiB
+  process_critical_points_deg_12        1   1.44ms    0.0%  1.44ms   1.33MiB    0.0%  1.33MiB
+constructor_deg_11                      1    97.0s   22.3%   97.0s   9.88GiB   15.5%  9.88GiB
+  solve_polynomial_deg_11               1    88.4s   20.3%   88.4s   5.35GiB    8.4%  5.35GiB
+  process_critical_points_deg_11        1   1.11ms    0.0%  1.11ms   1.11MiB    0.0%  1.11MiB
+constructor_deg_10                      1    48.9s   11.2%   48.9s   7.94GiB   12.4%  7.94GiB
+  solve_polynomial_deg_10               1    41.7s    9.6%   41.7s   3.67GiB    5.7%  3.67GiB
+  process_critical_points_deg_10        1    840μs    0.0%   840μs    774KiB    0.0%   774KiB
+constructor_deg_9                       1    27.7s    6.4%   27.7s   6.50GiB   10.2%  6.50GiB
+  solve_polynomial_deg_9                1    21.2s    4.9%   21.2s   2.43GiB    3.8%  2.43GiB
+  process_critical_points_deg_9         1    748μs    0.0%   748μs    683KiB    0.0%   683KiB
+constructor_deg_4                       1    23.6s    5.4%   23.6s   7.86GiB   12.3%  7.86GiB
+  solve_polynomial_deg_4                1    16.4s    3.8%   16.4s   3.74GiB    5.9%  3.74GiB
+  process_critical_points_deg_4         1    777ms    0.2%   777ms    152MiB    0.2%   152MiB
+constructor_deg_8                       1    15.8s    3.6%   15.8s   5.56GiB    8.7%  5.56GiB
+  solve_polynomial_deg_8                1    10.1s    2.3%   10.1s   1.62GiB    2.5%  1.62GiB
+  process_critical_points_deg_8         1    577μs    0.0%   577μs    324KiB    0.0%   324KiB
+constructor_deg_7                       1    10.6s    2.4%   10.6s   4.89GiB    7.7%  4.89GiB
+  solve_polynomial_deg_7                1    5.29s    1.2%   5.29s   1.07GiB    1.7%  1.07GiB
+  process_critical_points_deg_7         1    455μs    0.0%   455μs    321KiB    0.0%   321KiB
+constructor_deg_6                       1    8.18s    1.9%   8.18s   4.44GiB    6.9%  4.44GiB
+  solve_polynomial_deg_6                1    3.24s    0.7%   3.24s    712MiB    1.1%   712MiB
+  process_critical_points_deg_6         1    419μs    0.0%   419μs    276KiB    0.0%   276KiB
+constructor_deg_5                       1    7.08s    1.6%   7.08s   4.17GiB    6.5%  4.17GiB
+  solve_polynomial_deg_5                1    2.32s    0.5%   2.32s    485MiB    0.7%   485MiB
+  process_critical_points_deg_5         1    265μs    0.0%   265μs   95.7KiB    0.0%  95.7KiB
+test_input                              1   35.6ms    0.0%  35.6ms   8.33MiB    0.0%  8.33MiB
+─────────────────────────────────────────────────────────────────────────────────────────────

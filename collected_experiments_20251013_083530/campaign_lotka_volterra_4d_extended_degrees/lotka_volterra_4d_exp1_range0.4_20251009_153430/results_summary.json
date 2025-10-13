@@ -1,0 +1,110 @@
+[
+  {
+    "real_solutions": 7,
+    "L2_norm": 40559.81708521809,
+    "success": true,
+    "condition_number": 16.000000000000018,
+    "degree": 4,
+    "computation_time": 23.239280223846436,
+    "critical_points": 1,
+    "worst_value": 38848.35186850069,
+    "mean_value": 38848.35186850069,
+    "best_value": 38848.35186850069
+  },
+  {
+    "real_solutions": 10,
+    "L2_norm": 23637.851320416008,
+    "success": true,
+    "condition_number": 16.00000000000003,
+    "degree": 5,
+    "computation_time": 7.080460071563721,
+    "critical_points": 2,
+    "worst_value": 16838.811575163832,
+    "mean_value": 9304.776814932131,
+    "best_value": 1770.742054700431
+  },
+  {
+    "real_solutions": 33,
+    "L2_norm": 11838.91953972613,
+    "success": true,
+    "condition_number": 16.000000000000025,
+    "degree": 6,
+    "computation_time": 8.17835807800293,
+    "critical_points": 6,
+    "worst_value": 17360.92641742494,
+    "mean_value": 7976.971877127973,
+    "best_value": 1455.0667033122534
+  },
+  {
+    "real_solutions": 42,
+    "L2_norm": 6952.731698729219,
+    "success": true,
+    "condition_number": 16.000000000000036,
+    "degree": 7,
+    "computation_time": 10.573943138122559,
+    "critical_points": 7,
+    "worst_value": 17902.991973839762,
+    "mean_value": 13019.342006366509,
+    "best_value": 3184.6156091386038
+  },
+  {
+    "real_solutions": 75,
+    "L2_norm": 6212.067286365075,
+    "success": true,
+    "condition_number": 16.00000000000005,
+    "degree": 8,
+    "computation_time": 15.810045957565308,
+    "critical_points": 7,
+    "worst_value": 17791.45914088373,
+    "mean_value": 14228.842638387101,
+    "best_value": 3090.2993670965843
+  },
+  {
+    "real_solutions": 106,
+    "L2_norm": 5535.000683777006,
+    "success": true,
+    "condition_number": 16.00000000000005,
+    "degree": 9,
+    "computation_time": 27.705838203430176,
+    "critical_points": 15,
+    "worst_value": 18172.93714106611,
+    "mean_value": 15419.301542414061,
+    "best_value": 4374.094276894644
+  },
+  {
+    "real_solutions": 127,
+    "L2_norm": 4853.3950473635805,
+    "success": true,
+    "condition_number": 16.00000000000006,
+    "degree": 10,
+    "computation_time": 48.893807888031006,
+    "critical_points": 17,
+    "worst_value": 18210.26296945214,
+    "mean_value": 15014.417870159454,
+    "best_value": 3134.771118499
+  },
+  {
+    "real_solutions": 178,
+    "L2_norm": 4310.172234330971,
+    "success": true,
+    "condition_number": 16.000000000000068,
+    "degree": 11,
+    "computation_time": 96.96492791175842,
+    "critical_points": 25,
+    "worst_value": 18189.936867045148,
+    "mean_value": 16430.009585272648,
+    "best_value": 4355.047638695976
+  },
+  {
+    "real_solutions": 225,
+    "L2_norm": 3865.4588492387734,
+    "success": true,
+    "condition_number": 16.0000000000001,
+    "degree": 12,
+    "computation_time": 196.71160006523132,
+    "critical_points": 30,
+    "worst_value": 18244.382558241992,
+    "mean_value": 15225.979737784799,
+    "best_value": 3055.2549334176624
+  }
+]

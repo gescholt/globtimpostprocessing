@@ -1,0 +1,310 @@
+{
+    "results_summary": {
+        "degree_16": {
+            "status": "failed",
+            "error": "MethodError(Base.mapreduce_empty, (HomotopyContinuation.ModelKit.var\"#90#96\"{Vector{HomotopyContinuation.ModelKit.Variable}, Vector{Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}}(HomotopyContinuation.ModelKit.Variable[], Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}[]), Base.BottomRF{typeof(Base.add_sum)}(Base.add_sum), Term{Float64, DynamicPolynomials.Monomial{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}), 0x0000000000007c52)",
+            "computation_time": 15.578967094421387,
+            "critical_points": 0
+        },
+        "degree_8": {
+            "polynomial_construction_time": 0.15520095825195312,
+            "critical_point_processing_time": 8.0108642578125e-5,
+            "condition_number": 3.340538949541603e31,
+            "computation_time": 18.730268001556396,
+            "critical_points": 0,
+            "critical_points_refined": 1117,
+            "total_computation_time": 18.730268001556396,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 3.755197562718209,
+                "converged": 1117,
+                "mean_iterations": 8.722470904207698,
+                "failed": 0,
+                "max_improvement": 22.735411511069678
+            },
+            "file_io_time": 1.1920928955078125e-5,
+            "critical_points_raw": 1117,
+            "refinement_time": 0.031468868255615234,
+            "critical_point_solving_time": 18.542887210845947,
+            "l2_approx_error": 4.140887133861068e-13
+        },
+        "degree_12": {
+            "polynomial_construction_time": 1.3033421039581299,
+            "critical_point_processing_time": 0.00010609626770019531,
+            "condition_number": 4.536380311352808e34,
+            "computation_time": 406.1517639160156,
+            "critical_points": 0,
+            "critical_points_refined": 1451,
+            "total_computation_time": 406.1517639160156,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 305373.22517262865,
+                "converged": 1451,
+                "mean_iterations": 9.679531357684356,
+                "failed": 0,
+                "max_improvement": 2.044783861752448e8
+            },
+            "file_io_time": 1.2159347534179688e-5,
+            "critical_points_raw": 1451,
+            "refinement_time": 0.052783966064453125,
+            "critical_point_solving_time": 404.79476499557495,
+            "l2_approx_error": 2.256326431384308e-12
+        },
+        "degree_18": {
+            "status": "failed",
+            "error": "MethodError(Base.mapreduce_empty, (HomotopyContinuation.ModelKit.var\"#90#96\"{Vector{HomotopyContinuation.ModelKit.Variable}, Vector{Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}}(HomotopyContinuation.ModelKit.Variable[], Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}[]), Base.BottomRF{typeof(Base.add_sum)}(Base.add_sum), Term{Float64, DynamicPolynomials.Monomial{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}), 0x0000000000007c52)",
+            "computation_time": 61.641852140426636,
+            "critical_points": 0
+        },
+        "degree_10": {
+            "polynomial_construction_time": 1.0635449886322021,
+            "critical_point_processing_time": 8.392333984375e-5,
+            "condition_number": 2.3420964120543048e30,
+            "computation_time": 99.25625705718994,
+            "critical_points": 0,
+            "critical_points_refined": 1258,
+            "total_computation_time": 99.25625705718994,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 1.40197749835625e7,
+                "converged": 1258,
+                "mean_iterations": 8.79014308426073,
+                "failed": 0,
+                "max_improvement": 1.7630665597119686e10
+            },
+            "file_io_time": 4.0531158447265625e-6,
+            "critical_points_raw": 1258,
+            "refinement_time": 0.5647950172424316,
+            "critical_point_solving_time": 97.62719488143921,
+            "l2_approx_error": 3.537091951916724e-12
+        },
+        "degree_13": {
+            "polynomial_construction_time": 2.2734339237213135,
+            "critical_point_processing_time": 0.00011014938354492188,
+            "condition_number": 1.0015480272676321e34,
+            "computation_time": 778.8885200023651,
+            "critical_points": 0,
+            "critical_points_refined": 1580,
+            "total_computation_time": 778.8885200023651,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 214541.7661718866,
+                "converged": 1580,
+                "mean_iterations": 10.137974683544304,
+                "failed": 0,
+                "max_improvement": 2.958778906372182e8
+            },
+            "file_io_time": 1.2874603271484375e-5,
+            "critical_points_raw": 1580,
+            "refinement_time": 0.05921506881713867,
+            "critical_point_solving_time": 776.5548720359802,
+            "l2_approx_error": 8.417322413474689e-12
+        },
+        "degree_17": {
+            "status": "failed",
+            "error": "MethodError(Base.mapreduce_empty, (HomotopyContinuation.ModelKit.var\"#90#96\"{Vector{HomotopyContinuation.ModelKit.Variable}, Vector{Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}}(HomotopyContinuation.ModelKit.Variable[], Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}[]), Base.BottomRF{typeof(Base.add_sum)}(Base.add_sum), Term{Float64, DynamicPolynomials.Monomial{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}), 0x0000000000007c52)",
+            "computation_time": 27.48715591430664,
+            "critical_points": 0
+        },
+        "degree_4": {
+            "polynomial_construction_time": 3.1353588104248047,
+            "critical_point_processing_time": 0.029938936233520508,
+            "condition_number": 16.000000000000004,
+            "computation_time": 40.75743103027344,
+            "critical_points": 0,
+            "critical_points_refined": 5,
+            "total_computation_time": 40.75743103027344,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 560.7695468474437,
+                "converged": 5,
+                "mean_iterations": 16.2,
+                "failed": 0,
+                "max_improvement": 812.2850229695399
+            },
+            "file_io_time": 2.193450927734375e-5,
+            "critical_points_raw": 5,
+            "refinement_time": 2.478982925415039,
+            "critical_point_solving_time": 33.54526996612549,
+            "l2_approx_error": 9.590609519742265e-14
+        },
+        "degree_5": {
+            "polynomial_construction_time": 0.043573856353759766,
+            "critical_point_processing_time": 5.0067901611328125e-6,
+            "condition_number": 16.000000000000014,
+            "computation_time": 4.58233904838562,
+            "critical_points": 0,
+            "critical_points_refined": 11,
+            "total_computation_time": 4.58233904838562,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 7.658928755875864e9,
+                "converged": 11,
+                "mean_iterations": 20.272727272727273,
+                "failed": 3,
+                "max_improvement": 1.6410105469607197e10
+            },
+            "file_io_time": 3.814697265625e-6,
+            "critical_points_raw": 14,
+            "refinement_time": 0.011120080947875977,
+            "critical_point_solving_time": 4.527261972427368,
+            "l2_approx_error": 9.579566261020675e-14
+        },
+        "degree_14": {
+            "status": "failed",
+            "error": "MethodError(Base.mapreduce_empty, (HomotopyContinuation.ModelKit.var\"#90#96\"{Vector{HomotopyContinuation.ModelKit.Variable}, Vector{Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}}(HomotopyContinuation.ModelKit.Variable[], Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}[]), Base.BottomRF{typeof(Base.add_sum)}(Base.add_sum), Term{Float64, DynamicPolynomials.Monomial{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}), 0x0000000000007c52)",
+            "computation_time": 4.857136964797974,
+            "critical_points": 0
+        },
+        "degree_7": {
+            "polynomial_construction_time": 0.1425631046295166,
+            "critical_point_processing_time": 7.987022399902344e-5,
+            "condition_number": 6.258882938062759e31,
+            "computation_time": 8.713484048843384,
+            "critical_points": 0,
+            "critical_points_refined": 1296,
+            "total_computation_time": 8.713484048843384,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 3.4673611111111104,
+                "converged": 1296,
+                "mean_iterations": 8.627314814814815,
+                "failed": 0,
+                "max_improvement": 13.403849444885173
+            },
+            "file_io_time": 3.814697265625e-6,
+            "critical_points_raw": 1296,
+            "refinement_time": 0.03317689895629883,
+            "critical_point_solving_time": 8.537159204483032,
+            "l2_approx_error": 1.7384405291887348e-13
+        },
+        "degree_15": {
+            "status": "failed",
+            "error": "MethodError(Base.mapreduce_empty, (HomotopyContinuation.ModelKit.var\"#90#96\"{Vector{HomotopyContinuation.ModelKit.Variable}, Vector{Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}}(HomotopyContinuation.ModelKit.Variable[], Variable{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}[]), Base.BottomRF{typeof(Base.add_sum)}(Base.add_sum), Term{Float64, DynamicPolynomials.Monomial{DynamicPolynomials.Commutative{DynamicPolynomials.CreationOrder}, Graded{LexOrder}}}), 0x0000000000007c52)",
+            "computation_time": 8.272815227508545,
+            "critical_points": 0
+        },
+        "degree_9": {
+            "polynomial_construction_time": 0.2791709899902344,
+            "critical_point_processing_time": 8.797645568847656e-5,
+            "condition_number": 1.0303878844186358e31,
+            "computation_time": 41.845458030700684,
+            "critical_points": 0,
+            "critical_points_refined": 914,
+            "total_computation_time": 41.845458030700684,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 5.760213795816085,
+                "converged": 914,
+                "mean_iterations": 8.804157549234136,
+                "failed": 0,
+                "max_improvement": 899.9918942890951
+            },
+            "file_io_time": 1.1920928955078125e-5,
+            "critical_points_raw": 914,
+            "refinement_time": 0.02889418601989746,
+            "critical_point_solving_time": 41.53658103942871,
+            "l2_approx_error": 5.9019404057629835e-12
+        },
+        "degree_11": {
+            "polynomial_construction_time": 1.0844781398773193,
+            "critical_point_processing_time": 0.00011610984802246094,
+            "condition_number": 1.5040886146297637e34,
+            "computation_time": 217.43703699111938,
+            "critical_points": 0,
+            "critical_points_refined": 1210,
+            "total_computation_time": 217.43703699111938,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 3.5381390276925936e6,
+                "converged": 1210,
+                "mean_iterations": 9.301652892561984,
+                "failed": 0,
+                "max_improvement": 1.60081233185611e9
+            },
+            "file_io_time": 5.0067901611328125e-6,
+            "critical_points_raw": 1210,
+            "refinement_time": 0.040220022201538086,
+            "critical_point_solving_time": 216.31176495552063,
+            "l2_approx_error": 2.8671875917487506e-11
+        },
+        "degree_6": {
+            "polynomial_construction_time": 0.06027793884277344,
+            "critical_point_processing_time": 6.9141387939453125e-6,
+            "condition_number": 16.00000000000001,
+            "computation_time": 6.419053077697754,
+            "critical_points": 0,
+            "critical_points_refined": 9,
+            "total_computation_time": 6.419053077697754,
+            "status": "success",
+            "refinement_stats": {
+                "mean_improvement": 5.30698785218403e24,
+                "converged": 9,
+                "mean_iterations": 22.88888888888889,
+                "failed": 0,
+                "max_improvement": 2.388163383064124e25
+            },
+            "file_io_time": 9.059906005859375e-6,
+            "critical_points_raw": 9,
+            "refinement_time": 0.0014369487762451172,
+            "critical_point_solving_time": 6.356816053390503,
+            "l2_approx_error": 1.1447336470944512e-13
+        }
+    },
+    "experiment_id": "lv4d_domain_sweep_0.4_20251011_185159",
+    "timestamp": "20251011_185159",
+    "params_dict": {
+        "max_time": 300,
+        "GN": 6,
+        "degree_range": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18
+        ],
+        "domain_size_param": 0.4
+    },
+    "total_critical_points": 0,
+    "success_rate": 0.6666666666666666,
+    "output_dir": "hpc_results/lv4d_domain_sweep_0.4_20251011_185159",
+    "system_info": {
+        "domain_center": [
+            1.875,
+            1.5,
+            0.1,
+            0.1
+        ],
+        "objective_function": "squared_system_residual",
+        "known_equilibrium": [
+            1.875,
+            1.5,
+            0.0,
+            0.0
+        ],
+        "system_type": "lotka_volterra_4d",
+        "dimension": 4,
+        "schema_version": "1.1.0",
+        "system_params": {
+            "γ": 1.5,
+            "α": 1.2,
+            "δ": 0.7,
+            "β": 0.8
+        },
+        "domain_size": 0.4
+    },
+    "experiment_type": "lv4d_domain_sweep_0.4_deg_4_18",
+    "total_time": 1740.6195385456085,
+    "schema_version": "1.1.0",
+    "degrees_processed": 15
+}

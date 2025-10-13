@@ -1,0 +1,13 @@
+{
+    "total_experiments": 9,
+    "export_timestamp": "2025-10-13 08:32:43",
+    "domain_sizes": [
+    ],
+    "GN_values": [
+    ],
+    "degree_range": [
+        4,
+        5
+    ],
+    "total_critical_points": 54
+}

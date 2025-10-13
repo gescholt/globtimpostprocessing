@@ -1,0 +1,36 @@
+{
+  "sample_range": 0.4,
+  "model_func": "define_daisy_ex3_model_4D",
+  "p_center": [
+    0.22400297579961453,
+    0.27321104265283463,
+    0.4733957065001409,
+    0.5776746672054316
+  ],
+  "p_true": [
+    0.2,
+    0.3,
+    0.5,
+    0.6
+  ],
+  "dimension": 4,
+  "basis": "chebyshev",
+  "GN": 16,
+  "domain_range": 0.4,
+  "time_interval": [
+    0.0,
+    10.0
+  ],
+  "ic": [
+    1.0,
+    2.0,
+    1.0,
+    1.0
+  ],
+  "num_points": 25,
+  "experiment_id": 1,
+  "degree_range": [
+    4,
+    12
+  ]
+}
