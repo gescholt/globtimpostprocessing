@@ -1,16 +1,64 @@
 #!/usr/bin/env julia
 """
+⚠️  DEPRECATED - This script has been consolidated into analyze_experiments.jl
+
+Please use the unified analysis script instead:
+    julia --project=. analyze_experiments.jl
+
+The new script provides all the functionality of this script PLUS:
+  - Quality diagnostics with configurable thresholds
+  - Parameter recovery analysis (distance to p_true)
+  - Convergence stagnation detection
+  - Interactive trajectory analysis
+  - Export functionality
+
+The unified script automatically detects experiment formats (Phase 0 or hpc_results).
+
+---
+
+OLD DOCUMENTATION (for reference):
 Quick Campaign Analysis for Phase 0 Collections
 
 Analyzes campaigns collected via collect_batch.sh (Phase 0 format).
 Works with flat directory structure without requiring hpc_results subdirectory.
 
-Usage:
-    julia --project=. analyze_collected_campaign.jl <campaign_path>
+Automatically detects:
+  - Single experiment directory (has results_summary.json directly)
+  - Campaign directory (contains subdirectories with experiments)
 
-Example:
+Usage:
+    julia --project=. analyze_collected_campaign.jl <path>
+
+Examples:
+    # Single experiment
+    julia --project=. analyze_collected_campaign.jl collected_experiments_20251014_090544/lv4d_deg18_domain0.3_GN16_20251013_131227/
+
+    # Campaign (multiple experiments)
     julia --project=. analyze_collected_campaign.jl collected_experiments_20251013_083530/campaign_lotka_volterra_4d_extended_degrees
 """
+
+# Show deprecation warning
+println("\n⚠️  DEPRECATION WARNING ⚠️")
+println("="^80)
+println("This script (analyze_collected_campaign.jl) has been deprecated.")
+println("Please use the unified analysis script instead:")
+println()
+println("  julia --project=. analyze_experiments.jl")
+println()
+println("The new script provides:")
+println("  ✓ All features from this script")
+println("  ✓ Quality diagnostics with configurable thresholds")
+println("  ✓ Parameter recovery analysis")
+println("  ✓ Convergence stagnation detection")
+println("  ✓ Interactive trajectory analysis")
+println("  ✓ Export functionality")
+println()
+println("The old script will continue to work for now but will be removed in a future release.")
+println("="^80)
+println()
+println("Continuing with deprecated script...")
+sleep(3)
+println()
 
 using Pkg
 Pkg.activate(@__DIR__)
@@ -42,6 +90,89 @@ function load_experiment_summary(exp_dir::String)
         @warn "Failed to parse $summary_path: $e"
         return nothing
     end
+end
+
+"""
+Load critical points CSV for a specific degree.
+
+Returns DataFrame with Schema v1.1.0 columns or nothing if file doesn't exist.
+"""
+function load_critical_points_csv(exp_dir::String, degree::Int)
+    csv_file = joinpath(exp_dir, "critical_points_deg_$(degree).csv")
+
+    !isfile(csv_file) && return nothing
+
+    try
+        return CSV.read(csv_file, DataFrame)
+    catch e
+        @warn "Failed to read critical_points_deg_$(degree).csv" exception=(e, catch_backtrace())
+        return nothing
+    end
+end
+
+"""
+Analyze basic quality metrics from critical points CSV data.
+
+Returns Dict with objective value statistics.
+Note: Current CSV format (x1,x2,...,xN,z where N=dimension) only contains
+coordinates and objective values, not refinement metrics or domain information.
+"""
+function analyze_refinement_quality(df::DataFrame)
+    n_points = nrow(df)
+    n_points == 0 && error("Empty DataFrame - no critical points to analyze")
+
+    # Current CSV format: x1, x2, ..., xN, z (where N = problem dimension, z = objective value)
+    required_cols = ["z"]
+    missing_cols = setdiff(required_cols, String.(names(df)))
+    !isempty(missing_cols) && error("CSV missing required columns: $(join(missing_cols, ", "))")
+
+    # Objective value analysis (z column)
+    objectives = df.z
+    best_objective = minimum(objectives)
+
+    # Near-optimal counts
+    n_near_optimal_1pct = sum(objectives .<= best_objective * 1.01)
+    n_near_optimal_10pct = sum(objectives .<= best_objective * 1.10)
+
+    return Dict(
+        "n_points" => n_points,
+        "mean_objective" => mean(objectives),
+        "best_objective" => best_objective,
+        "worst_objective" => maximum(objectives),
+        "std_objective" => std(objectives),
+        "n_near_optimal_1pct" => n_near_optimal_1pct,
+        "n_near_optimal_10pct" => n_near_optimal_10pct
+    )
+end
+
+"""
+Check for quality issues and generate diagnostic warnings.
+
+Warns about: poor objective value distribution, convergence issues.
+"""
+function quality_diagnostics(quality_by_degree::Dict{Int, Dict})
+    isempty(quality_by_degree) && return String[]
+
+    warnings = String[]
+    max_deg = maximum(keys(quality_by_degree))
+    q = quality_by_degree[max_deg]
+
+    # Check objective value spread
+    best = q["best_objective"]
+    worst = q["worst_objective"]
+    if worst > best * 100
+        push!(warnings, "⚠️  Wide objective value spread: best=$(round(best, sigdigits=3)), worst=$(round(worst, sigdigits=3))")
+    end
+
+    # Check near-optimal clustering
+    n_pts = q["n_points"]
+    n_near_opt = q["n_near_optimal_10pct"]
+    pct_clustered = 100.0 * n_near_opt / n_pts
+    if pct_clustered < 10.0
+        push!(warnings, "⚠️  Poor clustering: only $(round(pct_clustered, digits=1))% within 10% of optimum")
+    end
+
+    return warnings
 end
 
 function count_critical_points(exp_dir::String)
@@ -82,22 +213,31 @@ function analyze_campaign(campaign_path::String)
     campaign_name = basename(campaign_path)
     print_header("Analyzing Campaign: $campaign_name")
 
-    # Discover experiments
-    exp_dirs = filter(readdir(campaign_path)) do name
-        path = joinpath(campaign_path, name)
-        return isdir(path) && isfile(joinpath(path, "results_summary.json"))
-    end
+    # Check if this is a single experiment directory or a campaign of experiments
+    has_results_directly = isfile(joinpath(campaign_path, "results_summary.json"))
 
-    if isempty(exp_dirs)
-        println("\n❌ No experiments found with results_summary.json")
-        println("\nDirectory structure:")
-        for item in readdir(campaign_path)
-            println("  - $item")
+    if has_results_directly
+        # This is a single experiment directory
+        println("\n📊 Analyzing single experiment")
+        exp_dirs = ["."]  # Current directory
+    else
+        # This is a campaign directory - discover experiments
+        exp_dirs = filter(readdir(campaign_path)) do name
+            path = joinpath(campaign_path, name)
+            return isdir(path) && isfile(joinpath(path, "results_summary.json"))
         end
-        return
-    end
 
-    println("\n📊 Found $(length(exp_dirs)) experiments")
+        if isempty(exp_dirs)
+            println("\n❌ No experiments found with results_summary.json")
+            println("\nDirectory structure:")
+            for item in readdir(campaign_path)
+                println("  - $item")
+            end
+            return
+        end
+
+        println("\n📊 Found $(length(exp_dirs)) experiments")
+    end
 
     # Analyze each experiment
     results = []
@@ -119,6 +259,15 @@ function analyze_campaign(campaign_path::String)
 
         # Count critical points
         total_cp, cp_by_degree = count_critical_points(exp_path)
+
+        # Analyze critical point quality metrics by degree
+        quality_by_degree = Dict{Int, Dict}()
+        for degree in keys(cp_by_degree)
+            df = load_critical_points_csv(exp_path, degree)
+            if df !== nothing && nrow(df) > 0
+                quality_by_degree[degree] = analyze_refinement_quality(df)
+            end
+        end
 
         # Handle both array format (degree results) and dict format (full summary)
         # If summary is an array, it's the degree-by-degree results
@@ -147,6 +296,7 @@ function analyze_campaign(campaign_path::String)
                 "cp_by_degree" => cp_by_degree,
                 "l2_by_degree" => l2_by_degree,
                 "best_value_by_degree" => best_value_by_degree,
+                "quality_by_degree" => quality_by_degree,
                 "final_l2_norm" => final_l2,
                 "final_best_value" => final_best_value,
                 "domain_size" => missing,
@@ -166,6 +316,7 @@ function analyze_campaign(campaign_path::String)
                 "cp_by_degree" => cp_by_degree,
                 "l2_by_degree" => Dict{Int, Float64}(),
                 "best_value_by_degree" => Dict{Int, Float64}(),
+                "quality_by_degree" => quality_by_degree,
                 "final_l2_norm" => missing,
                 "final_best_value" => missing,
                 "domain_size" => get(config, :domain_size, missing),
@@ -181,12 +332,13 @@ function analyze_campaign(campaign_path::String)
         # Print key info
         println("  Critical Points: $total_cp")
 
-        # Print L2 norms and critical points by degree
+        # Print L2 norms and critical points by degree with quality metrics
         l2_by_deg = result["l2_by_degree"]
         best_val_by_deg = result["best_value_by_degree"]
+        quality_by_deg = result["quality_by_degree"]
 
         if !isempty(cp_by_degree) && !isempty(l2_by_deg)
-            println("  By degree (CP | L2 norm | best value):")
+            println("  By degree (CP | L2 norm | best obj | mean obj | std obj):")
             for degree in sort(collect(keys(cp_by_degree)))
                 cp_count = cp_by_degree[degree]
                 l2_val = get(l2_by_deg, degree, NaN)
@@ -195,12 +347,62 @@ function analyze_campaign(campaign_path::String)
                 l2_str = isnan(l2_val) ? "N/A" : @sprintf("%.1f", l2_val)
                 best_str = isnan(best_val) ? "N/A" : @sprintf("%.1f", best_val)
 
-                println("    deg $degree: $cp_count | $l2_str | $best_str")
+                # Add quality metrics if available
+                if haskey(quality_by_deg, degree)
+                    q = quality_by_deg[degree]
+                    mean_obj = @sprintf("%.2e", q["mean_objective"])
+                    std_obj = @sprintf("%.2e", q["std_objective"])
+                    println("    deg $degree: $cp_count | $l2_str | $best_str | $mean_obj | $std_obj")
+                else
+                    println("    deg $degree: $cp_count | $l2_str | $best_str | N/A | N/A")
+                end
             end
         elseif !isempty(cp_by_degree)
-            println("  By degree:")
+            println("  By degree (CP | mean obj | std obj):")
             for degree in sort(collect(keys(cp_by_degree)))
-                println("    deg $degree: $(cp_by_degree[degree])")
+                cp_count = cp_by_degree[degree]
+                if haskey(quality_by_deg, degree)
+                    q = quality_by_deg[degree]
+                    mean_obj = @sprintf("%.2e", q["mean_objective"])
+                    std_obj = @sprintf("%.2e", q["std_objective"])
+                    println("    deg $degree: $cp_count | $mean_obj | $std_obj")
+                else
+                    println("    deg $degree: $cp_count | N/A | N/A")
+                end
+            end
+        end
+
+        # Print aggregate quality statistics
+        if !isempty(quality_by_deg)
+            println("\n  Quality Statistics:")
+
+            # Get quality data from highest degree (most complete)
+            max_deg = maximum(keys(quality_by_deg))
+            q_max = quality_by_deg[max_deg]
+
+            println("    Best objective: $(@sprintf("%.2e", q_max["best_objective"]))")
+            println("    Mean objective: $(@sprintf("%.2e", q_max["mean_objective"]))")
+            println("    Worst objective: $(@sprintf("%.2e", q_max["worst_objective"]))")
+            println("    Std objective: $(@sprintf("%.2e", q_max["std_objective"]))")
+
+            # Near-optimal statistics
+            n_near_1pct = q_max["n_near_optimal_1pct"]
+            n_near_10pct = q_max["n_near_optimal_10pct"]
+            pct_1 = 100.0 * n_near_1pct / q_max["n_points"]
+            pct_10 = 100.0 * n_near_10pct / q_max["n_points"]
+
+            println("    Near-optimal (within 1%): $n_near_1pct ($(round(pct_1, digits=2))%)")
+            println("    Near-optimal (within 10%): $n_near_10pct ($(round(pct_10, digits=2))%)")
+        end
+
+        # Run quality diagnostics and print warnings
+        if !isempty(quality_by_deg)
+            warnings = quality_diagnostics(quality_by_deg)
+            if !isempty(warnings)
+                println("\n  Quality Diagnostics:")
+                for warning in warnings
+                    println("    $warning")
+                end
             end
         end
 

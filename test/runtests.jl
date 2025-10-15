@@ -38,8 +38,23 @@ using GlobtimPostProcessing
         include("test_auto_collector.jl")
     end
 
+    # Run Data Loading tests (Issue #7, Phase 1)
+    @testset "Data Loading (Issue #7, Phase 1)" begin
+        include("test_data_loading.jl")
+    end
+
     # Run Parameter Recovery tests (Issue #7)
     @testset "Parameter Recovery (Issue #7)" begin
         include("test_parameter_recovery.jl")
+    end
+
+    # Run Parameter Recovery Real Data tests (Issue #7, Phase 2)
+    @testset "Parameter Recovery - Real Data (Issue #7, Phase 2)" begin
+        include("test_parameter_recovery_real_data.jl")
+    end
+
+    # Run Quality Diagnostics tests (Issue #7, Phase 3)
+    @testset "Quality Diagnostics (Issue #7, Phase 3)" begin
+        include("test_quality_diagnostics.jl")
     end
 end

@@ -16,6 +16,10 @@ using Pkg
 Pkg.activate(@__DIR__)
 
 using GlobtimPostProcessing
+using GlobtimPostProcessing: load_experiment_config, load_critical_points_for_degree,
+                             has_ground_truth, compute_parameter_recovery_stats,
+                             load_quality_thresholds, check_l2_quality,
+                             detect_stagnation, check_objective_distribution_quality
 using DataFrames
 using Printf
 using Dates
@@ -265,6 +269,199 @@ function display_experiment_list(campaign_path::String)
 end
 
 """
+    display_quality_diagnostics(exp_path::String)
+
+Display quality diagnostics for an experiment using configurable thresholds.
+"""
+function display_quality_diagnostics(exp_path::String)
+    try
+        # Load quality thresholds
+        thresholds = load_quality_thresholds()
+
+        # Load experiment config
+        config = load_experiment_config(exp_path)
+        dimension = get(config, "dimension", 4)
+
+        # Load results summary to get L2 norms by degree
+        results_summary_path = joinpath(exp_path, "results_summary.json")
+        if !isfile(results_summary_path)
+            println("  $(YELLOW)⚠ No results_summary.json found$(RESET)")
+            return
+        end
+
+        # Parse JSON line by line to extract L2 norms (more robust for large files)
+        l2_norms = Float64[]
+        degrees = Int[]
+        best_values = Float64[]
+
+        json_text = read(results_summary_path, String)
+
+        # Extract L2_norm values using regex (more robust than full JSON parse)
+        for m in eachmatch(r"\"L2_norm\":\s*([0-9.e+-]+)", json_text)
+            push!(l2_norms, parse(Float64, m.captures[1]))
+        end
+
+        # Extract degree values
+        for m in eachmatch(r"\"degree\":\s*(\d+)", json_text)
+            push!(degrees, parse(Int, m.captures[1]))
+        end
+
+        # Extract best_value
+        for m in eachmatch(r"\"best_value\":\s*([0-9.e+-]+)", json_text)
+            push!(best_values, parse(Float64, m.captures[1]))
+        end
+
+        if isempty(l2_norms)
+            println("  $(YELLOW)⚠ No L2 norm data available$(RESET)")
+            return
+        end
+
+        # Get final degree L2 norm for quality check
+        final_l2 = l2_norms[end]
+        final_degree = !isempty(degrees) ? degrees[end] : length(l2_norms) * 2 + 2
+
+        # Check L2 quality
+        l2_quality = check_l2_quality(final_l2, dimension, thresholds)
+        quality_color = l2_quality == :excellent ? GREEN :
+                       l2_quality == :good ? CYAN :
+                       l2_quality == :fair ? YELLOW : RED
+        quality_symbol = l2_quality == :poor ? "✗" : "✓"
+
+        println("  $(quality_color)$(quality_symbol) L2 Norm Quality:$(RESET) $(uppercase(string(l2_quality)))")
+        @printf("    Final L2 norm (degree %d): %.6g\n", final_degree, final_l2)
+
+        threshold_key = "dim_$(dimension)"
+        threshold = get(thresholds["l2_norm_thresholds"], threshold_key,
+                       thresholds["l2_norm_thresholds"]["default"])
+        @printf("    Threshold for %dD: %.6g\n", dimension, threshold)
+
+        # Check convergence stagnation if we have multiple degrees
+        if length(l2_norms) >= 3 && length(degrees) == length(l2_norms)
+            l2_by_degree = Dict{Int, Float64}()
+            for (i, degree) in enumerate(degrees)
+                l2_by_degree[degree] = l2_norms[i]
+            end
+
+            stagnation = detect_stagnation(l2_by_degree, thresholds)
+            if stagnation.is_stagnant
+                println("  $(YELLOW)⚠ Convergence Stagnation:$(RESET) Detected at degree $(stagnation.stagnation_start_degree)")
+                @printf("    Consecutive stagnant degrees: %d\n", stagnation.consecutive_stagnant_degrees)
+            else
+                println("  $(GREEN)✓ Convergence:$(RESET) Improving")
+                if !isnothing(stagnation.avg_improvement_factor)
+                    @printf("    Average improvement: %.1f%%\n", (1 - stagnation.avg_improvement_factor) * 100)
+                end
+            end
+        end
+
+        # Check objective distribution quality
+        if length(best_values) >= 3
+            dist_result = check_objective_distribution_quality(best_values, thresholds)
+            if dist_result.has_outliers && dist_result.quality == :poor
+                println("  $(YELLOW)⚠ Objective Distribution:$(RESET) High outlier fraction ($(dist_result.outlier_fraction * 100)%)")
+                @printf("    Outliers: %d / %d\n", dist_result.num_outliers, length(best_values))
+            else
+                println("  $(GREEN)✓ Objective Distribution:$(RESET) Normal")
+            end
+        end
+
+    catch e
+        println("  $(RED)Error displaying quality diagnostics:$(RESET) $e")
+    end
+end
+
+"""
+    display_parameter_recovery(exp_path::String)
+
+Display parameter recovery table for an experiment with ground truth.
+"""
+function display_parameter_recovery(exp_path::String)
+    try
+        # Load config to get p_true
+        config = load_experiment_config(exp_path)
+        p_true = collect(config["p_true"])
+
+        # Load quality thresholds for recovery threshold
+        thresholds = load_quality_thresholds()
+        recovery_threshold = thresholds["parameter_recovery"]["param_distance_threshold"]
+
+        # Get all degrees from CSV files
+        csv_files = filter(f -> startswith(basename(f), "critical_points_deg_"),
+                          readdir(exp_path, join=true))
+        degrees = Int[]
+        for csv_file in csv_files
+            m = match(r"deg_(\d+)\.csv", basename(csv_file))
+            if m !== nothing
+                push!(degrees, parse(Int, m[1]))
+            end
+        end
+        sort!(degrees)
+
+        if isempty(degrees)
+            println("  $(YELLOW)⚠ No critical points data available$(RESET)")
+            return
+        end
+
+        # Display table header
+        println("  Parameter recovery (p_true = $p_true)")
+        println("  Recovery threshold: distance < $recovery_threshold")
+        println()
+        println("  " * "="^80)
+        @printf("  %-8s | %-8s | %-12s | %-12s | %-12s\n",
+                "Degree", "# CPs", "Min Dist", "Mean Dist", "Recoveries")
+        println("  " * "="^80)
+
+        # Display each degree
+        for degree in degrees
+            df = load_critical_points_for_degree(exp_path, degree)
+            stats = compute_parameter_recovery_stats(df, p_true, recovery_threshold)
+            n_points = nrow(df)
+
+            recovery_color = stats["num_recoveries"] > 0 ? GREEN : YELLOW
+            @printf("  %-8d | %-8d | %s%-12.6g%s | %-12.6g | %s%-12d%s\n",
+                    degree, n_points,
+                    stats["min_distance"] < recovery_threshold ? GREEN : "",
+                    stats["min_distance"],
+                    RESET,
+                    stats["mean_distance"],
+                    recovery_color, stats["num_recoveries"], RESET)
+        end
+        println("  " * "="^80)
+
+        # Summary: best recovery across all degrees
+        best_recovery = 0
+        best_degree = degrees[1]
+        best_min_dist = Inf
+
+        for degree in degrees
+            df = load_critical_points_for_degree(exp_path, degree)
+            stats = compute_parameter_recovery_stats(df, p_true, recovery_threshold)
+            if stats["num_recoveries"] > best_recovery
+                best_recovery = stats["num_recoveries"]
+                best_degree = degree
+            end
+            if stats["min_distance"] < best_min_dist
+                best_min_dist = stats["min_distance"]
+            end
+        end
+
+        println()
+        println("  $(BOLD)Summary:$(RESET)")
+        @printf("    Best minimum distance: %.6g\n", best_min_dist)
+        @printf("    Best recovery count: %d (at degree %d)\n", best_recovery, best_degree)
+
+        if best_min_dist < recovery_threshold
+            println("    $(GREEN)✓ Ground truth recovered!$(RESET)")
+        else
+            println("    $(YELLOW)⚠ Ground truth not yet recovered$(RESET)")
+        end
+
+    catch e
+        println("  $(RED)Error displaying parameter recovery:$(RESET) $e")
+    end
+end
+
+"""
     analyze_single_experiment(exp_path::String)
 
 Load and analyze a single experiment, displaying computed statistics.
@@ -308,6 +505,16 @@ function analyze_single_experiment(exp_path::String)
             println("$(BOLD)Critical Points:$(RESET) $n_points found")
         end
 
+        # NEW: Quality Diagnostics (Phase 3, Issue #7)
+        println("\n$(BOLD)$(GREEN)═══ Quality Diagnostics ═══$(RESET)\n")
+        display_quality_diagnostics(exp_path)
+
+        # NEW: Parameter Recovery (if p_true exists) (Phase 2, Issue #7)
+        if has_ground_truth(exp_path)
+            println("\n$(BOLD)$(GREEN)═══ Parameter Recovery ═══$(RESET)\n")
+            display_parameter_recovery(exp_path)
+        end
+
     catch e
         println("$(RED)Error analyzing experiment:$(RESET)")
         println(e)
@@ -345,22 +552,10 @@ function analyze_campaign_interactive(campaign_path::String)
 end
 
 """
-    load_config(exp_path::String) -> Union{Dict, Nothing}
-
-Load experiment configuration from JSON file.
-"""
-function load_config(exp_path::String)
-    config_file = joinpath(exp_path, "experiment_config.json")
-    if isfile(config_file)
-        return JSON3.read(read(config_file, String))
-    end
-    return nothing
-end
-
-"""
     load_all_critical_points(exp_path::String) -> Dict{Int, DataFrame}
 
 Load all critical points CSV files for an experiment, indexed by degree.
+Uses the ParameterRecovery module's load_critical_points_for_degree function.
 """
 function load_all_critical_points(exp_path::String)
     csv_files = filter(f -> startswith(basename(f), "critical_points_deg_"), readdir(exp_path, join=true))
@@ -371,7 +566,7 @@ function load_all_critical_points(exp_path::String)
         m = match(r"deg_(\d+)\.csv", basename(csv_file))
         if m !== nothing
             degree = parse(Int, m[1])
-            df = CSV.read(csv_file, DataFrame)
+            df = load_critical_points_for_degree(exp_path, degree)
             results[degree] = df
         end
     end
@@ -380,13 +575,12 @@ function load_all_critical_points(exp_path::String)
 end
 
 """
-    param_distance(cp_row, p_true::Vector) -> Float64
+    extract_param_vector(row, n_params::Int) -> Vector{Float64}
 
-Compute L2 distance between critical point parameters and true parameters.
+Extract parameter vector [x1, x2, ..., xn] from a DataFrame row.
 """
-function param_distance(cp_row, p_true::Vector)
-    p_found = [cp_row.x1, cp_row.x2, cp_row.x3, cp_row.x4]
-    return norm(p_found .- p_true)
+function extract_param_vector(row, n_params::Int)
+    return [row[Symbol("x$i")] for i in 1:n_params]
 end
 
 """
@@ -412,31 +606,32 @@ function generate_detailed_table(campaign_path::String)
         exp_name = basename(exp_path)
 
         # Load config to get true parameters
-        config = load_config(exp_path)
-        if config === nothing
-            @warn "No config found for $exp_name"
+        try
+            config = load_experiment_config(exp_path)
+
+            # Use p_true if available, otherwise use p_center
+            p_true = haskey(config, "p_true") ? collect(config["p_true"]) : collect(config["p_center"])
+            # Use domain_range if available, otherwise use sample_range
+            sample_range = haskey(config, "domain_range") ? config["domain_range"] : config["sample_range"]
+
+            # Load all critical points
+            cp_by_degree = load_all_critical_points(exp_path)
+
+            if isempty(cp_by_degree)
+                @warn "No critical points found for $exp_name"
+                continue
+            end
+
+            push!(exp_data, (
+                name = exp_name,
+                sample_range = sample_range,
+                p_true = p_true,
+                cp_by_degree = cp_by_degree
+            ))
+        catch e
+            @warn "Failed to load experiment $exp_name: $e"
             continue
         end
-
-        # Use p_true if available, otherwise use p_center
-        p_true = haskey(config, :p_true) ? collect(config.p_true) : collect(config.p_center)
-        # Use domain_range if available, otherwise use sample_range
-        sample_range = haskey(config, :domain_range) ? config.domain_range : config.sample_range
-
-        # Load all critical points
-        cp_by_degree = load_all_critical_points(exp_path)
-
-        if isempty(cp_by_degree)
-            @warn "No critical points found for $exp_name"
-            continue
-        end
-
-        push!(exp_data, (
-            name = exp_name,
-            sample_range = sample_range,
-            p_true = p_true,
-            cp_by_degree = cp_by_degree
-        ))
     end
 
     # Sort by sample range
@@ -455,9 +650,10 @@ function generate_detailed_table(campaign_path::String)
 
         # Find best parameter recovery across all degrees
         best_dist = Inf
+        n_params = length(exp.p_true)
         for (_, df) in exp.cp_by_degree
             if nrow(df) > 0
-                distances = [param_distance(row, exp.p_true) for row in eachrow(df)]
+                distances = [param_distance(extract_param_vector(row, n_params), exp.p_true) for row in eachrow(df)]
                 best_dist = min(best_dist, minimum(distances))
             end
         end
@@ -486,14 +682,15 @@ function generate_detailed_table(campaign_path::String)
         println("  " * "-"^100)
 
         degrees = sort(collect(keys(exp.cp_by_degree)))
+        n_params = length(exp.p_true)
 
         for deg in degrees
             df = exp.cp_by_degree[deg]
             n_cp = nrow(df)
 
             if n_cp > 0
-                # Compute distances to true parameter
-                distances = [param_distance(row, exp.p_true) for row in eachrow(df)]
+                # Compute distances to true parameter using module function
+                distances = [param_distance(extract_param_vector(row, n_params), exp.p_true) for row in eachrow(df)]
                 min_dist = minimum(distances)
                 mean_dist = mean(distances)
                 best_obj = minimum(df.z)
@@ -542,7 +739,8 @@ function generate_detailed_table(campaign_path::String)
             if haskey(exp.cp_by_degree, deg)
                 df = exp.cp_by_degree[deg]
                 if nrow(df) > 0
-                    distances = [param_distance(row, exp.p_true) for row in eachrow(df)]
+                    n_params = length(exp.p_true)
+                    distances = [param_distance(extract_param_vector(row, n_params), exp.p_true) for row in eachrow(df)]
                     min_dist = minimum(distances)
                     @printf(" | %15.6f", min_dist)
                 else

@@ -1,0 +1,15 @@
+{
+  "sample_range": 0.8,
+  "model_func": "test_model_4d",
+  "p_center": [0.173, 0.297, 0.465, 0.624],
+  "p_true": [0.2, 0.3, 0.5, 0.6],
+  "dimension": 4,
+  "basis": "chebyshev",
+  "GN": 16,
+  "domain_range": 0.8,
+  "time_interval": [0.0, 10.0],
+  "ic": [1.0, 2.0, 1.0, 1.0],
+  "num_points": 25,
+  "experiment_id": "test_exp_1",
+  "degree_range": [4, 8]
+}

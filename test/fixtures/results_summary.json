@@ -1,0 +1,32 @@
+[
+  {
+    "degree": 4,
+    "L2_norm": 1.5e7,
+    "best_value": 1230.5,
+    "worst_value": 721841.04,
+    "mean_value": 363360.19,
+    "condition_number": 16.0,
+    "computation_time": 48.5,
+    "critical_points": 3
+  },
+  {
+    "degree": 6,
+    "L2_norm": 8.2e6,
+    "best_value": 845.3,
+    "worst_value": 520100.2,
+    "mean_value": 260472.75,
+    "condition_number": 24.5,
+    "computation_time": 72.3,
+    "critical_points": 5
+  },
+  {
+    "degree": 8,
+    "L2_norm": 3.1e6,
+    "best_value": 231.8,
+    "worst_value": 180500.5,
+    "mean_value": 90366.15,
+    "condition_number": 35.2,
+    "computation_time": 98.7,
+    "critical_points": 8
+  }
+]

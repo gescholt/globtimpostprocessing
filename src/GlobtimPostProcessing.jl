@@ -53,6 +53,16 @@ export ExperimentResult, CampaignResults
 export batch_analyze_campaign, load_campaign_with_progress
 export aggregate_campaign_statistics_with_progress, batch_analyze_campaign_with_progress
 
+# Parameter recovery exports (Issue #7)
+export param_distance, load_experiment_config, load_critical_points_for_degree
+export compute_parameter_recovery_stats, generate_parameter_recovery_table, has_ground_truth
+
+# Quality diagnostics exports (Issue #7, Phase 3)
+export load_quality_thresholds
+export check_l2_quality
+export detect_stagnation, StagnationResult
+export check_objective_distribution_quality, ObjectiveDistributionResult
+
 # Define types first
 """
     ExperimentResult
@@ -106,6 +116,8 @@ include("ReportGenerator.jl")
 include("TableFormatting.jl")   # Terminal-friendly table formatting
 include("CampaignAnalysis.jl")
 include("BatchProcessing.jl")  # Phase 2: Batch processing functionality
+include("ParameterRecovery.jl")  # Issue #7: Parameter recovery analysis
+include("QualityDiagnostics.jl")  # Issue #7, Phase 3: Quality diagnostics
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
 # To create visualizations, use:
