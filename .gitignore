@@ -39,8 +39,11 @@ Thumbs.db
 .glab-env
 
 # Test scripts in root (should be in test/ or examples/)
-test_*.jl
-interactive_*.jl
+/test_*.jl
+/interactive_*.jl
 
 # Phase documentation (move to docs/)
 PHASE*.md
+
+# Collected experimental data
+collected_experiments_*/

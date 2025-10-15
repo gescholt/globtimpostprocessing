@@ -28,6 +28,18 @@ using GlobtimPostProcessing
         @test length(exp_result.tracking_capabilities) == 3
     end
 
-    # TODO: Add integration tests with actual experiment data
-    # These would require example data files
+    # Run ClusterCollection tests (Phase 0)
+    @testset "ClusterCollection (Phase 0)" begin
+        include("test_cluster_collection.jl")
+    end
+
+    # Run AutoCollector tests (Phase 1)
+    @testset "AutoCollector (Phase 1)" begin
+        include("test_auto_collector.jl")
+    end
+
+    # Run Parameter Recovery tests (Issue #7)
+    @testset "Parameter Recovery (Issue #7)" begin
+        include("test_parameter_recovery.jl")
+    end
 end
