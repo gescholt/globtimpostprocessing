@@ -20,6 +20,7 @@ using GlobtimPostProcessing: load_experiment_config, load_critical_points_for_de
                              has_ground_truth, compute_parameter_recovery_stats,
                              load_quality_thresholds, check_l2_quality,
                              detect_stagnation, check_objective_distribution_quality
+using GlobtimPostProcessing.ExperimentCollector
 using DataFrames
 using Printf
 using Dates
@@ -41,129 +42,27 @@ const YELLOW = "\033[33m"
 const RED = "\033[31m"
 const CYAN = "\033[36m"
 
-"""
-    is_experiment_directory(path::String) -> Bool
-
-Check if a directory is a single experiment (contains CSV files directly).
-"""
-function is_experiment_directory(path::String)
-    if !isdir(path)
-        return false
-    end
-
-    # Check for experiment indicators: CSV files or results_summary.json
-    files = readdir(path)
-    has_csv = any(f -> endswith(f, ".csv") && startswith(f, "critical_points_deg_"), files)
-    has_results = "results_summary.json" in files || "results_summary.jld2" in files
-
-    return has_csv || has_results
-end
+# Helper functions to convert between module types and display formats
 
 """
-    is_campaign_directory(path::String) -> Bool
-
-Check if a directory is a campaign (contains multiple experiment subdirectories).
-A true campaign should have at least 2 experiments with related parameters.
-"""
-function is_campaign_directory(path::String)
-    if !isdir(path)
-        return false
-    end
-
-    # Get subdirectories that look like experiments
-    subdirs = filter(d -> isdir(joinpath(path, d)), readdir(path))
-    exp_dirs = filter(d -> is_experiment_directory(joinpath(path, d)), subdirs)
-
-    # Need at least 2 experiments to be a campaign
-    # (Single experiment should be analyzed as such, not as a 1-experiment "campaign")
-    if length(exp_dirs) < 2
-        return false
-    end
-
-    # Additional heuristic: check if experiments share common naming pattern
-    # indicating they're part of a designed study (e.g., exp1, exp2, exp3 or GN=X variations)
-    # For now, just require >= 2 experiments
-    return true
-end
-
-"""
-    discover_campaigns(root_path::String) -> Vector{Tuple{String, Float64}}
-
-Recursively discover all campaign directories containing experiment results.
-Returns tuples of (path, modification_time) sorted by modification time (newest first).
-
-A campaign must:
-1. Have "hpc_results" as a subdirectory (not be hpc_results itself)
-2. Contain at least 2 experiment subdirectories
-3. Not be the top-level hpc_results collection directory
-
-Single experiments and the top-level hpc_results collection are excluded.
-"""
-function discover_campaigns(root_path::String)
-    campaigns = Tuple{String, Float64}[]
-
-    if !isdir(root_path)
-        error("Path does not exist: $root_path")
-    end
-
-    for (root, dirs, _) in walkdir(root_path)
-        # Check if this directory contains hpc_results subdirectory
-        if "hpc_results" in dirs
-            hpc_path = joinpath(root, "hpc_results")
-
-            # Skip flat collection directories (hpc_results at top level of globtimcore, Examples, etc.)
-            # A true campaign should have hpc_results nested within a study/config directory
-            root_basename = basename(root)
-
-            # Heuristic: True campaigns are typically in directories named like:
-            # - configs_YYYYMMDD_HHMMSS (timestamp-based config directories)
-            # - *_study, *_campaign, *_experiment directories
-            # - batch_* directories
-            # Skip if hpc_results is directly under globtimcore, Examples, archives, etc.
-            is_likely_collection = root_basename in ["globtimcore", "Examples", "hpc_results"] ||
-                                  contains(root, "/archives/") ||
-                                  (contains(root, "/Examples/") && !startswith(root_basename, "configs_"))
-
-            if is_likely_collection
-                continue
-            end
-
-            # Check if this is a true campaign (multiple related experiments)
-            if is_campaign_directory(hpc_path)
-                # Get modification time of the hpc_results directory
-                mtime = stat(hpc_path).mtime
-                push!(campaigns, (hpc_path, mtime))
-            end
-        end
-    end
-
-    # Sort by modification time, newest first
-    sort!(campaigns, by=x->x[2], rev=true)
-
-    return campaigns
-end
-
-"""
-    display_campaigns(campaigns::Vector{Tuple{String, Float64}})
+    display_campaigns(campaigns::Vector{CampaignInfo})
 
 Display discovered campaigns in a numbered list, sorted by modification time (newest first).
 """
-function display_campaigns(campaigns::Vector{Tuple{String, Float64}})
+function display_campaigns(campaigns::Vector{CampaignInfo})
     println("\n$(BOLD)$(CYAN)═══ Discovered Campaigns (sorted by newest first) ═══$(RESET)\n")
 
-    for (idx, (campaign_path, mtime)) in enumerate(campaigns)
-        # Count experiments
-        exp_count = count(isdir(joinpath(campaign_path, d)) for d in readdir(campaign_path))
-
+    for (idx, campaign) in enumerate(campaigns)
         # Format timestamp
-        timestamp = Dates.unix2datetime(mtime)
+        timestamp = Dates.unix2datetime(campaign.mtime)
         time_str = Dates.format(timestamp, "yyyy-mm-dd HH:MM:SS")
 
         # Add "LATEST" marker for the first one
         latest_marker = idx == 1 ? " $(BOLD)$(GREEN)[LATEST]$(RESET)" : ""
 
-        println("$(BOLD)$idx.$(RESET) $(GREEN)$campaign_path$(RESET)$latest_marker")
-        println("   Experiments: $exp_count")
+        println("$(BOLD)$idx.$(RESET) $(GREEN)$(campaign.path)$(RESET)$latest_marker")
+        println("   Campaign: $(campaign.name)")
+        println("   Experiments: $(campaign.num_experiments)")
         println("   Modified: $time_str\n")
     end
 end
@@ -552,6 +451,54 @@ function analyze_campaign_interactive(campaign_path::String)
 end
 
 """
+    analyze_batch_interactive(experiments::Vector{String}, batch_name::String)
+
+Load and analyze experiments from a batch (flat collection).
+"""
+function analyze_batch_interactive(experiments::Vector{String}, batch_name::String)
+    println("\n$(BOLD)$(CYAN)═══ Analyzing Batch ═══$(RESET)\n")
+    println("Batch: $(BLUE)$batch_name$(RESET)")
+    println("Experiments: $(length(experiments))\n")
+
+    try
+        # Load each experiment
+        println("$(BOLD)Loading batch experiments...$(RESET)")
+        exp_results = []
+        for exp_path in experiments
+            try
+                result = load_experiment_results(exp_path)
+                push!(exp_results, result)
+            catch e
+                @warn "Failed to load experiment $(basename(exp_path)): $e"
+            end
+        end
+
+        if isempty(exp_results)
+            println("$(RED)No valid experiments could be loaded$(RESET)")
+            return
+        end
+
+        println("$(BOLD)Successfully loaded:$(RESET) $(length(exp_results)) experiments")
+        println()
+
+        # Create a campaign-like structure
+        campaign = GlobtimPostProcessing.CampaignResults(
+            campaign_id = batch_name,
+            experiments = exp_results,
+            collection_timestamp = Dates.now()
+        )
+
+        # Analyze campaign - this already prints a nice summary
+        GlobtimPostProcessing.analyze_campaign(campaign)
+
+    catch e
+        println("$(RED)Error analyzing batch:$(RESET)")
+        println(e)
+        Base.show_backtrace(stdout, catch_backtrace())
+    end
+end
+
+"""
     load_all_critical_points(exp_path::String) -> Dict{Int, DataFrame}
 
 Load all critical points CSV files for an experiment, indexed by degree.
@@ -581,6 +528,59 @@ Extract parameter vector [x1, x2, ..., xn] from a DataFrame row.
 """
 function extract_param_vector(row, n_params::Int)
     return [row[Symbol("x$i")] for i in 1:n_params]
+end
+
+"""
+    generate_detailed_table_from_list(exp_dirs::Vector{String}, batch_name::String)
+
+Generate detailed parameter recovery table from a list of experiment directories.
+"""
+function generate_detailed_table_from_list(exp_dirs::Vector{String}, batch_name::String)
+    println("\n$(BOLD)$(CYAN)═══ Detailed Parameter Recovery Analysis ═══$(RESET)\n")
+    println("Batch: $(BLUE)$batch_name$(RESET)")
+    println("Experiments: $(length(exp_dirs))\n")
+
+    println("="^120)
+    println("$(BOLD)📊 DETAILED BATCH ANALYSIS: Parameter Recovery$(RESET)")
+    println("="^120)
+
+    # Collect all experiment data
+    exp_data = []
+
+    for exp_path in exp_dirs
+        exp_name = basename(exp_path)
+
+        # Load config to get true parameters
+        try
+            config = load_experiment_config(exp_path)
+
+            # Use p_true if available, otherwise use p_center
+            p_true = haskey(config, "p_true") ? collect(config["p_true"]) : collect(config["p_center"])
+            # Use domain_range if available, otherwise use sample_range
+            sample_range = haskey(config, "domain_range") ? config["domain_range"] : config["sample_range"]
+
+            # Load all critical points
+            cp_by_degree = load_all_critical_points(exp_path)
+
+            if isempty(cp_by_degree)
+                @warn "No critical points found for $exp_name"
+                continue
+            end
+
+            push!(exp_data, (
+                name = exp_name,
+                sample_range = sample_range,
+                p_true = p_true,
+                cp_by_degree = cp_by_degree
+            ))
+        catch e
+            @warn "Failed to load experiment $exp_name: $e"
+            continue
+        end
+    end
+
+    # Continue with rest of detailed table generation (same as original)
+    _generate_detailed_table_impl(exp_data)
 end
 
 """
@@ -634,6 +634,15 @@ function generate_detailed_table(campaign_path::String)
         end
     end
 
+    _generate_detailed_table_impl(exp_data)
+end
+
+"""
+    _generate_detailed_table_impl(exp_data::Vector)
+
+Shared implementation for generating detailed parameter recovery tables.
+"""
+function _generate_detailed_table_impl(exp_data::Vector)
     # Sort by sample range
     sort!(exp_data, by = x -> x.sample_range)
 
@@ -916,6 +925,184 @@ function inspect_critical_point(cp_row, config, degree::Int)
 end
 
 """
+    display_batches(batches::Vector{BatchInfo})
+
+Display discovered batches in a numbered list, sorted by modification time (newest first).
+"""
+function display_batches(batches::Vector{BatchInfo})
+    println("\n$(BOLD)$(CYAN)═══ Discovered Batches (sorted by newest first) ═══$(RESET)\n")
+
+    for (idx, batch) in enumerate(batches)
+        # Format timestamp
+        timestamp = Dates.unix2datetime(batch.mtime)
+        time_str = Dates.format(timestamp, "yyyy-mm-dd HH:MM:SS")
+
+        # Add "LATEST" marker for the first one
+        latest_marker = idx == 1 ? " $(BOLD)$(GREEN)[LATEST]$(RESET)" : ""
+
+        println("$(BOLD)$idx.$(RESET) $(GREEN)$(batch.batch_name)$(RESET)$latest_marker")
+        println("   Experiments: $(length(batch.experiments))")
+        println("   Modified: $time_str")
+        println("   Location: $(BLUE)$(batch.collection_path)$(RESET)\n")
+    end
+end
+
+"""
+    get_experiments_for_batch(batch::BatchInfo) -> Vector{String}
+
+Get all experiment paths from a BatchInfo object.
+"""
+function get_experiments_for_batch(batch::BatchInfo)
+    return [exp.path for exp in batch.experiments]
+end
+
+"""
+    group_by_config_param(experiments::Vector{String}, param_key::String)
+    -> Dict{Any, Vector{String}}
+
+Group experiments by a specific config parameter value.
+Wrapper that converts String paths to work with ExperimentCollector.
+"""
+function group_by_config_param(experiments::Vector{String}, param_key::String)
+    # Convert String paths to ExperimentInfo objects
+    exp_infos = ExperimentInfo[]
+    for exp_path in experiments
+        validation = validate_experiment(exp_path)
+        config = load_experiment_config(exp_path)
+        push!(exp_infos, ExperimentInfo(
+            exp_path,
+            basename(exp_path),
+            nothing,
+            config,
+            validation
+        ))
+    end
+
+    # Use ExperimentCollector's group_by_config_param
+    groups_by_info = ExperimentCollector.group_by_config_param(exp_infos, param_key)
+
+    # Convert back to String paths
+    groups = Dict{Any, Vector{String}}()
+    for (key, infos) in groups_by_info
+        groups[key] = [info.path for info in infos]
+    end
+
+    return groups
+end
+
+"""
+    group_by_degree_range(experiments::Vector{String})
+    -> Dict{Tuple{Int,Int}, Vector{String}}
+
+Group experiments by (min_degree, max_degree) range.
+Wrapper that converts String paths to work with ExperimentCollector.
+"""
+function group_by_degree_range(experiments::Vector{String})
+    # Convert String paths to ExperimentInfo objects
+    exp_infos = ExperimentInfo[]
+    for exp_path in experiments
+        validation = validate_experiment(exp_path)
+        config = load_experiment_config(exp_path)
+        push!(exp_infos, ExperimentInfo(
+            exp_path,
+            basename(exp_path),
+            nothing,
+            config,
+            validation
+        ))
+    end
+
+    # Use ExperimentCollector's group_by_degree_range
+    groups_by_info = ExperimentCollector.group_by_degree_range(exp_infos)
+
+    # Convert back to String paths
+    groups = Dict{Tuple{Int,Int}, Vector{String}}()
+    for (key, infos) in groups_by_info
+        groups[key] = [info.path for info in infos]
+    end
+
+    return groups
+end
+
+"""
+    select_from_hierarchical(experiments_by_obj::Dict{String, Vector{String}})
+    -> Vector{String}
+
+Interactive selection from hierarchical experiment structure.
+Returns selected experiment paths.
+"""
+function select_from_hierarchical(experiments_by_obj::Dict{String, Vector{String}})
+    # Step 1: Select objective function
+    obj_names = sort(collect(keys(experiments_by_obj)))
+
+    println("\n$(BOLD)$(CYAN)═══ Select Objective Function ═══$(RESET)\n")
+    for (idx, obj_name) in enumerate(obj_names)
+        n_exp = length(experiments_by_obj[obj_name])
+        println("$(BOLD)$idx.$(RESET) $(GREEN)$obj_name$(RESET) ($n_exp experiments)")
+    end
+
+    obj_choice = get_user_choice("Select objective", length(obj_names))
+    selected_obj = obj_names[obj_choice]
+    experiments = experiments_by_obj[selected_obj]
+
+    println("\n$(BOLD)Selected objective:$(RESET) $(GREEN)$selected_obj$(RESET)")
+    println("$(BOLD)Experiments:$(RESET) $(length(experiments))")
+
+    # Step 2: Group by config parameters for batch selection
+    println("\n$(BOLD)Group experiments by:$(RESET)")
+    println("$(BOLD)1.$(RESET) Domain size parameter")
+    println("$(BOLD)2.$(RESET) Grid nodes")
+    println("$(BOLD)3.$(RESET) Degree range")
+    println("$(BOLD)4.$(RESET) No grouping (all experiments)")
+
+    group_choice = get_user_choice("Select grouping", 4)
+
+    if group_choice == 1
+        groups = group_by_config_param(experiments, "domain_size_param")
+        group_label = "domain_size_param"
+    elseif group_choice == 2
+        groups = group_by_config_param(experiments, "grid_nodes")
+        group_label = "grid_nodes"
+    elseif group_choice == 3
+        groups = group_by_degree_range(experiments)
+        group_label = "degree_range"
+    else
+        return experiments  # No grouping - return all experiments
+    end
+
+    if isempty(groups)
+        println("$(YELLOW)No groups found for the selected parameter. Using all experiments.$(RESET)")
+        return experiments
+    end
+
+    # Step 3: Display and select from groups
+    println("\n$(BOLD)$(CYAN)═══ Select Group ═══$(RESET)\n")
+    group_keys = sort(collect(keys(groups)))
+
+    for (idx, key) in enumerate(group_keys)
+        n_exp = length(groups[key])
+        if group_choice == 3  # degree_range
+            println("$(BOLD)$idx.$(RESET) $(GREEN)Degrees $(key[1])-$(key[2])$(RESET) ($n_exp experiments)")
+        else
+            println("$(BOLD)$idx.$(RESET) $(GREEN)$group_label = $key$(RESET) ($n_exp experiments)")
+        end
+    end
+    println("$(BOLD)$(length(group_keys)+1).$(RESET) All groups combined ($(length(experiments)) experiments)")
+
+    group_selection = get_user_choice("Select group", length(group_keys) + 1)
+
+    if group_selection <= length(group_keys)
+        selected_key = group_keys[group_selection]
+        selected_experiments = groups[selected_key]
+        println("\n$(BOLD)Selected:$(RESET) $(length(selected_experiments)) experiments")
+        return selected_experiments
+    else
+        println("\n$(BOLD)Selected:$(RESET) All experiments ($(length(experiments)))")
+        return experiments
+    end
+end
+
+"""
     main()
 
 Main interactive loop.
@@ -925,8 +1112,8 @@ function main()
     experiment_root = if length(ARGS) >= 2 && ARGS[1] == "--path"
         ARGS[2]
     else
-        # Default: look for globtimcore root (searches for hpc_results within)
-        joinpath(dirname(@__DIR__), "globtimcore")
+        # Default: look in experiments/ directory within globtimpostprocessing
+        joinpath(@__DIR__, "experiments")
     end
 
     println("$(BOLD)$(CYAN)╔════════════════════════════════════════════════╗$(RESET)")
@@ -936,24 +1123,190 @@ function main()
     println("$(BOLD)Searching for experiments in:$(RESET)")
     println("  $(BLUE)$experiment_root$(RESET)")
 
-    # Discover campaigns
-    campaigns = discover_campaigns(experiment_root)
+    # Detect directory structure
+    structure = detect_directory_structure(experiment_root)
 
-    if isempty(campaigns)
-        println("\n$(RED)No campaigns found in the specified directory.$(RESET)")
-        println("Make sure the path contains experiment results with hpc_results directories.")
-        exit(1)
+    # Initialize variables for tracking state
+    experiments = String[]
+    valid_flags = Bool[]
+    batch_name = ""
+    selected_campaign = ""
+
+    if structure == Unknown
+        println("\n$(YELLOW)Could not detect flat or hierarchical structure at top level.$(RESET)")
+        println("$(YELLOW)Searching recursively for campaign directories...$(RESET)\n")
+
+        # Try to discover campaigns recursively
+        campaigns = discover_campaigns(experiment_root)
+
+        if isempty(campaigns)
+            println("\n$(RED)Could not find any campaigns or experiments in $experiment_root$(RESET)")
+            println("$(YELLOW)Hint: Make sure the directory contains:$(RESET)")
+            println("  - Campaign directories with hpc_results/ subdirectories")
+            println("  - Or flat experiment directories")
+            println("  - Or hierarchical objective/experiment directories")
+            exit(1)
+        end
+
+        # Found campaigns - display and let user select
+        display_campaigns(campaigns)
+        campaign_choice = get_user_choice("Select campaign", length(campaigns))
+        selected_campaign_info = campaigns[campaign_choice]
+        selected_campaign = selected_campaign_info.path
+
+        # Now display experiments in this campaign and continue with existing flow
+        experiments, valid_flags = display_experiment_list(selected_campaign)
+        batch_name = selected_campaign_info.name
+
+    elseif structure == Hierarchical
+        println("\n$(BOLD)Detected hierarchical experiment structure.$(RESET)")
+
+        # Discover experiments by objective using ExperimentCollector
+        experiments_by_obj_info = discover_experiments_hierarchical(experiment_root)
+
+        if isempty(experiments_by_obj_info)
+            println("\n$(RED)No experiments found in hierarchical structure.$(RESET)")
+            exit(1)
+        end
+
+        # Convert ExperimentInfo to String paths for compatibility with existing code
+        experiments_by_obj = Dict{String, Vector{String}}()
+        for (obj_name, exp_infos) in experiments_by_obj_info
+            experiments_by_obj[obj_name] = [exp.path for exp in exp_infos]
+        end
+
+        # Interactive selection
+        experiments = select_from_hierarchical(experiments_by_obj)
+
+        if isempty(experiments)
+            println("\n$(RED)No experiments selected.$(RESET)")
+            exit(1)
+        end
+
+        # Display selected experiments
+        println("\n$(BOLD)$(CYAN)═══ Selected Experiments ═══$(RESET)\n")
+        for (idx, exp_path) in enumerate(experiments)
+            exp_name = basename(exp_path)
+
+            # Check if results exist and are valid
+            results_file = joinpath(exp_path, "results_summary.json")
+            has_results = false
+            status_msg = ""
+
+            if isfile(results_file)
+                file_size = stat(results_file).size
+                if file_size == 0
+                    status = "$(YELLOW)⚠$(RESET)"
+                    status_msg = " (empty results file)"
+                else
+                    status = "$(GREEN)✓$(RESET)"
+                    has_results = true
+                end
+            else
+                status = "$(RED)✗$(RESET)"
+                status_msg = " (no results file)"
+            end
+
+            push!(valid_flags, has_results)
+
+            println("$(BOLD)$idx.$(RESET) $status $(BLUE)$exp_name$(RESET)$status_msg")
+            println("   Path: $exp_path")
+
+            if has_results
+                try
+                    result = load_experiment_results(exp_path)
+                    if !isempty(result.enabled_tracking)
+                        println("   Tracking: $(join(result.enabled_tracking, ", "))")
+                    else
+                        println("   $(YELLOW)Warning: No tracking labels enabled$(RESET)")
+                    end
+                catch e
+                    println("   $(RED)Error loading: $(sprint(showerror, e))$(RESET)")
+                    valid_flags[end] = false
+                end
+            end
+            println()
+        end
+
+        # Use the first experiment's parent directory as selected_campaign for compatibility
+        if !isempty(experiments)
+            selected_campaign = dirname(experiments[1])
+        end
+
+    elseif structure == Flat
+        println("\n$(BOLD)Detected flat experiment collection. Grouping by batch...$(RESET)")
+
+        # Discover batches using ExperimentCollector
+        batches = discover_batches(experiment_root)
+
+        if isempty(batches)
+            println("\n$(RED)No batches found (need at least 2 experiments per batch).$(RESET)")
+            exit(1)
+        end
+
+        # Display batches
+        display_batches(batches)
+
+        # Select batch
+        batch_choice = get_user_choice("Select batch", length(batches))
+        selected_batch = batches[batch_choice]
+
+        # Get experiments for this batch
+        experiments = get_experiments_for_batch(selected_batch)
+        batch_name = selected_batch.batch_name
+        println("\n$(BOLD)Selected batch: $(GREEN)$batch_name$(RESET)$(RESET)")
+        println("$(BOLD)Experiments in batch:$(RESET) $(length(experiments))")
+
+        # Create a virtual campaign path for display
+        selected_campaign = selected_batch.collection_path
+
+        # Display experiments (but filter to only show those in this batch)
+        println("\n$(BOLD)$(CYAN)═══ Experiments in Batch ═══$(RESET)\n")
+        valid_flags = Bool[]
+
+        for (idx, exp_path) in enumerate(experiments)
+            exp_name = basename(exp_path)
+
+            # Check if results exist and are valid
+            results_file = joinpath(exp_path, "results_summary.json")
+            has_results = false
+            status_msg = ""
+
+            if isfile(results_file)
+                file_size = stat(results_file).size
+                if file_size == 0
+                    status = "$(YELLOW)⚠$(RESET)"
+                    status_msg = " (empty results file)"
+                else
+                    status = "$(GREEN)✓$(RESET)"
+                    has_results = true
+                end
+            else
+                status = "$(RED)✗$(RESET)"
+                status_msg = " (no results file)"
+            end
+
+            push!(valid_flags, has_results)
+
+            println("$(BOLD)$idx.$(RESET) $status $(BLUE)$exp_name$(RESET)$status_msg")
+            println("   Path: $exp_path")
+
+            if has_results
+                try
+                    result = load_experiment_results(exp_path)
+                    if !isempty(result.enabled_tracking)
+                        println("   Tracking: $(join(result.enabled_tracking, ", "))")
+                    else
+                        println("   $(YELLOW)Warning: No tracking labels enabled$(RESET)")
+                    end
+                catch e
+                    println("   $(RED)Error loading: $(sprint(showerror, e))$(RESET)")
+                    valid_flags[end] = false
+                end
+            end
+            println()
+        end
     end
-
-    # Display campaigns
-    display_campaigns(campaigns)
-
-    # Select campaign
-    campaign_choice = get_user_choice("Select campaign", length(campaigns))
-    selected_campaign = campaigns[campaign_choice][1]  # Extract path from tuple
-
-    # Display experiments
-    experiments, valid_flags = display_experiment_list(selected_campaign)
 
     if isempty(experiments)
         println("$(RED)No experiments found in campaign$(RESET)")
@@ -991,10 +1344,27 @@ function main()
         analyze_single_experiment(experiments[exp_choice])
     elseif mode_choice == 2
         # Entire campaign - works with partial results
-        analyze_campaign_interactive(selected_campaign)
+        if structure == :flat
+            # For flat collections, we need to pass the filtered experiments
+            analyze_batch_interactive(experiments, batch_name)
+        elseif structure == :hierarchical
+            # For hierarchical, use batch name as the selected objective
+            obj_name = basename(selected_campaign)
+            analyze_batch_interactive(experiments, obj_name)
+        else
+            analyze_campaign_interactive(selected_campaign)
+        end
     elseif mode_choice == 3
         # Detailed parameter recovery table - works with CSV data
-        generate_detailed_table(selected_campaign)
+        if structure == :flat
+            generate_detailed_table_from_list(experiments, batch_name)
+        elseif structure == :hierarchical
+            # For hierarchical, use selected experiments
+            obj_name = basename(selected_campaign)
+            generate_detailed_table_from_list(experiments, obj_name)
+        else
+            generate_detailed_table(selected_campaign)
+        end
     else
         # Interactive trajectory analysis (mode 4) - require valid results
         if num_valid == 0
