@@ -4,12 +4,24 @@
 Interactive Experiment Analysis Entry Point
 
 This script provides an interactive interface for discovering, selecting,
-and analyzing GlobTim experiments and campaigns.
+and analyzing GlobTim experiments organized in the standardized hierarchical structure.
+
+Requirements:
+    GLOBTIM_RESULTS_ROOT environment variable must be set.
+    Run: cd globtimcore && ./scripts/setup_results_root.sh
+
+Expected structure:
+    \$GLOBTIM_RESULTS_ROOT/
+    └── {objective_name}/
+        └── {experiment_id}_{timestamp}/
+            ├── experiment_config.json
+            ├── results_summary.json
+            └── critical_points_deg_*.csv
 
 Usage:
-    julia analyze_experiments.jl [--path <experiment_root>]
+    julia analyze_experiments.jl [--path <custom_path>]
 
-If no path is provided, searches for experiments in ../globtimcore/experiments
+If no path is provided, uses \$GLOBTIM_RESULTS_ROOT automatically.
 """
 
 using Pkg
@@ -361,6 +373,107 @@ function display_parameter_recovery(exp_path::String)
 end
 
 """
+    display_convergence_by_degree(exp_path::String)
+
+Display L2-norm convergence tracking table showing how L2 norm improves with degree.
+Implements Issue #12 Phase 1: L2-Norm Convergence Tracking.
+"""
+function display_convergence_by_degree(exp_path::String)
+    try
+        # Load results summary
+        results_summary_path = joinpath(exp_path, "results_summary.json")
+        if !isfile(results_summary_path)
+            println("  $(YELLOW)⚠ No results_summary.json found$(RESET)")
+            return
+        end
+
+        json_text = read(results_summary_path, String)
+
+        # Extract data by degree
+        degrees = Int[]
+        l2_norms = Float64[]
+        critical_points = Int[]
+
+        for m in eachmatch(r"\"degree\":\s*(\d+)", json_text)
+            push!(degrees, parse(Int, m.captures[1]))
+        end
+
+        for m in eachmatch(r"\"L2_norm\":\s*([0-9.e+-]+)", json_text)
+            push!(l2_norms, parse(Float64, m.captures[1]))
+        end
+
+        for m in eachmatch(r"\"critical_points\":\s*(\d+)", json_text)
+            push!(critical_points, parse(Int, m.captures[1]))
+        end
+
+        if isempty(degrees) || length(degrees) != length(l2_norms) || length(degrees) != length(critical_points)
+            println("  $(YELLOW)⚠ Incomplete or inconsistent results data$(RESET)")
+            return
+        end
+
+        # Display table header
+        println("  " * "="^65)
+        @printf("  %-8s | %-15s | %-15s | %-12s\n",
+                "Degree", "L2 Norm", "Improvement", "Critical Pts")
+        println("  " * "="^65)
+
+        # Display each degree with improvement percentage
+        for i in 1:length(degrees)
+            degree = degrees[i]
+            l2 = l2_norms[i]
+            n_cp = critical_points[i]
+
+            if i == 1
+                # First degree has no improvement to compare
+                @printf("  %-8d | %-15.6g | %-15s | %-12d\n",
+                        degree, l2, "-", n_cp)
+            else
+                # Calculate improvement percentage
+                prev_l2 = l2_norms[i-1]
+                improvement_pct = (prev_l2 - l2) / prev_l2 * 100
+
+                # Color code based on improvement
+                improvement_color = improvement_pct > 0 ? GREEN : RED
+                @printf("  %-8d | %-15.6g | %s%14.1f%%%s | %-12d\n",
+                        degree, l2, improvement_color, improvement_pct, RESET, n_cp)
+            end
+        end
+        println("  " * "="^65)
+
+        # Calculate overall improvement
+        if length(l2_norms) >= 2
+            first_l2 = l2_norms[1]
+            last_l2 = l2_norms[end]
+            overall_improvement_factor = first_l2 / last_l2
+            overall_reduction_pct = (first_l2 - last_l2) / first_l2 * 100
+
+            println()
+            println("  $(BOLD)Summary:$(RESET)")
+            @printf("    Overall: %.2f× improvement (%.1f%% reduction)\n",
+                    overall_improvement_factor, overall_reduction_pct)
+
+            # Check for stagnation using existing function
+            l2_by_degree = Dict{Int, Float64}()
+            for (i, degree) in enumerate(degrees)
+                l2_by_degree[degree] = l2_norms[i]
+            end
+
+            thresholds = load_quality_thresholds()
+            stagnation = detect_stagnation(l2_by_degree, thresholds)
+
+            if stagnation.is_stagnant
+                println("    Status: $(YELLOW)⚠ Stagnation detected$(RESET)")
+            else
+                println("    Status: $(GREEN)✓ Improving$(RESET) (no stagnation detected)")
+            end
+        end
+
+    catch e
+        println("  $(RED)Error displaying convergence by degree:$(RESET) $e")
+    end
+end
+
+"""
     analyze_single_experiment(exp_path::String)
 
 Load and analyze a single experiment, displaying computed statistics.
@@ -413,6 +526,10 @@ function analyze_single_experiment(exp_path::String)
             println("\n$(BOLD)$(GREEN)═══ Parameter Recovery ═══$(RESET)\n")
             display_parameter_recovery(exp_path)
         end
+
+        # NEW: Convergence by Degree (Issue #12 Phase 1)
+        println("\n$(BOLD)$(GREEN)═══ Convergence by Degree ═══$(RESET)\n")
+        display_convergence_by_degree(exp_path)
 
     catch e
         println("$(RED)Error analyzing experiment:$(RESET)")
@@ -1032,13 +1149,47 @@ Interactive selection from hierarchical experiment structure.
 Returns selected experiment paths.
 """
 function select_from_hierarchical(experiments_by_obj::Dict{String, Vector{String}})
-    # Step 1: Select objective function
+    # Step 1: Select objective function with enhanced metadata display
     obj_names = sort(collect(keys(experiments_by_obj)))
 
     println("\n$(BOLD)$(CYAN)═══ Select Objective Function ═══$(RESET)\n")
+
+    # Display objectives with metadata
     for (idx, obj_name) in enumerate(obj_names)
-        n_exp = length(experiments_by_obj[obj_name])
-        println("$(BOLD)$idx.$(RESET) $(GREEN)$obj_name$(RESET) ($n_exp experiments)")
+        experiments = experiments_by_obj[obj_name]
+        n_exp = length(experiments)
+
+        # Get timestamp range (oldest to newest)
+        if !isempty(experiments)
+            mtimes = Float64[]
+            for exp_path in experiments
+                try
+                    push!(mtimes, stat(exp_path).mtime)
+                catch
+                    # Skip if stat fails
+                end
+            end
+
+            if !isempty(mtimes)
+                oldest = Dates.unix2datetime(minimum(mtimes))
+                newest = Dates.unix2datetime(maximum(mtimes))
+                oldest_str = Dates.format(oldest, "yyyy-mm-dd HH:MM")
+                newest_str = Dates.format(newest, "yyyy-mm-dd HH:MM")
+
+                println("$(BOLD)$idx.$(RESET) $(GREEN)$obj_name$(RESET)")
+                println("   Experiments: $n_exp")
+                if oldest == newest
+                    println("   Created: $newest_str")
+                else
+                    println("   Time range: $oldest_str → $newest_str")
+                end
+                println()
+            else
+                println("$(BOLD)$idx.$(RESET) $(GREEN)$obj_name$(RESET) ($n_exp experiments)")
+            end
+        else
+            println("$(BOLD)$idx.$(RESET) $(GREEN)$obj_name$(RESET) ($n_exp experiments)")
+        end
     end
 
     obj_choice = get_user_choice("Select objective", length(obj_names))
@@ -1112,19 +1263,67 @@ function main()
     experiment_root = if length(ARGS) >= 2 && ARGS[1] == "--path"
         ARGS[2]
     else
-        # Default: look in experiments/ directory within globtimpostprocessing
-        joinpath(@__DIR__, "experiments")
+        # Try GLOBTIM_RESULTS_ROOT first, then intelligently search for globtim_results
+        if haskey(ENV, "GLOBTIM_RESULTS_ROOT")
+            results_root = ENV["GLOBTIM_RESULTS_ROOT"]
+            if !isdir(results_root)
+                error("GLOBTIM_RESULTS_ROOT is set but directory does not exist: '$results_root'")
+            end
+            results_root
+        else
+            # Smart search for globtim_results in GlobalOptim hierarchy
+            candidates = [
+                joinpath(homedir(), "GlobalOptim", "globtim_results"),
+                joinpath(dirname(@__DIR__), "globtim_results"),  # ../globtim_results
+                joinpath(pwd(), "globtim_results"),              # ./globtim_results
+                # Also try finding GlobalOptim parent
+                joinpath(dirname(dirname(@__DIR__)), "globtim_results")
+            ]
+
+            results_root = nothing
+            for candidate in candidates
+                if isdir(candidate)
+                    results_root = candidate
+                    break
+                end
+            end
+
+            if isnothing(results_root)
+                error("""
+                    Could not find globtim_results directory!
+
+                    Searched locations:
+                    $(join(["  - " * c for c in candidates], "\n"))
+
+                    Solutions:
+                    1. Set GLOBTIM_RESULTS_ROOT: export GLOBTIM_RESULTS_ROOT=~/GlobalOptim/globtim_results
+                    2. Use --path: julia analyze_experiments.jl --path /path/to/results
+                    3. Run from GlobalOptim directory with globtim_results/ subdirectory
+                    """)
+            end
+
+            results_root
+        end
     end
 
     println("$(BOLD)$(CYAN)╔════════════════════════════════════════════════╗$(RESET)")
     println("$(BOLD)$(CYAN)║  GlobTim Post-Processing: Interactive Analysis ║$(RESET)")
     println("$(BOLD)$(CYAN)╚════════════════════════════════════════════════╝$(RESET)")
     println()
-    println("$(BOLD)Searching for experiments in:$(RESET)")
+    println("$(BOLD)Results root:$(RESET)")
     println("  $(BLUE)$experiment_root$(RESET)")
 
     # Detect directory structure
     structure = detect_directory_structure(experiment_root)
+
+    print("\n$(BOLD)Detected structure:$(RESET) ")
+    if structure == Hierarchical
+        println("$(GREEN)Hierarchical$(RESET) (organized by objective function)")
+    elseif structure == Flat
+        println("$(YELLOW)Flat$(RESET) (all experiments in one directory)")
+    else
+        println("$(RED)Unknown$(RESET)")
+    end
 
     # Initialize variables for tracking state
     experiments = String[]
@@ -1240,8 +1439,22 @@ function main()
         batches = discover_batches(experiment_root)
 
         if isempty(batches)
-            println("\n$(RED)No batches found (need at least 2 experiments per batch).$(RESET)")
-            exit(1)
+            # Check if there's a single experiment we can analyze directly
+            all_entries = readdir(experiment_root, join=true)
+            experiment_dirs = filter(isdir, all_entries)
+
+            if length(experiment_dirs) == 1
+                single_exp = experiment_dirs[1]
+                println("\n$(YELLOW)Found single experiment (not a batch). Analyzing directly...$(RESET)")
+                println("  $(BLUE)$(basename(single_exp))$(RESET)\n")
+
+                # Call analyze_single_experiment directly
+                analyze_single_experiment(single_exp)
+                exit(0)
+            else
+                println("\n$(RED)No batches found (need at least 2 experiments per batch).$(RESET)")
+                exit(1)
+            end
         end
 
         # Display batches
@@ -1320,29 +1533,72 @@ function main()
         exit(1)
     end
 
-    # Analysis mode selection
-    println("\n$(BOLD)$(CYAN)═══ Analysis Mode ═══$(RESET)\n")
-    println("$(BOLD)1.$(RESET) Analyze single experiment (requires valid results)")
-    println("$(BOLD)2.$(RESET) Analyze entire campaign (aggregated statistics, uses all valid experiments)")
-    println("$(BOLD)3.$(RESET) Detailed parameter recovery table (uses all experiments with CSV data)")
-    println("$(BOLD)4.$(RESET) Interactive trajectory analysis (requires valid results)")
+    # NEW: Allow user to select specific experiment(s) before choosing analysis mode
+    println("\n$(BOLD)$(CYAN)═══ Select Experiment Scope ═══$(RESET)\n")
+    println("$(BOLD)1.$(RESET) Select specific experiment (for detailed single-experiment analysis)")
+    println("$(BOLD)2.$(RESET) Use all experiments (for campaign-wide analysis)")
     println()
 
-    mode_choice = get_user_choice("Select mode", 4)
+    scope_choice = get_user_choice("Select scope", 2)
 
-    if mode_choice == 1
-        # Single experiment - require valid results
+    selected_exp_idx = nothing
+    if scope_choice == 1
+        # User wants to select a specific experiment
         if num_valid == 0
-            println("$(RED)No valid experiments available for single experiment analysis$(RESET)")
+            println("$(RED)No valid experiments available$(RESET)")
             exit(1)
         end
-        exp_choice = get_user_choice("Select experiment", length(experiments))
-        if !valid_flags[exp_choice]
-            println("$(RED)Selected experiment does not have valid results. Please select an experiment marked with $(GREEN)✓$(RESET)")
-            exit(1)
+        selected_exp_idx = get_user_choice("Select experiment", length(experiments))
+        if !valid_flags[selected_exp_idx]
+            println("$(YELLOW)Warning: Selected experiment does not have valid results$(RESET)")
         end
-        analyze_single_experiment(experiments[exp_choice])
-    elseif mode_choice == 2
+    end
+
+    # Analysis mode selection - adjust menu based on scope
+    println("\n$(BOLD)$(CYAN)═══ Analysis Mode ═══$(RESET)\n")
+
+    if !isnothing(selected_exp_idx)
+        # Single experiment selected - only show single-experiment modes
+        println("$(BOLD)1.$(RESET) Analyze single experiment (requires valid results)")
+        println("$(BOLD)2.$(RESET) Interactive trajectory analysis (requires valid results)")
+        println()
+        mode_choice = get_user_choice("Select mode", 2)
+
+        # Map to original mode numbers (1→1, 2→4)
+        actual_mode = mode_choice == 1 ? 1 : 4
+    else
+        # All experiments selected - show all modes
+        println("$(BOLD)1.$(RESET) Analyze single experiment (requires valid results)")
+        println("$(BOLD)2.$(RESET) Analyze entire campaign (aggregated statistics, uses all valid experiments)")
+        println("$(BOLD)3.$(RESET) Detailed parameter recovery table (uses all experiments with CSV data)")
+        println("$(BOLD)4.$(RESET) Interactive trajectory analysis (requires valid results)")
+        println()
+        actual_mode = get_user_choice("Select mode", 4)
+    end
+
+    if actual_mode == 1
+        # Single experiment - require valid results
+        if !isnothing(selected_exp_idx)
+            # Use pre-selected experiment
+            if !valid_flags[selected_exp_idx]
+                println("$(RED)Selected experiment does not have valid results. Please select an experiment marked with $(GREEN)✓$(RESET)")
+                exit(1)
+            end
+            analyze_single_experiment(experiments[selected_exp_idx])
+        else
+            # Ask user to select experiment
+            if num_valid == 0
+                println("$(RED)No valid experiments available for single experiment analysis$(RESET)")
+                exit(1)
+            end
+            exp_choice = get_user_choice("Select experiment", length(experiments))
+            if !valid_flags[exp_choice]
+                println("$(RED)Selected experiment does not have valid results. Please select an experiment marked with $(GREEN)✓$(RESET)")
+                exit(1)
+            end
+            analyze_single_experiment(experiments[exp_choice])
+        end
+    elseif actual_mode == 2
         # Entire campaign - works with partial results
         if structure == :flat
             # For flat collections, we need to pass the filtered experiments
@@ -1354,7 +1610,7 @@ function main()
         else
             analyze_campaign_interactive(selected_campaign)
         end
-    elseif mode_choice == 3
+    elseif actual_mode == 3
         # Detailed parameter recovery table - works with CSV data
         if structure == :flat
             generate_detailed_table_from_list(experiments, batch_name)
@@ -1367,16 +1623,26 @@ function main()
         end
     else
         # Interactive trajectory analysis (mode 4) - require valid results
-        if num_valid == 0
-            println("$(RED)No valid experiments available for trajectory analysis$(RESET)")
-            exit(1)
+        if !isnothing(selected_exp_idx)
+            # Use pre-selected experiment
+            if !valid_flags[selected_exp_idx]
+                println("$(RED)Selected experiment does not have valid results. Please select an experiment marked with $(GREEN)✓$(RESET)")
+                exit(1)
+            end
+            analyze_trajectories_interactive(experiments[selected_exp_idx])
+        else
+            # Ask user to select experiment
+            if num_valid == 0
+                println("$(RED)No valid experiments available for trajectory analysis$(RESET)")
+                exit(1)
+            end
+            exp_choice = get_user_choice("Select experiment", length(experiments))
+            if !valid_flags[exp_choice]
+                println("$(RED)Selected experiment does not have valid results. Please select an experiment marked with $(GREEN)✓$(RESET)")
+                exit(1)
+            end
+            analyze_trajectories_interactive(experiments[exp_choice])
         end
-        exp_choice = get_user_choice("Select experiment", length(experiments))
-        if !valid_flags[exp_choice]
-            println("$(RED)Selected experiment does not have valid results. Please select an experiment marked with $(GREEN)✓$(RESET)")
-            exit(1)
-        end
-        analyze_trajectories_interactive(experiments[exp_choice])
     end
 
     println("\n$(BOLD)$(GREEN)═══ Analysis Complete ═══$(RESET)\n")

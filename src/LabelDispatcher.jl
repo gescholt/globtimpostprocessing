@@ -134,11 +134,30 @@ function create_critical_points_aggregated_stats(all_stats::Dict, result::Experi
     raw = Int[]
     degrees = Int[]
 
-    for (degree_key, degree_data) in results_summary
-        deg = parse(Int, replace(degree_key, "degree_" => ""))
-        push!(degrees, deg)
-        push!(refined, get(degree_data, "critical_points_refined", 0))
-        push!(raw, get(degree_data, "critical_points_raw", 0))
+    # Handle both old dict format (degree_N => data) and new array format
+    if results_summary isa AbstractVector
+        # New format: array of objects with "degree" and "critical_points" fields
+        for degree_data in results_summary
+            if haskey(degree_data, "degree")
+                push!(degrees, degree_data["degree"])
+                # Try both "critical_points" (new) and "critical_points_refined" (old)
+                cp_count = get(degree_data, "critical_points",
+                              get(degree_data, "critical_points_refined", 0))
+                push!(refined, cp_count)
+                push!(raw, get(degree_data, "critical_points_raw", cp_count))
+            end
+        end
+    else
+        # Old format: dict with "degree_N" keys
+        for (degree_key, degree_data) in results_summary
+            deg = parse(Int, replace(degree_key, "degree_" => ""))
+            push!(degrees, deg)
+            # Try multiple possible field names for backwards compatibility
+            cp_count = get(degree_data, "critical_points",
+                          get(degree_data, "critical_points_refined", 0))
+            push!(refined, cp_count)
+            push!(raw, get(degree_data, "critical_points_raw", cp_count))
+        end
     end
 
     if isempty(degrees)
@@ -171,14 +190,33 @@ function create_timing_aggregated_stats(all_stats::Dict, result::ExperimentResul
     # Create per_degree_data dict expected by plotting
     per_degree_data = Dict{Int, Dict{String, Any}}()
 
-    for (degree_key, degree_data) in results_summary
-        deg = parse(Int, replace(degree_key, "degree_" => ""))
-        per_degree_data[deg] = Dict{String, Any}(
-            "polynomial_construction_time" => get(degree_data, "polynomial_construction_time", 0.0),
-            "critical_point_solving_time" => get(degree_data, "critical_point_solving_time", 0.0),
-            "refinement_time" => get(degree_data, "refinement_time", 0.0),
-            "total_computation_time" => get(degree_data, "total_computation_time", 0.0)
-        )
+    # Handle both old dict format (degree_N => data) and new array format
+    if results_summary isa AbstractVector
+        # New format: array of objects with "degree" and timing fields
+        for degree_data in results_summary
+            if haskey(degree_data, "degree")
+                deg = degree_data["degree"]
+                per_degree_data[deg] = Dict{String, Any}(
+                    "polynomial_construction_time" => get(degree_data, "polynomial_construction_time", 0.0),
+                    "critical_point_solving_time" => get(degree_data, "critical_point_solving_time", 0.0),
+                    "refinement_time" => get(degree_data, "refinement_time", 0.0),
+                    "total_computation_time" => get(degree_data, "total_computation_time",
+                                                   get(degree_data, "computation_time", 0.0))
+                )
+            end
+        end
+    else
+        # Old format: dict with "degree_N" keys
+        for (degree_key, degree_data) in results_summary
+            deg = parse(Int, replace(degree_key, "degree_" => ""))
+            per_degree_data[deg] = Dict{String, Any}(
+                "polynomial_construction_time" => get(degree_data, "polynomial_construction_time", 0.0),
+                "critical_point_solving_time" => get(degree_data, "critical_point_solving_time", 0.0),
+                "refinement_time" => get(degree_data, "refinement_time", 0.0),
+                "total_computation_time" => get(degree_data, "total_computation_time",
+                                               get(degree_data, "computation_time", 0.0))
+            )
+        end
     end
 
     if isempty(per_degree_data)
