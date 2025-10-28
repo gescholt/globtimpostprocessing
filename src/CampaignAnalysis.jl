@@ -658,12 +658,14 @@ function generate_campaign_markdown_report(campaign::CampaignResults, agg_stats:
         println(io, "### Parameter Recovery")
         println(io, "")
         pr = metrics["parameter_recovery"]
+        # Get aggregated stats (degree 0) or first available degree
+        pr_stats = haskey(pr, 0) ? pr[0] : first(values(pr))
         println(io, "| Statistic | Value |")
         println(io, "|-----------|-------|")
-        println(io, "| Mean Error | $(format_scientific(pr["mean"])) |")
-        println(io, "| Min Error | $(format_scientific(pr["min"])) |")
-        println(io, "| Max Error | $(format_scientific(pr["max"])) |")
-        println(io, "| Best Experiment | $(pr["best_experiment"]) |")
+        println(io, "| Mean Error | $(format_scientific(pr_stats["mean"])) |")
+        println(io, "| Min Error | $(format_scientific(pr_stats["min"])) |")
+        println(io, "| Max Error | $(format_scientific(pr_stats["max"])) |")
+        println(io, "| Best Experiment | $(pr_stats["best_experiment"]) |")
         println(io, "")
     end
 
@@ -671,10 +673,12 @@ function generate_campaign_markdown_report(campaign::CampaignResults, agg_stats:
         println(io, "### Numerical Stability")
         println(io, "")
         ns = metrics["numerical_stability"]
+        # Get aggregated stats (degree 0) or first available degree
+        ns_stats = haskey(ns, 0) ? ns[0] : first(values(ns))
         println(io, "| Statistic | Value |")
         println(io, "|-----------|-------|")
-        println(io, "| Mean Condition Number | $(format_scientific(ns["mean"])) |")
-        println(io, "| Max Condition Number | $(format_scientific(ns["max"])) |")
+        println(io, "| Mean Condition Number | $(format_scientific(ns_stats["mean"])) |")
+        println(io, "| Max Condition Number | $(format_scientific(ns_stats["max"])) |")
         println(io, "")
     end
 
@@ -682,11 +686,13 @@ function generate_campaign_markdown_report(campaign::CampaignResults, agg_stats:
         println(io, "### Critical Points")
         println(io, "")
         cp = metrics["critical_points"]
+        # Get aggregated stats (degree 0) or first available degree
+        cp_stats = haskey(cp, 0) ? cp[0] : first(values(cp))
         println(io, "| Statistic | Value |")
         println(io, "|-----------|-------|")
-        println(io, "| Mean per Experiment | $(round(cp["mean"], digits=1)) |")
-        println(io, "| Min | $(Int(cp["min"])) |")
-        println(io, "| Max | $(Int(cp["max"])) |")
+        println(io, "| Mean per Experiment | $(round(cp_stats["mean"], digits=1)) |")
+        println(io, "| Min | $(Int(cp_stats["min"])) |")
+        println(io, "| Max | $(Int(cp_stats["max"])) |")
         println(io, "")
     end
 

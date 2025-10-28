@@ -57,4 +57,9 @@ using GlobtimPostProcessing
     @testset "Quality Diagnostics (Issue #7, Phase 3)" begin
         include("test_quality_diagnostics.jl")
     end
+
+    # Run Batch Processing tests (Issue #20, Phase 2)
+    @testset "Batch Processing (Issue #20, Phase 2)" begin
+        include("test_batch_processing.jl")
+    end
 end
