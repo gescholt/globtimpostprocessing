@@ -21,6 +21,7 @@ Perform batch analysis of a campaign without user interaction.
 - `silent::Bool=false`: If true, suppresses all output except errors
 - `return_stats::Bool=false`: If true, returns statistics dict as third return value
 - `format::String="markdown"`: Output format ("markdown" or "json")
+- `include_errors::Bool=false`: If true, includes error categorization analysis in report
 
 # Returns
 When `return_stats=false`:
@@ -59,7 +60,8 @@ function batch_analyze_campaign(
     output_file::String;
     silent::Bool=false,
     return_stats::Bool=false,
-    format::String="markdown"
+    format::String="markdown",
+    include_errors::Bool=false
 )
     try
         # Validate campaign path
@@ -92,11 +94,16 @@ function batch_analyze_campaign(
             json_output = Dict(
                 "campaign_id" => campaign.campaign_id,
                 "statistics" => agg_stats,
-                "report_markdown" => generate_campaign_report(campaign),
+                "report_markdown" => generate_campaign_report(campaign, include_errors=include_errors),
                 "generation_time" => string(now()),
                 "collection_timestamp" => string(campaign.collection_timestamp),
                 "num_experiments" => length(campaign.experiments)
             )
+
+            # Add error analysis if requested
+            if include_errors
+                json_output["error_analysis"] = categorize_campaign_errors(campaign)
+            end
 
             !silent && @info "Saving JSON report to: $output_file"
             open(output_file, "w") do io
@@ -105,7 +112,7 @@ function batch_analyze_campaign(
         else
             # Markdown format (default)
             !silent && @info "Generating markdown report..."
-            report_content = generate_campaign_report(campaign)
+            report_content = generate_campaign_report(campaign, include_errors=include_errors)
 
             !silent && @info "Saving report to: $output_file"
             save_report(report_content, output_file)
@@ -273,7 +280,8 @@ function batch_analyze_campaign_with_progress(
     output_file::String;
     show_progress::Bool=true,
     silent::Bool=false,
-    verbose::Bool=false
+    verbose::Bool=false,
+    include_errors::Bool=false
 )
     try
         # Validate inputs
@@ -302,7 +310,7 @@ function batch_analyze_campaign_with_progress(
 
         # Stage 3: Generate report
         verbose && println("Stage 3/4: Generating report...")
-        report_content = generate_campaign_report(campaign)
+        report_content = generate_campaign_report(campaign, include_errors=include_errors)
         verbose && println("✓ Report generated ($(length(report_content)) chars)")
 
         # Stage 4: Save report

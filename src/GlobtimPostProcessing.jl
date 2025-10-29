@@ -40,6 +40,8 @@ using Printf
 using Dates
 using CSV
 using ProgressMeter
+using Globtim
+using StatsBase
 
 # Core functionality exports
 export load_experiment_results, load_campaign_results
@@ -52,6 +54,17 @@ export ExperimentResult, CampaignResults
 # Phase 2: Batch processing exports
 export batch_analyze_campaign, load_campaign_with_progress
 export aggregate_campaign_statistics_with_progress, batch_analyze_campaign_with_progress
+
+# Phase 3: Error categorization exports (Issue #20)
+export categorize_campaign_errors, generate_error_summary
+export get_error_categories, get_severity_levels
+export categorize_error_message, extract_campaign_errors
+export filter_errors_by_category, filter_errors_by_severity
+export get_top_priority_errors, get_experiment_errors
+export calculate_error_rate, get_most_common_error_category
+export calculate_average_priority, analyze_errors_by_degree
+export format_error_report, format_error_table
+export get_error_dataframe, create_mock_campaign
 
 # Parameter recovery exports (Issue #7)
 export param_distance, load_experiment_config, load_critical_points_for_degree
@@ -118,6 +131,7 @@ include("CampaignAnalysis.jl")
 include("BatchProcessing.jl")  # Phase 2: Batch processing functionality
 include("ParameterRecovery.jl")  # Issue #7: Parameter recovery analysis
 include("QualityDiagnostics.jl")  # Issue #7, Phase 3: Quality diagnostics
+include("ErrorCategorizationIntegration.jl")  # Issue #20, Phase 3: Error categorization
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
 # To create visualizations, use:

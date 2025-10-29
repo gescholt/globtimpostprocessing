@@ -568,12 +568,12 @@ Generate comprehensive campaign analysis report.
 # Returns
 - `String`: Formatted report content
 """
-function generate_campaign_report(campaign::CampaignResults; format::String="markdown")
+function generate_campaign_report(campaign::CampaignResults; format::String="markdown", include_errors::Bool=false)
     # Compute aggregated statistics
     agg_stats = aggregate_campaign_statistics(campaign)
 
     if format == "markdown"
-        return generate_campaign_markdown_report(campaign, agg_stats)
+        return generate_campaign_markdown_report(campaign, agg_stats, include_errors=include_errors)
     elseif format == "latex"
         return "% LaTeX campaign reports not yet implemented"
     else
@@ -586,7 +586,7 @@ end
 
 Generate Markdown campaign report.
 """
-function generate_campaign_markdown_report(campaign::CampaignResults, agg_stats::Dict)
+function generate_campaign_markdown_report(campaign::CampaignResults, agg_stats::Dict; include_errors::Bool=false)
     io = IOBuffer()
 
     # Header
@@ -726,6 +726,43 @@ function generate_campaign_markdown_report(campaign::CampaignResults, agg_stats:
         end
     end
     println(io, "")
+
+    # Error Analysis Section (if requested)
+    if include_errors
+        println(io, "## Error Analysis")
+        println(io, "")
+
+        error_analysis = categorize_campaign_errors(campaign)
+
+        println(io, "| Metric | Value |")
+        println(io, "|--------|-------|")
+        println(io, "| Total Errors | $(error_analysis["total_errors"]) |")
+        println(io, "| Error Rate | $(round(error_analysis["error_rate"]*100, digits=1))% |")
+        println(io, "")
+
+        # Category breakdown
+        if error_analysis["total_errors"] > 0
+            println(io, "### Errors by Category")
+            println(io, "")
+            println(io, "| Category | Count | Percentage |")
+            println(io, "|----------|-------|------------|")
+            for (category, count) in sort(collect(error_analysis["category_distribution"]), by=x->x[2], rev=true)
+                pct = round(count / error_analysis["total_errors"] * 100, digits=1)
+                println(io, "| $category | $count | $pct% |")
+            end
+            println(io, "")
+
+            # Recommendations
+            if !isempty(error_analysis["recommendations"])
+                println(io, "### Recommended Actions")
+                println(io, "")
+                for rec in error_analysis["recommendations"]
+                    println(io, "- $rec")
+                end
+                println(io, "")
+            end
+        end
+    end
 
     # Footer
     println(io, "---")

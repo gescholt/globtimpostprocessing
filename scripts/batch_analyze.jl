@@ -41,6 +41,7 @@ function parse_args(args::Vector{String})
         "output" => nothing,
         "format" => "markdown",
         "silent" => false,
+        "include_errors" => false,
         "help" => false
     )
 
@@ -81,6 +82,10 @@ function parse_args(args::Vector{String})
             parsed["silent"] = true
             i += 1
 
+        elseif arg == "--include-errors"
+            parsed["include_errors"] = true
+            i += 1
+
         else
             error("Unknown argument: $arg")
         end
@@ -101,6 +106,7 @@ function show_help()
         --output PATH     Path for output report (required)
         --format FORMAT   Output format: markdown or json (default: markdown)
         --silent          Suppress all output except errors (optional)
+        --include-errors  Include error categorization analysis in report (optional)
         --help, -h        Show this help message
 
     Exit codes:
@@ -150,6 +156,7 @@ function main()
         output_file = args["output"]
         format_arg = args["format"]
         silent = args["silent"]
+        include_errors = args["include_errors"]
 
         # Run batch analysis
         success, result = batch_analyze_campaign(
@@ -157,7 +164,8 @@ function main()
             output_file,
             silent=silent,
             return_stats=false,
-            format=format_arg
+            format=format_arg,
+            include_errors=include_errors
         )
 
         if success
