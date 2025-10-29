@@ -1,6 +1,40 @@
 # Changelog - GlobtimPostProcessing
 
-## [Unreleased] - 2025-10-07
+## [Unreleased] - 2025-10-29
+
+### Added - Error Categorization Integration (Issue #20, Phase 3)
+
+#### Error Analysis Features
+- **New Module**: `src/ErrorCategorizationIntegration.jl` (709 lines)
+  - `categorize_campaign_errors()` - Campaign-wide error analysis
+  - `generate_error_summary()` - Comprehensive error reporting
+  - `filter_errors_by_category()`, `filter_errors_by_severity()` - Error filtering
+  - `get_top_priority_errors()` - Priority-based error retrieval
+  - `calculate_error_rate()`, `get_most_common_error_category()` - Statistics
+  - `format_error_report()`, `format_error_table()` - Report formatting
+  - `get_error_dataframe()` - DataFrame export for error data
+  - `create_mock_campaign()` - Testing utilities
+
+#### Integration Features
+- Error sections in campaign reports (Markdown/JSON)
+- `--include-errors` CLI flag in `scripts/batch_analyze.jl`
+- Error analysis in `batch_analyze_campaign()` and `batch_analyze_campaign_with_progress()`
+- 5 error categories: INTERFACE_BUG, MATHEMATICAL_FAILURE, INFRASTRUCTURE_ISSUE, CONFIGURATION_ERROR, UNKNOWN_ERROR
+- Priority scoring with actionable recommendations
+
+#### Testing
+- **New File**: `test/test_error_categorization.jl` (105 tests, all passing)
+  - Test coverage: module access, single error categorization, campaign analysis
+  - Error-aware reports, filtering, statistics, batch integration, formatting, edge cases
+  - TDD approach: RED → GREEN → REFACTOR
+
+#### Dependencies Added
+```toml
+Globtim = "00da9514-6261-47e9-8848-33640cb1e528"  # Dev dependency
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"  # v0.34.7
+```
+
+**Status**: ✅ Complete - All 105 tests passing, fully integrated
 
 ### Added - VegaLite Integration (Phase 1)
 
