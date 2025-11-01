@@ -22,29 +22,53 @@ module ObjectiveFunctionRegistry
 export load_dynamical_systems_module, resolve_model_function,
        validate_config, reconstruct_error_function
 
-using Globtim
-
 """
-    load_dynamical_systems_module()
+    load_dynamical_systems_module(globtim_root::String)
 
 Load the DynamicalSystems module from Globtim/Examples/systems/DynamicalSystems.jl.
+
+# Arguments
+- `globtim_root`: Path to the Globtim package root directory (optional, defaults to GLOBTIM_ROOT env var or auto-search)
 
 # Returns
 - The DynamicalSystems module
 
 # Throws
-- ErrorException if Globtim not available
+- ErrorException if Globtim root not found
 - ErrorException if DynamicalSystems.jl not found at expected path
 """
-function load_dynamical_systems_module()
+function load_dynamical_systems_module(globtim_root::Union{String, Nothing}=nothing)
     # Get Globtim package root
     try
-        globtim_root = pkgdir(Globtim)
+        # Priority: 1) function arg, 2) environment variable, 3) search for it
+        if isnothing(globtim_root)
+            globtim_root = get(ENV, "GLOBTIM_ROOT", nothing)
+        end
 
         if isnothing(globtim_root)
+            # Try to find it by searching upwards from common experiment locations
+            possible_paths = [
+                "../globtimcore",  # From globtimpostprocessing directory
+                "../../globtimcore",  # From experiment subdirectory
+                joinpath(homedir(), "GlobalOptim", "globtimcore"),  # Absolute path
+            ]
+
+            for path in possible_paths
+                if isdir(path) && isfile(joinpath(path, "Project.toml"))
+                    globtim_root = abspath(path)
+                    break
+                end
+            end
+        end
+
+        if isnothing(globtim_root) || !isdir(globtim_root)
             error("""
                 Cannot locate Globtim package root.
-                Is Globtim properly installed?
+
+                Please provide it via:
+                1. Function argument: load_dynamical_systems_module("/path/to/globtimcore")
+                2. Environment variable: ENV["GLOBTIM_ROOT"] = "/path/to/globtimcore"
+                3. Ensure globtimcore is in a standard location relative to this script
                 """)
         end
 
@@ -71,16 +95,14 @@ function load_dynamical_systems_module()
         end
 
     catch e
-        if e isa ErrorException && contains(e.msg, "Cannot locate Globtim")
-            rethrow(e)
-        elseif e isa ErrorException && contains(e.msg, "DynamicalSystems.jl not found")
+        if e isa ErrorException && (contains(e.msg, "Cannot locate Globtim") || contains(e.msg, "DynamicalSystems.jl not found"))
             rethrow(e)
         else
             error("""
                 Failed to load DynamicalSystems module.
                 Error: $e
 
-                Make sure Globtim package is properly installed and DynamicalSystems.jl exists.
+                Make sure Globtim root path is correct and DynamicalSystems.jl exists.
                 """)
         end
     end

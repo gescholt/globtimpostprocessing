@@ -353,6 +353,93 @@ function display_quality_diagnostics(exp_path::String)
 end
 
 """
+    display_validation_stats(exp_path::String)
+
+Display critical point validation statistics (Schema v1.2.0).
+Shows gradient verification, Hessian classifications, and distinct minima.
+"""
+function display_validation_stats(exp_path::String)
+    try
+        # Load results_summary.json
+        results_summary_path = joinpath(exp_path, "results_summary.json")
+        if !isfile(results_summary_path)
+            println("  $(YELLOW)⚠ No results_summary.json found$(RESET)")
+            return
+        end
+
+        json_text = read(results_summary_path, String)
+        data = JSON3.read(json_text)
+
+        # Check schema version
+        schema_version = get(data, "schema_version", "unknown")
+        if schema_version < "1.2.0"
+            println("  $(YELLOW)⚠ No validation data (requires Schema v1.2.0, found $schema_version)$(RESET)")
+            return
+        end
+
+        # Get validation stats from latest degree
+        degree_keys = filter(k -> startswith(string(k), "degree_"), keys(data["results_summary"]))
+        if isempty(degree_keys)
+            println("  $(YELLOW)⚠ No degree results found$(RESET)")
+            return
+        end
+
+        latest_degree_key = last(sort(collect(degree_keys)))
+        degree_data = data["results_summary"][latest_degree_key]
+
+        if !haskey(degree_data, "validation_stats")
+            println("  $(YELLOW)⚠ No validation_stats in results$(RESET)")
+            return
+        end
+
+        vstats = degree_data["validation_stats"]
+
+        # Display gradient verification
+        println("  $(BOLD)Gradient Verification:$(RESET)")
+        println("    Tolerance: $(vstats["gradient_tol"])")
+        println("    Verified critical points: $(vstats["critical_verified"])")
+        println("    $(RED)Spurious critical points: $(vstats["critical_spurious"])$(RESET)")
+        @printf("    Mean gradient norm: %.6g\n", vstats["gradient_norm_mean"])
+        @printf("    Max gradient norm: %.6g\n", vstats["gradient_norm_max"])
+
+        # Display Hessian classifications
+        println("\n  $(BOLD)Hessian Classifications:$(RESET)")
+        classifications = vstats["classifications"]
+        total_classified = sum(values(classifications))
+        for (ctype, count) in sort(collect(classifications), by=x->x[2], rev=true)
+            color = if ctype == "minimum"
+                GREEN
+            elseif ctype == "saddle"
+                YELLOW
+            elseif ctype == "maximum"
+                CYAN
+            else
+                RED
+            end
+            pct = total_classified > 0 ? count / total_classified * 100 : 0.0
+            println("    $color$(ctype):$(RESET) $count ($(round(pct, digits=1))%)")
+        end
+
+        # Display distinct minima
+        n_minima = vstats["distinct_local_minima"]
+        if n_minima > 0
+            println("\n  $(BOLD)$(GREEN)Distinct Local Minima: $n_minima$(RESET)")
+            cluster_sizes = vstats["minima_cluster_sizes"]
+            if length(cluster_sizes) > 0 && length(cluster_sizes) <= 10
+                println("    Cluster sizes: $(join(cluster_sizes, ", "))")
+            elseif length(cluster_sizes) > 10
+                println("    Cluster sizes: $(join(cluster_sizes[1:5], ", ")), ... ($(length(cluster_sizes)) total)")
+            end
+        else
+            println("\n  $(YELLOW)⚠ No local minima found$(RESET)")
+        end
+
+    catch e
+        println("  $(RED)Error displaying validation stats:$(RESET) $e")
+    end
+end
+
+"""
     display_parameter_recovery(exp_path::String)
 
 Display parameter recovery table for an experiment with ground truth.
@@ -626,6 +713,10 @@ function analyze_single_experiment(exp_path::String)
         # Quality Diagnostics
         println("\n$(BOLD)$(GREEN)═══ Quality Diagnostics ═══$(RESET)\n")
         display_quality_diagnostics(exp_path)
+
+        # Critical Point Validation (Schema v1.2.0)
+        println("\n$(BOLD)$(GREEN)═══ Critical Point Validation ═══$(RESET)\n")
+        display_validation_stats(exp_path)
 
         # Parameter Recovery (if p_true exists)
         if has_ground_truth(exp_path)

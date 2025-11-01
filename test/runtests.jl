@@ -62,4 +62,9 @@ using GlobtimPostProcessing
     @testset "Batch Processing (Issue #20, Phase 2)" begin
         include("test_batch_processing.jl")
     end
+
+    # Run Error Categorization tests (Issue #20, Phase 3)
+    @testset "Error Categorization (Issue #20, Phase 3)" begin
+        include("test_error_categorization.jl")
+    end
 end
