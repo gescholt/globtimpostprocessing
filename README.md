@@ -10,11 +10,32 @@ Label-aware post-processing and visualization framework for GlobTim experiment r
 - **Interactive exploration**: Terminal-based UI for browsing and analyzing experiments
 - **Flexible backends**: Support for both interactive (GLMakie) and static (CairoMakie) plotting
 
-## Installation
+## Getting Started
+
+### Installation
+
+GlobtimPostProcessing is **not registered in Julia General**. To use it, set up the entire GlobalOptim ecosystem using the centralized setup repository:
+
+```bash
+# Clone the setup repository
+git clone git@git.mpi-cbg.de:globaloptim/setup.git GlobalOptim
+cd GlobalOptim
+
+# Run automated setup (develops all packages)
+julia setup_globaloptim.jl
+```
+
+This automatically develops all GlobalOptim packages including GlobtimPostProcessing.
+
+**For detailed instructions**, see the [setup repository](https://git.mpi-cbg.de/globaloptim/setup).
+
+### Manual Development (Alternative)
+
+If you prefer manual setup:
 
 ```julia
 using Pkg
-Pkg.add(url="git@git.mpi-cbg.de:globaloptim/globtimpostprocessing.git")
+Pkg.develop(path="/path/to/GlobalOptim/globtimpostprocessing")
 ```
 
 ## Quick Start
