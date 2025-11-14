@@ -67,4 +67,9 @@ using GlobtimPostProcessing
     @testset "Error Categorization (Issue #20, Phase 3)" begin
         include("test_error_categorization.jl")
     end
+
+    # Run Critical Point Classification tests
+    @testset "Critical Point Classification" begin
+        include("test_critical_point_classification.jl")
+    end
 end

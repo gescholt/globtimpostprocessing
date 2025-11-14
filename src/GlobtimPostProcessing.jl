@@ -76,6 +76,11 @@ export check_l2_quality
 export detect_stagnation, StagnationResult
 export check_objective_distribution_quality, ObjectiveDistributionResult
 
+# Critical point classification exports
+export classify_critical_point, classify_all_critical_points!
+export count_classifications, find_distinct_local_minima
+export get_classification_summary
+
 # Define types first
 """
     ExperimentResult
@@ -131,6 +136,7 @@ include("CampaignAnalysis.jl")
 include("BatchProcessing.jl")  # Phase 2: Batch processing functionality
 include("ParameterRecovery.jl")  # Issue #7: Parameter recovery analysis
 include("QualityDiagnostics.jl")  # Issue #7, Phase 3: Quality diagnostics
+include("CriticalPointClassification.jl")  # Critical point classification based on Hessian eigenvalues
 include("ErrorCategorizationIntegration.jl")  # Issue #20, Phase 3: Error categorization
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
