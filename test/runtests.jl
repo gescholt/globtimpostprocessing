@@ -72,4 +72,9 @@ using GlobtimPostProcessing
     @testset "Critical Point Classification" begin
         include("test_critical_point_classification.jl")
     end
+
+    # Run Landscape Fidelity tests
+    @testset "Landscape Fidelity" begin
+        include("test_landscape_fidelity.jl")
+    end
 end

@@ -81,6 +81,11 @@ export classify_critical_point, classify_all_critical_points!
 export count_classifications, find_distinct_local_minima
 export get_classification_summary
 
+# Landscape fidelity exports
+export check_objective_proximity, estimate_basin_radius, check_hessian_basin
+export assess_landscape_fidelity, batch_assess_fidelity
+export ObjectiveProximityResult, HessianBasinResult, LandscapeFidelityResult
+
 # Define types first
 """
     ExperimentResult
@@ -137,6 +142,7 @@ include("BatchProcessing.jl")  # Phase 2: Batch processing functionality
 include("ParameterRecovery.jl")  # Issue #7: Parameter recovery analysis
 include("QualityDiagnostics.jl")  # Issue #7, Phase 3: Quality diagnostics
 include("CriticalPointClassification.jl")  # Critical point classification based on Hessian eigenvalues
+include("LandscapeFidelity.jl")  # Landscape fidelity: polynomial vs objective basin assessment
 include("ErrorCategorizationIntegration.jl")  # Issue #20, Phase 3: Error categorization
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
