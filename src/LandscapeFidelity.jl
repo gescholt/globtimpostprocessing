@@ -187,15 +187,16 @@ function check_objective_proximity(x_star::Vector{Float64},
     f_star = objective(x_star)
     f_min = objective(x_min)
 
-    # Hybrid criterion: handle global minima (f ≈ 0) and local minima differently
-    if abs(f_min) < abs_tolerance && abs(f_star) < abs_tolerance
-        # Both values near zero (global minimum case)
-        # Consider them in same basin - both converged to global minimum
-        is_same_basin = true
+    # Asymmetric hybrid criterion: handle global minima correctly
+    if abs(f_min) < abs_tolerance
+        # f_min ≈ 0 (global minimum case)
+        # Check if f_star is also small (using tolerance, not abs_tolerance)
+        # This allows f_star to be larger than abs_tolerance but still near zero
+        is_same_basin = abs(f_star) < tolerance
         metric = abs(f_star - f_min)  # Report absolute difference
     else
         # Standard relative difference for non-zero minima
-        rel_diff = abs(f_star - f_min) / (abs(f_min) + abs_tolerance)
+        rel_diff = abs(f_star - f_min) / abs(f_min)
         is_same_basin = rel_diff < tolerance
         metric = rel_diff
     end
