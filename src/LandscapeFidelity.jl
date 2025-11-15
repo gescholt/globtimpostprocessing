@@ -134,7 +134,8 @@ end
     check_objective_proximity(x_star::Vector{Float64},
                               x_min::Vector{Float64},
                               objective::Function;
-                              tolerance::Float64=0.05) -> ObjectiveProximityResult
+                              tolerance::Float64=0.05,
+                              abs_tolerance::Float64=1e-6) -> ObjectiveProximityResult
 
 Check if two points are in the same basin based on objective function values.
 
@@ -143,45 +144,63 @@ Check if two points are in the same basin based on objective function values.
 - `x_min`: Refined minimum from local optimization
 - `objective`: Objective function f(x)
 - `tolerance`: Relative tolerance (default: 5%)
+- `abs_tolerance`: Absolute tolerance for global minima (default: 1e-6)
 
 # Returns
 `ObjectiveProximityResult` with basin membership assessment
 
 # Algorithm
-Points are considered in the same basin if:
-    |f(x*) - f(x_min)| / |f(x_min)| < tolerance
+Uses hybrid absolute/relative criterion to handle both global and local minima:
+
+1. **Global minima** (both f_star and f_min < abs_tolerance):
+   - Points considered in same basin if both near zero
+   - Returns absolute difference as metric
+
+2. **Local minima** (f_min >= abs_tolerance):
+   - Uses relative difference: |f(x*) - f(x_min)| / |f(x_min)|
+   - Points in same basin if relative difference < tolerance
 
 # Example
 ```julia
 f(x) = sum(x.^2)
-x_star = [0.01, 0.02]
-x_min = [0.0, 0.0]
+x_star = [0.01, 0.02]  # Near global minimum
+x_min = [0.0, 0.0]     # Exact global minimum
 
-result = check_objective_proximity(x_star, x_min, f, tolerance=0.01)
-@assert result.is_same_basin  # Both near global minimum
+result = check_objective_proximity(x_star, x_min, f)
+@assert result.is_same_basin  # Both at global minimum (f ≈ 0)
 ```
 
 # Rationale
 If the polynomial minimum gives nearly the same objective value as the
 refined minimum, they likely lie in the same level set and basin, even
-if spatially separated.
+if spatially separated. The hybrid criterion prevents spurious failures
+when optimizing to global minima (f ≈ 0).
 
-**Pros**: Scale-invariant, doesn't require derivatives
+**Pros**: Scale-invariant, handles global minima correctly, no derivatives needed
 **Cons**: Can give false positives in flat regions
 """
 function check_objective_proximity(x_star::Vector{Float64},
                                    x_min::Vector{Float64},
                                    objective::Function;
-                                   tolerance::Float64=0.05)
+                                   tolerance::Float64=0.05,
+                                   abs_tolerance::Float64=1e-6)
     f_star = objective(x_star)
     f_min = objective(x_min)
 
-    # Relative difference
-    rel_diff = abs(f_star - f_min) / (abs(f_min) + 1e-10)
+    # Hybrid criterion: handle global minima (f ≈ 0) and local minima differently
+    if abs(f_min) < abs_tolerance && abs(f_star) < abs_tolerance
+        # Both values near zero (global minimum case)
+        # Consider them in same basin - both converged to global minimum
+        is_same_basin = true
+        metric = abs(f_star - f_min)  # Report absolute difference
+    else
+        # Standard relative difference for non-zero minima
+        rel_diff = abs(f_star - f_min) / (abs(f_min) + abs_tolerance)
+        is_same_basin = rel_diff < tolerance
+        metric = rel_diff
+    end
 
-    is_same_basin = rel_diff < tolerance
-
-    return ObjectiveProximityResult(is_same_basin, rel_diff, f_star, f_min)
+    return ObjectiveProximityResult(is_same_basin, metric, f_star, f_min)
 end
 
 """

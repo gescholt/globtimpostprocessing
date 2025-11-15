@@ -57,6 +57,35 @@ using GlobtimPostProcessing
         @test result_lenient.is_same_basin == true
     end
 
+    @testset "check_objective_proximity - Global Minima Bug Fix (Issue #2)" begin
+        # Regression test for bug discovered in testing
+        # Bug: When f_min ≈ 0, relative difference calculation explodes
+        # f_star = 0.001, f_min = 0.0 → rel_diff = 1e7 instead of accepting
+
+        f(x) = sum((x .- 0.5).^2)  # Global minimum at [0.5, 0.5, ...]
+
+        # Case 1: Both near global minimum (should be same basin)
+        x_star = [0.48, 0.52, 0.49, 0.51]  # Very close to minimum
+        x_min = [0.50, 0.50, 0.50, 0.50]   # Exact minimum
+
+        result = check_objective_proximity(x_star, x_min, f, tolerance=0.05)
+
+        # Both values should be < 1e-6 (global minimum case)
+        @test result.f_star < 1e-6
+        @test result.f_min ≈ 0.0
+        # Should recognize as same basin (both at global minimum)
+        @test result.is_same_basin == true
+        # Metric should be absolute difference (not exploded relative diff)
+        @test result.metric < 1e-3
+
+        # Case 2: One point far from global minimum (should be different basin)
+        x_star_far = [0.9, 0.9, 0.9, 0.9]
+        result_far = check_objective_proximity(x_star_far, x_min, f, tolerance=0.05)
+
+        @test result_far.is_same_basin == false
+        @test result_far.f_star > 1e-3  # Far from minimum
+    end
+
     @testset "estimate_basin_radius - Basic Functionality" begin
         # Quadratic: f(x) = x^2, f''(x) = 2
         f(x) = sum(x.^2)

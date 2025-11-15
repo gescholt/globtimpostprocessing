@@ -242,12 +242,11 @@ Find indices of distinct local minima, removing duplicates within distance thres
 2. Cluster points within distance_threshold
 3. Return representative points from each cluster
 
-# Examples
-```julia
-distinct_minima_indices = find_distinct_local_minima(df)
-distinct_minima = df[distinct_minima_indices, :]
-println("Found $(length(distinct_minima_indices)) distinct local minima")
-```
+# Example
+Find distinct minima and extract their rows:
+    indices = find_distinct_local_minima(df)
+    unique_minima = df[indices, :]
+    println("Found ", length(indices), " distinct local minima")
 """
 function find_distinct_local_minima(df::DataFrame;
                                     classification_col::Symbol=:point_classification,
