@@ -228,9 +228,20 @@ function compute_hessian_statistics(result::ExperimentResult)
         stats["$(col_name)_max"] = maximum(vals)
     end
 
-    # Classification by eigenvalue signs
+    # Classify critical points based on Hessian eigenvalues
+    # Make a copy of the DataFrame to avoid modifying the original
+    df_copy = copy(df)
+    classify_all_critical_points!(df_copy)
+
+    # Get classification summary
+    summary = get_classification_summary(df_copy)
+
+    stats["classifications"] = summary["counts"]
+    stats["classification_percentages"] = summary["percentages"]
+    stats["distinct_local_minima"] = summary["distinct_local_minima"]
+
+    # Legacy eigenvalue sign distribution (for backward compatibility)
     if length(eigenvalue_cols) >= 1
-        # Count saddle points, minima, maxima
         first_eigenval = df[!, eigenvalue_cols[1]]
 
         num_negative = count(x -> x < -1e-6, first_eigenval)
