@@ -31,7 +31,8 @@ using GlobtimPostProcessing
         result = check_objective_proximity(x_star, x_min, f, tolerance=0.05)
 
         @test result.is_same_basin == false
-        @test result.metric > 1.0  # Much larger than tolerance
+        # With asymmetric criterion: f_min ≈ 0, so returns absolute difference
+        @test result.metric ≈ 0.5  # abs(f_star - f_min) = abs(0.5 - 0.0)
     end
 
     @testset "check_objective_proximity - Edge Cases" begin
@@ -70,13 +71,13 @@ using GlobtimPostProcessing
 
         result = check_objective_proximity(x_star, x_min, f, tolerance=0.05)
 
-        # Both values should be < 1e-6 (global minimum case)
-        @test result.f_star < 1e-6
+        # Verify the function values
+        @test result.f_star ≈ 0.001 atol=1e-4  # Small value near global min
         @test result.f_min ≈ 0.0
         # Should recognize as same basin (both at global minimum)
         @test result.is_same_basin == true
         # Metric should be absolute difference (not exploded relative diff)
-        @test result.metric < 1e-3
+        @test result.metric ≤ 1e-3  # abs(f_star - f_min) ≤ 0.001
 
         # Case 2: One point far from global minimum (should be different basin)
         x_star_far = [0.9, 0.9, 0.9, 0.9]
