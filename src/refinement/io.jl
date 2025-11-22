@@ -1,0 +1,312 @@
+"""
+Refinement I/O Utilities
+
+Provides functions to load raw critical points from globtimcore output
+and save refined results to CSV/JSON files.
+
+Created: 2025-11-22 (Architecture cleanup)
+"""
+
+"""
+    RawCriticalPointsData
+
+Container for loaded raw critical points data.
+
+# Fields
+- `points::Vector{Vector{Float64}}`: Raw critical points
+- `degree::Int`: Polynomial degree used
+- `n_points::Int`: Number of critical points
+- `source_file::String`: Path to source CSV file
+"""
+struct RawCriticalPointsData
+    points::Vector{Vector{Float64}}
+    degree::Int
+    n_points::Int
+    source_file::String
+end
+
+"""
+    load_raw_critical_points(experiment_dir::String; degree::Union{Int,Nothing}=nothing)
+
+Load raw critical points from globtimcore experiment output directory.
+
+Searches for `critical_points_raw_deg_X.csv` (new format) or falls back to
+`critical_points_deg_X.csv` (old format for backward compatibility).
+
+# Arguments
+- `experiment_dir::String`: Path to globtimcore output directory
+- `degree::Union{Int,Nothing}`: Specific degree to load (default: highest degree found)
+
+# Returns
+`RawCriticalPointsData` containing points and metadata
+
+# Examples
+```julia
+# Load highest degree
+raw_data = load_raw_critical_points("../globtim_results/lv4d_exp_20251122")
+
+# Load specific degree
+raw_data = load_raw_critical_points("../globtim_results/lv4d_exp_20251122", degree=12)
+
+println("Loaded ", raw_data.n_points, " points at degree ", raw_data.degree)
+```
+
+# Errors
+Throws error if no critical points files found in directory.
+"""
+function load_raw_critical_points(
+    experiment_dir::String;
+    degree::Union{Int,Nothing} = nothing
+)
+    # Search for critical points CSV files
+    raw_pattern = r"critical_points_raw_deg_(\d+)\.csv"
+    legacy_pattern = r"critical_points_deg_(\d+)\.csv"
+
+    # Get all CSV files in directory
+    csv_files = filter(f -> endswith(f, ".csv"), readdir(experiment_dir))
+
+    # Find raw critical points files (new format)
+    raw_files = filter(f -> occursin(raw_pattern, f), csv_files)
+
+    # Fall back to legacy format if no raw files found
+    if isempty(raw_files)
+        raw_files = filter(f -> occursin(legacy_pattern, f), csv_files)
+        pattern = legacy_pattern
+        is_legacy = true
+    else
+        pattern = raw_pattern
+        is_legacy = false
+    end
+
+    # Error if no files found
+    if isempty(raw_files)
+        error("No critical points CSV files found in $experiment_dir")
+    end
+
+    # Parse degrees from filenames
+    available_degrees = Int[]
+    degree_to_file = Dict{Int, String}()
+
+    for file in raw_files
+        m = match(pattern, file)
+        if m !== nothing
+            deg = parse(Int, m.captures[1])
+            push!(available_degrees, deg)
+            degree_to_file[deg] = joinpath(experiment_dir, file)
+        end
+    end
+
+    # Select degree to load
+    if degree === nothing
+        # Load highest degree available
+        selected_degree = maximum(available_degrees)
+    else
+        # Load specified degree
+        if !(degree in available_degrees)
+            error("Degree $degree not found. Available degrees: $available_degrees")
+        end
+        selected_degree = degree
+    end
+
+    csv_path = degree_to_file[selected_degree]
+
+    # Load CSV
+    df = CSV.read(csv_path, DataFrame)
+
+    # Extract critical points (assuming columns are dimensions)
+    # Find dimension columns (starts with dim or x)
+    dim_cols = filter(c -> occursin(r"^(dim|x)\d+$", String(c)), names(df))
+
+    if isempty(dim_cols)
+        # Fall back to all numeric columns
+        dim_cols = names(df, Real)
+    end
+
+    # Convert to Vector{Vector{Float64}}
+    points = [Vector{Float64}(row[dim_cols]) for row in eachrow(df)]
+
+    return RawCriticalPointsData(
+        points,
+        selected_degree,
+        length(points),
+        csv_path
+    )
+end
+
+"""
+    RefinedExperimentResult
+
+Results from refining critical points of an experiment.
+
+# Fields
+- `raw_points::Vector{Vector{Float64}}`: Original critical points from HomotopyContinuation
+- `refined_points::Vector{Vector{Float64}}`: Successfully refined critical points
+- `raw_values::Vector{Float64}`: Objective values at raw points
+- `refined_values::Vector{Float64}`: Objective values at refined points
+- `improvements::Vector{Float64}`: |f(refined) - f(raw)| for each point
+- `convergence_status::Vector{Bool}`: Convergence status for each raw point
+- `iterations::Vector{Int}`: Iterations per point
+- `n_raw::Int`: Total number of raw critical points
+- `n_converged::Int`: Number of successful refinements
+- `n_failed::Int`: Number of failed refinements
+- `n_timeout::Int`: Number of timeouts
+- `mean_improvement::Float64`: Mean improvement for converged points
+- `max_improvement::Float64`: Maximum improvement
+- `best_raw_idx::Int`: Index of best raw point
+- `best_refined_idx::Int`: Index of best refined point (among converged)
+- `best_raw_value::Float64`: Best objective value among raw points
+- `best_refined_value::Float64`: Best objective value among refined points
+- `output_dir::String`: Directory where results are saved
+- `degree::Int`: Polynomial degree used
+- `total_time::Float64`: Total refinement time (seconds)
+- `refinement_config::RefinementConfig`: Configuration used
+"""
+struct RefinedExperimentResult
+    raw_points::Vector{Vector{Float64}}
+    refined_points::Vector{Vector{Float64}}
+    raw_values::Vector{Float64}
+    refined_values::Vector{Float64}
+    improvements::Vector{Float64}
+    convergence_status::Vector{Bool}
+    iterations::Vector{Int}
+    n_raw::Int
+    n_converged::Int
+    n_failed::Int
+    n_timeout::Int
+    mean_improvement::Float64
+    max_improvement::Float64
+    best_raw_idx::Int
+    best_refined_idx::Int
+    best_raw_value::Float64
+    best_refined_value::Float64
+    output_dir::String
+    degree::Int
+    total_time::Float64
+    refinement_config::RefinementConfig
+end
+
+"""
+    save_refined_results(experiment_dir::String, result::RefinedExperimentResult, degree::Int)
+
+Save refined critical points and comparison data to experiment directory.
+
+# Files Created
+- `critical_points_refined_deg_X.csv`: Refined critical points
+- `refinement_comparison_deg_X.csv`: Raw vs refined side-by-side
+- `refinement_summary.json`: Statistics and metadata
+
+# Arguments
+- `experiment_dir::String`: Experiment output directory
+- `result::RefinedExperimentResult`: Refinement results
+- `degree::Int`: Polynomial degree
+
+# Examples
+```julia
+save_refined_results(experiment_dir, result, 12)
+```
+"""
+function save_refined_results(
+    experiment_dir::String,
+    result::RefinedExperimentResult,
+    degree::Int
+)
+    # 1. Save refined critical points CSV
+    refined_csv_path = joinpath(experiment_dir, "critical_points_refined_deg_$degree.csv")
+
+    if !isempty(result.refined_points)
+        n_dim = length(result.refined_points[1])
+        dim_cols = [Symbol("dim$i") for i in 1:n_dim]
+
+        # Build DataFrame
+        refined_df = DataFrame()
+        for (i, col) in enumerate(dim_cols)
+            refined_df[!, col] = [pt[i] for pt in result.refined_points]
+        end
+
+        # Add objective values and iterations
+        refined_df[!, :objective_value] = result.refined_values
+        refined_df[!, :improvement] = result.improvements
+        refined_df[!, :iterations] = result.iterations[result.convergence_status]
+
+        CSV.write(refined_csv_path, refined_df)
+    end
+
+    # 2. Save comparison CSV (raw vs refined)
+    comparison_csv_path = joinpath(experiment_dir, "refinement_comparison_deg_$degree.csv")
+
+    n_dim = length(result.raw_points[1])
+    comparison_df = DataFrame()
+
+    # Raw points
+    for i in 1:n_dim
+        comparison_df[!, Symbol("raw_dim$i")] = [pt[i] for pt in result.raw_points]
+    end
+    comparison_df[!, :raw_value] = result.raw_values
+
+    # Refined points (or NaN for failed)
+    for i in 1:n_dim
+        refined_col = Vector{Float64}(undef, result.n_raw)
+        for (j, converged) in enumerate(result.convergence_status)
+            if converged
+                # Find index in refined_points
+                converged_idx = sum(result.convergence_status[1:j])
+                refined_col[j] = result.refined_points[converged_idx][i]
+            else
+                refined_col[j] = NaN
+            end
+        end
+        comparison_df[!, Symbol("refined_dim$i")] = refined_col
+    end
+
+    # Refined values (or NaN for failed)
+    refined_value_col = Vector{Float64}(undef, result.n_raw)
+    for (j, converged) in enumerate(result.convergence_status)
+        if converged
+            converged_idx = sum(result.convergence_status[1:j])
+            refined_value_col[j] = result.refined_values[converged_idx]
+        else
+            refined_value_col[j] = NaN
+        end
+    end
+    comparison_df[!, :refined_value] = refined_value_col
+
+    # Status and improvement
+    comparison_df[!, :converged] = result.convergence_status
+    comparison_df[!, :iterations] = result.iterations
+
+    CSV.write(comparison_csv_path, comparison_df)
+
+    # 3. Save summary JSON
+    summary_json_path = joinpath(experiment_dir, "refinement_summary_deg_$degree.json")
+
+    summary = Dict(
+        "degree" => degree,
+        "n_raw_points" => result.n_raw,
+        "n_converged" => result.n_converged,
+        "n_failed" => result.n_failed,
+        "n_timeout" => result.n_timeout,
+        "convergence_rate" => result.n_converged / result.n_raw,
+        "mean_improvement" => result.mean_improvement,
+        "max_improvement" => result.max_improvement,
+        "best_raw_value" => result.best_raw_value,
+        "best_refined_value" => result.best_refined_value,
+        "total_refinement_time" => result.total_time,
+        "config" => Dict(
+            "method" => string(typeof(result.refinement_config.method)),
+            "max_time_per_point" => result.refinement_config.max_time_per_point,
+            "f_abstol" => result.refinement_config.f_abstol,
+            "x_abstol" => result.refinement_config.x_abstol,
+            "max_iterations" => result.refinement_config.max_iterations
+        ),
+        "timestamp" => Dates.now()
+    )
+
+    open(summary_json_path, "w") do io
+        JSON.print(io, summary, 2)
+    end
+
+    println("Refinement results saved to:")
+    println("  - Refined points: $refined_csv_path")
+    println("  - Comparison: $comparison_csv_path")
+    println("  - Summary: $summary_json_path")
+end
