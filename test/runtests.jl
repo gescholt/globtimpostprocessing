@@ -77,4 +77,9 @@ using GlobtimPostProcessing
     @testset "Landscape Fidelity" begin
         include("test_landscape_fidelity.jl")
     end
+
+    # Run Phase 1 Refinement tests (simple functions, no Globtim dependency)
+    @testset "Phase 1 Refinement" begin
+        include("test_refinement_phase1.jl")
+    end
 end
