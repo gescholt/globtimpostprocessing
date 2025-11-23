@@ -47,3 +47,6 @@ PHASE*.md
 
 # Collected experimental data
 collected_experiments_*/
+
+# Experimental data (personal analysis, not package code)
+collected_experiments_*/
