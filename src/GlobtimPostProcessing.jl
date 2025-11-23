@@ -42,6 +42,7 @@ using CSV
 using ProgressMeter
 using Globtim
 using StatsBase
+using Optim  # Critical point refinement
 
 # Core functionality exports
 export load_experiment_results, load_campaign_results
@@ -85,6 +86,13 @@ export get_classification_summary
 export check_objective_proximity, estimate_basin_radius, check_hessian_basin
 export assess_landscape_fidelity, batch_assess_fidelity
 export ObjectiveProximityResult, HessianBasinResult, LandscapeFidelityResult
+
+# Critical point refinement exports
+export RefinementConfig, ode_refinement_config
+export refine_experiment_results, refine_critical_points
+export RefinedExperimentResult, RefinementResult
+export load_raw_critical_points, save_refined_results, RawCriticalPointsData
+export refine_critical_point, refine_critical_points_batch
 
 # Define types first
 """
@@ -144,6 +152,12 @@ include("QualityDiagnostics.jl")  # Issue #7, Phase 3: Quality diagnostics
 include("CriticalPointClassification.jl")  # Critical point classification based on Hessian eigenvalues
 include("LandscapeFidelity.jl")  # Landscape fidelity: polynomial vs objective basin assessment
 include("ErrorCategorizationIntegration.jl")  # Issue #20, Phase 3: Error categorization
+
+# Critical point refinement (moved from globtimcore - 2025-11-22)
+include("refinement/core_refinement.jl")  # Core refinement algorithms
+include("refinement/config.jl")           # RefinementConfig struct
+include("refinement/io.jl")               # Load/save utilities
+include("refinement/api.jl")              # High-level API
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
 # To create visualizations, use:
