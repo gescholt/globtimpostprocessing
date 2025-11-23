@@ -12,5 +12,9 @@
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enabledMcpjsonServers": [
+    "globtim"
+  ],
+  "enableAllProjectMcpServers": true
 }
