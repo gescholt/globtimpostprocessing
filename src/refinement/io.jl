@@ -302,7 +302,7 @@ function save_refined_results(
     )
 
     open(summary_json_path, "w") do io
-        JSON.print(io, summary, 2)
+        JSON.print(io, summary, 2; allow_nan=true)
     end
 
     println("Refinement results saved to:")
