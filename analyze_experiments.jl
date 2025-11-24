@@ -908,26 +908,9 @@ function analyze_basis_comparison(experiments::Vector{String}, campaign_path::St
 end
 
 """
-    analyze_trajectory_interactive(exp_path::String)
-
-Mode 4: Interactive trajectory analysis - critical point inspection.
-"""
-function analyze_trajectory_interactive(exp_path::String)
-    println("\n$(BOLD)$(CYAN)═══ Interactive Trajectory Analysis ═══$(RESET)\n")
-    println("Experiment: $(BLUE)$(basename(exp_path))$(RESET)\n")
-
-    println("$(YELLOW)⚠ Mode 4: Interactive Trajectory Analysis not yet fully implemented$(RESET)")
-    println("This mode will:")
-    println("  - Show convergence overview")
-    println("  - Allow interactive critical point selection")
-    println("  - Display trajectory quality metrics")
-    println("  - Evaluate landscape fidelity")
-end
-
-"""
     export_campaign_report(experiments::Vector{String}, campaign_path::String)
 
-Mode 5: Export campaign report - generate markdown/CSV/JSON outputs.
+Mode 4: Export campaign report - generate markdown/CSV/JSON outputs.
 """
 function export_campaign_report(experiments::Vector{String}, campaign_path::String)
     println("\n$(BOLD)$(CYAN)═══ Export Campaign Report ═══$(RESET)\n")
@@ -951,7 +934,7 @@ function export_campaign_report(experiments::Vector{String}, campaign_path::Stri
     json_file = joinpath(output_dir, "quality_diagnostics.json")
     println("  📋 Generating JSON diagnostics: $(basename(json_file))")
 
-    println("\n$(YELLOW)⚠ Mode 5: Export functionality not yet fully implemented$(RESET)")
+    println("\n$(YELLOW)⚠ Mode 4: Export functionality not yet fully implemented$(RESET)")
     println("Report skeleton created at: $(BLUE)$output_dir$(RESET)")
 end
 
@@ -1049,30 +1032,27 @@ function main()
     println("\n$(BOLD)$(CYAN)═══ Analysis Mode Selection ═══$(RESET)\n")
     println("$(BOLD)1.$(RESET) Single Experiment Analysis")
     println("   - Detailed analysis with quality checks and parameter recovery")
+    println("   - Critical point refinement statistics")
     println("   - Degree convergence table")
     println()
     println("$(BOLD)2.$(RESET) Campaign-Wide Analysis")
     println("   - Compare multiple experiments")
     println("   - Aggregate statistics across all experiments")
     println("   - Parameter recovery comparison")
+    println("   - Quality distribution summary")
     println()
     println("$(BOLD)3.$(RESET) Basis Comparison (Chebyshev vs Legendre)")
     println("   - Auto-detect basis pairs")
     println("   - L2, condition number, critical points comparison")
     println("   - Recommendation engine")
     println()
-    println("$(BOLD)4.$(RESET) Interactive Trajectory Analysis")
-    println("   - Convergence overview")
-    println("   - Critical point inspection")
-    println("   - Trajectory quality evaluation")
-    println()
-    println("$(BOLD)5.$(RESET) Export Campaign Report")
+    println("$(BOLD)4.$(RESET) Export Campaign Report")
     println("   - Generate markdown report with all metrics")
     println("   - Export convergence data to CSV")
     println("   - Save quality diagnostics to JSON")
     println()
 
-    mode_choice = get_user_choice("Select analysis mode", 5)
+    mode_choice = get_user_choice("Select analysis mode", 4)
 
     # Execute selected mode
     if mode_choice == 1
@@ -1087,12 +1067,7 @@ function main()
         # Mode 3: Basis Comparison
         analyze_basis_comparison(experiments, selected_dir)
     elseif mode_choice == 4
-        # Mode 4: Interactive Trajectory Analysis
-        exp_choice = get_user_choice("Select experiment for trajectory analysis", length(experiments))
-        selected_exp = experiments[exp_choice]
-        analyze_trajectory_interactive(selected_exp)
-    elseif mode_choice == 5
-        # Mode 5: Export Campaign Report
+        # Mode 4: Export Campaign Report (formerly Mode 5)
         export_campaign_report(experiments, selected_dir)
     end
 
