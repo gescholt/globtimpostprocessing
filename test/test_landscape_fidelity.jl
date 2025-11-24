@@ -77,7 +77,7 @@ using GlobtimPostProcessing
         # Should recognize as same basin (both at global minimum)
         @test result.is_same_basin == true
         # Metric should be absolute difference (not exploded relative diff)
-        @test result.metric ≤ 1e-3  # abs(f_star - f_min) ≤ 0.001
+        @test result.metric ≈ 1e-3 atol=1e-6  # abs(f_star - f_min) ≈ 0.001 (allow floating-point error)
 
         # Case 2: One point far from global minimum (should be different basin)
         x_star_far = [0.9, 0.9, 0.9, 0.9]

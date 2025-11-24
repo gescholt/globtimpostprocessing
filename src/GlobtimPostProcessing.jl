@@ -40,7 +40,7 @@ using Printf
 using Dates
 using CSV
 using ProgressMeter
-using Globtim
+# using Globtim  # COMMENTED OUT: Removed dependency (only needed for ErrorCategorization)
 using StatsBase
 using Optim  # Critical point refinement
 
@@ -56,16 +56,16 @@ export ExperimentResult, CampaignResults
 export batch_analyze_campaign, load_campaign_with_progress
 export aggregate_campaign_statistics_with_progress, batch_analyze_campaign_with_progress
 
-# Phase 3: Error categorization exports (Issue #20)
-export categorize_campaign_errors, generate_error_summary
-export get_error_categories, get_severity_levels
-export categorize_error_message, extract_campaign_errors
-export filter_errors_by_category, filter_errors_by_severity
-export get_top_priority_errors, get_experiment_errors
-export calculate_error_rate, get_most_common_error_category
-export calculate_average_priority, analyze_errors_by_degree
-export format_error_report, format_error_table
-export get_error_dataframe, create_mock_campaign
+# Phase 3: Error categorization exports (Issue #20) - COMMENTED OUT (requires Globtim)
+# export categorize_campaign_errors, generate_error_summary
+# export get_error_categories, get_severity_levels
+# export categorize_error_message, extract_campaign_errors
+# export filter_errors_by_category, filter_errors_by_severity
+# export get_top_priority_errors, get_experiment_errors
+# export calculate_error_rate, get_most_common_error_category
+# export calculate_average_priority, analyze_errors_by_degree
+# export format_error_report, format_error_table
+# export get_error_dataframe, create_mock_campaign
 
 # Parameter recovery exports (Issue #7)
 export param_distance, load_experiment_config, load_critical_points_for_degree
@@ -151,7 +151,7 @@ include("ParameterRecovery.jl")  # Issue #7: Parameter recovery analysis
 include("QualityDiagnostics.jl")  # Issue #7, Phase 3: Quality diagnostics
 include("CriticalPointClassification.jl")  # Critical point classification based on Hessian eigenvalues
 include("LandscapeFidelity.jl")  # Landscape fidelity: polynomial vs objective basin assessment
-include("ErrorCategorizationIntegration.jl")  # Issue #20, Phase 3: Error categorization
+# include("ErrorCategorizationIntegration.jl")  # COMMENTED OUT: Requires Globtim dependency
 
 # Critical point refinement (moved from globtimcore - 2025-11-22)
 include("refinement/core_refinement.jl")  # Core refinement algorithms

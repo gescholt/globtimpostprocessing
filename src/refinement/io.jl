@@ -301,8 +301,23 @@ function save_refined_results(
         "timestamp" => Dates.now()
     )
 
+    # Replace NaN/Inf with null for JSON compatibility
+    function sanitize_for_json(x)
+        if x isa Float64 && (isnan(x) || isinf(x))
+            return nothing
+        elseif x isa Dict
+            return Dict(k => sanitize_for_json(v) for (k, v) in x)
+        elseif x isa Vector
+            return [sanitize_for_json(v) for v in x]
+        else
+            return x
+        end
+    end
+
+    sanitized_summary = sanitize_for_json(summary)
+
     open(summary_json_path, "w") do io
-        JSON.print(io, summary, 2)
+        JSON.print(io, sanitized_summary, 2)
     end
 
     println("Refinement results saved to:")
