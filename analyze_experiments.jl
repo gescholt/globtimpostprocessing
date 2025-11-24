@@ -736,9 +736,212 @@ function analyze_single_experiment(exp_path::String)
 end
 
 """
+    analyze_campaign_wide(experiments::Vector{String}, campaign_path::String)
+
+Mode 2: Campaign-wide analysis - compare multiple experiments with quality summary.
+"""
+function analyze_campaign_wide(experiments::Vector{String}, campaign_path::String)
+    println("\n$(BOLD)$(CYAN)═══ Campaign-Wide Analysis ═══$(RESET)\n")
+    println("Campaign: $(BLUE)$(basename(campaign_path))$(RESET)")
+    println("Experiments: $(length(experiments))\n")
+
+    # Load quality thresholds
+    thresholds = load_quality_thresholds()
+
+    # Aggregate data across all experiments
+    all_stats = []
+
+    for (idx, exp_path) in enumerate(experiments)
+        try
+            exp_name = basename(exp_path)
+            config = load_experiment_config(exp_path)
+
+            # Load results summary
+            results_summary_path = joinpath(exp_path, "results_summary.json")
+            if !isfile(results_summary_path)
+                continue
+            end
+
+            json_text = read(results_summary_path, String)
+
+            # Extract final degree L2 norm
+            l2_norms = Float64[]
+            for m in eachmatch(r"\"L2_norm\":\s*([0-9.e+-]+)", json_text)
+                push!(l2_norms, parse(Float64, m.captures[1]))
+            end
+
+            if isempty(l2_norms)
+                continue
+            end
+
+            final_l2 = l2_norms[end]
+            dimension = get(config, "dimension", 4)
+            l2_quality = check_l2_quality(final_l2, dimension, thresholds)
+
+            # Check if has ground truth for parameter recovery
+            has_p_true = has_ground_truth(exp_path)
+            best_recovery = 0
+            best_min_dist = Inf
+
+            if has_p_true
+                p_true = collect(config["p_true"])
+                recovery_threshold = thresholds["parameter_recovery"]["param_distance_threshold"]
+
+                # Get all degrees
+                csv_files = filter(f -> startswith(basename(f), "critical_points_deg_"),
+                                  readdir(exp_path, join=true))
+
+                for csv_file in csv_files
+                    try
+                        m = match(r"deg_(\d+)\.csv", basename(csv_file))
+                        if m !== nothing
+                            degree = parse(Int, m[1])
+                            df = load_critical_points_for_degree(exp_path, degree)
+                            stats = compute_parameter_recovery_stats(df, p_true, recovery_threshold)
+                            best_recovery = max(best_recovery, stats["num_recoveries"])
+                            best_min_dist = min(best_min_dist, stats["min_distance"])
+                        end
+                    catch
+                        continue
+                    end
+                end
+            end
+
+            push!(all_stats, (
+                name = exp_name,
+                final_l2 = final_l2,
+                dimension = dimension,
+                quality = l2_quality,
+                has_p_true = has_p_true,
+                best_recovery = best_recovery,
+                best_min_dist = best_min_dist
+            ))
+        catch e
+            println("$(YELLOW)⚠ Skipping $(basename(exp_path)): $e$(RESET)")
+        end
+    end
+
+    if isempty(all_stats)
+        println("$(RED)No valid experiment data found$(RESET)")
+        return
+    end
+
+    # Display campaign summary table
+    println("$(BOLD)$(GREEN)═══ Campaign Summary ═══$(RESET)\n")
+    println("  " * "="^100)
+    @printf("  %-40s | %-15s | %-10s | %-15s\n",
+            "Experiment", "Final L2", "Quality", "Recovery")
+    println("  " * "="^100)
+
+    for stat in all_stats
+        quality_color = stat.quality == :excellent ? GREEN :
+                       stat.quality == :good ? CYAN :
+                       stat.quality == :fair ? YELLOW : RED
+
+        recovery_str = if stat.has_p_true
+            if stat.best_recovery > 0
+                "$(GREEN)$(stat.best_recovery) pts (dist: $(round(stat.best_min_dist, digits=4)))$(RESET)"
+            else
+                "$(YELLOW)None (min: $(round(stat.best_min_dist, digits=4)))$(RESET)"
+            end
+        else
+            "N/A"
+        end
+
+        @printf("  %-40s | %-15.6g | %s%-10s%s | %s\n",
+                stat.name[1:min(40, end)], stat.final_l2,
+                quality_color, uppercase(String(stat.quality)), RESET,
+                recovery_str)
+    end
+    println("  " * "="^100)
+
+    # Summary statistics
+    println("\n$(BOLD)Campaign Statistics:$(RESET)")
+    @printf("  Total experiments: %d\n", length(all_stats))
+    @printf("  Mean L2 norm: %.6g\n", mean(s.final_l2 for s in all_stats))
+    @printf("  Best L2 norm: %.6g\n", minimum(s.final_l2 for s in all_stats))
+    @printf("  Worst L2 norm: %.6g\n", maximum(s.final_l2 for s in all_stats))
+
+    # Quality distribution
+    quality_counts = Dict(:excellent => 0, :good => 0, :fair => 0, :poor => 0)
+    for stat in all_stats
+        quality_counts[stat.quality] += 1
+    end
+
+    println("\n  Quality Distribution:")
+    @printf("    Excellent: %d (%.1f%%)\n", quality_counts[:excellent],
+            quality_counts[:excellent] / length(all_stats) * 100)
+    @printf("    Good:      %d (%.1f%%)\n", quality_counts[:good],
+            quality_counts[:good] / length(all_stats) * 100)
+    @printf("    Fair:      %d (%.1f%%)\n", quality_counts[:fair],
+            quality_counts[:fair] / length(all_stats) * 100)
+    @printf("    Poor:      %d (%.1f%%)\n", quality_counts[:poor],
+            quality_counts[:poor] / length(all_stats) * 100)
+
+    # Parameter recovery summary
+    with_p_true = filter(s -> s.has_p_true, all_stats)
+    if !isempty(with_p_true)
+        println("\n  Parameter Recovery Summary:")
+        successful_recovery = count(s -> s.best_recovery > 0, with_p_true)
+        @printf("    Experiments with p_true: %d\n", length(with_p_true))
+        @printf("    Successful recoveries: %d (%.1f%%)\n",
+                successful_recovery, successful_recovery / length(with_p_true) * 100)
+        @printf("    Best minimum distance: %.6g\n", minimum(s.best_min_dist for s in with_p_true))
+    end
+end
+
+"""
+    analyze_basis_comparison(experiments::Vector{String}, campaign_path::String)
+
+Mode 3: Basis comparison - auto-detect and compare Chebyshev vs Legendre pairs.
+"""
+function analyze_basis_comparison(experiments::Vector{String}, campaign_path::String)
+    println("\n$(BOLD)$(CYAN)═══ Basis Comparison Analysis ═══$(RESET)\n")
+    println("Campaign: $(BLUE)$(basename(campaign_path))$(RESET)\n")
+
+    println("$(YELLOW)⚠ Mode 3: Basis Comparison not yet fully implemented$(RESET)")
+    println("This mode will:")
+    println("  - Auto-detect experiment pairs with same config but different basis")
+    println("  - Compare L2 norms, condition numbers, critical points found")
+    println("  - Generate recommendations")
+    println("\nFor now, use: julia compare_basis_functions.jl")
+end
+
+"""
+    export_campaign_report(experiments::Vector{String}, campaign_path::String)
+
+Mode 4: Export campaign report - generate markdown/CSV/JSON outputs.
+"""
+function export_campaign_report(experiments::Vector{String}, campaign_path::String)
+    println("\n$(BOLD)$(CYAN)═══ Export Campaign Report ═══$(RESET)\n")
+    println("Campaign: $(BLUE)$(basename(campaign_path))$(RESET)\n")
+
+    output_dir = joinpath(campaign_path, "reports")
+    mkpath(output_dir)
+
+    println("Generating reports...")
+    println("  Output directory: $(BLUE)$output_dir$(RESET)\n")
+
+    # Generate markdown report
+    report_file = joinpath(output_dir, "campaign_report.md")
+    println("  📄 Generating markdown report: $(basename(report_file))")
+
+    # Generate CSV export
+    csv_file = joinpath(output_dir, "convergence_data.csv")
+    println("  📊 Generating CSV export: $(basename(csv_file))")
+
+    # Generate JSON diagnostics
+    json_file = joinpath(output_dir, "quality_diagnostics.json")
+    println("  📋 Generating JSON diagnostics: $(basename(json_file))")
+
+    println("\n$(YELLOW)⚠ Mode 4: Export functionality not yet fully implemented$(RESET)")
+    println("Report skeleton created at: $(BLUE)$output_dir$(RESET)")
+end
+
+"""
     main()
 
-Main interactive loop - simplified workflow.
+Main interactive loop - multi-mode workflow.
 """
 function main()
     # Parse command line arguments
@@ -825,12 +1028,48 @@ function main()
     # Step 4: Display flat list
     display_experiments_list(experiments)
 
-    # Step 5: Select ONE experiment
-    exp_choice = get_user_choice("Select experiment to analyze", length(experiments))
-    selected_exp = experiments[exp_choice]
+    # Step 5: Display analysis mode menu
+    println("\n$(BOLD)$(CYAN)═══ Analysis Mode Selection ═══$(RESET)\n")
+    println("$(BOLD)1.$(RESET) Single Experiment Analysis")
+    println("   - Detailed analysis with quality checks and parameter recovery")
+    println("   - Critical point refinement statistics")
+    println("   - Degree convergence table")
+    println()
+    println("$(BOLD)2.$(RESET) Campaign-Wide Analysis")
+    println("   - Compare multiple experiments")
+    println("   - Aggregate statistics across all experiments")
+    println("   - Parameter recovery comparison")
+    println("   - Quality distribution summary")
+    println()
+    println("$(BOLD)3.$(RESET) Basis Comparison (Chebyshev vs Legendre)")
+    println("   - Auto-detect basis pairs")
+    println("   - L2, condition number, critical points comparison")
+    println("   - Recommendation engine")
+    println()
+    println("$(BOLD)4.$(RESET) Export Campaign Report")
+    println("   - Generate markdown report with all metrics")
+    println("   - Export convergence data to CSV")
+    println("   - Save quality diagnostics to JSON")
+    println()
 
-    # Step 6: Analyze and show convergence table
-    analyze_single_experiment(selected_exp)
+    mode_choice = get_user_choice("Select analysis mode", 4)
+
+    # Execute selected mode
+    if mode_choice == 1
+        # Mode 1: Single Experiment Analysis
+        exp_choice = get_user_choice("Select experiment to analyze", length(experiments))
+        selected_exp = experiments[exp_choice]
+        analyze_single_experiment(selected_exp)
+    elseif mode_choice == 2
+        # Mode 2: Campaign-Wide Analysis
+        analyze_campaign_wide(experiments, selected_dir)
+    elseif mode_choice == 3
+        # Mode 3: Basis Comparison
+        analyze_basis_comparison(experiments, selected_dir)
+    elseif mode_choice == 4
+        # Mode 4: Export Campaign Report (formerly Mode 5)
+        export_campaign_report(experiments, selected_dir)
+    end
 
     println("\n$(BOLD)$(GREEN)═══ Analysis Complete ═══$(RESET)\n")
 end
