@@ -186,29 +186,31 @@ struct RefinedExperimentResult
 end
 
 """
-    save_refined_results(experiment_dir::String, result::RefinedExperimentResult, degree::Int)
+    save_refined_results(experiment_dir::String, result::RefinedExperimentResult, degree::Int, refinement_results::Vector{RefinementResult})
 
 Save refined critical points and comparison data to experiment directory.
 
 # Files Created
 - `critical_points_refined_deg_X.csv`: Refined critical points
-- `refinement_comparison_deg_X.csv`: Raw vs refined side-by-side
-- `refinement_summary.json`: Statistics and metadata
+- `refinement_comparison_deg_X.csv`: Raw vs refined side-by-side (with Tier 1 diagnostics)
+- `refinement_summary.json`: Statistics and metadata (with convergence breakdown)
 
 # Arguments
 - `experiment_dir::String`: Experiment output directory
 - `result::RefinedExperimentResult`: Refinement results
 - `degree::Int`: Polynomial degree
+- `refinement_results::Vector{RefinementResult}`: Detailed per-point refinement results (for Tier 1 diagnostics)
 
 # Examples
 ```julia
-save_refined_results(experiment_dir, result, 12)
+save_refined_results(experiment_dir, result, 12, refinement_results)
 ```
 """
 function save_refined_results(
     experiment_dir::String,
     result::RefinedExperimentResult,
-    degree::Int
+    degree::Int,
+    refinement_results::Vector{RefinementResult}
 )
     # 1. Save refined critical points CSV
     refined_csv_path = joinpath(experiment_dir, "critical_points_refined_deg_$degree.csv")
@@ -274,10 +276,49 @@ function save_refined_results(
     comparison_df[!, :converged] = result.convergence_status
     comparison_df[!, :iterations] = result.iterations
 
+    # Tier 1 Diagnostics: Add call counts, timing, and convergence details
+    comparison_df[!, :f_calls] = [r.f_calls for r in refinement_results]
+    comparison_df[!, :g_calls] = [r.g_calls for r in refinement_results]
+    comparison_df[!, :h_calls] = [r.h_calls for r in refinement_results]
+    comparison_df[!, :time_elapsed] = [r.time_elapsed for r in refinement_results]
+    comparison_df[!, :x_converged] = [r.x_converged for r in refinement_results]
+    comparison_df[!, :f_converged] = [r.f_converged for r in refinement_results]
+    comparison_df[!, :g_converged] = [r.g_converged for r in refinement_results]
+    comparison_df[!, :iter_limit] = [r.iteration_limit_reached for r in refinement_results]
+    comparison_df[!, :convergence_reason] = [String(r.convergence_reason) for r in refinement_results]
+
     CSV.write(comparison_csv_path, comparison_df)
 
     # 3. Save summary JSON
     summary_json_path = joinpath(experiment_dir, "refinement_summary_deg_$degree.json")
+
+    # Tier 1 Diagnostics: Compute convergence breakdown
+    convergence_reasons = [r.convergence_reason for r in refinement_results]
+    convergence_breakdown = Dict{String, Int}()
+    for reason in unique(convergence_reasons)
+        convergence_breakdown[String(reason)] = count(==(reason), convergence_reasons)
+    end
+
+    # Tier 1 Diagnostics: Call count statistics
+    f_calls_all = [r.f_calls for r in refinement_results]
+    g_calls_all = [r.g_calls for r in refinement_results]
+    time_elapsed_all = [r.time_elapsed for r in refinement_results]
+
+    call_counts = Dict(
+        "mean_f_calls" => Statistics.mean(f_calls_all),
+        "max_f_calls" => maximum(f_calls_all),
+        "min_f_calls" => minimum(f_calls_all),
+        "mean_g_calls" => Statistics.mean(g_calls_all),
+        "max_g_calls" => maximum(g_calls_all)
+    )
+
+    # Tier 1 Diagnostics: Timing statistics
+    timing = Dict(
+        "mean_time_per_point" => Statistics.mean(time_elapsed_all),
+        "max_time_per_point" => maximum(time_elapsed_all),
+        "min_time_per_point" => minimum(time_elapsed_all),
+        "points_timed_out" => result.n_timeout
+    )
 
     summary = Dict(
         "degree" => degree,
@@ -291,6 +332,10 @@ function save_refined_results(
         "best_raw_value" => result.best_raw_value,
         "best_refined_value" => result.best_refined_value,
         "total_refinement_time" => result.total_time,
+        # Tier 1 Diagnostics
+        "convergence_breakdown" => convergence_breakdown,
+        "call_counts" => call_counts,
+        "timing" => timing,
         "config" => Dict(
             "method" => string(typeof(result.refinement_config.method)),
             "max_time_per_point" => result.refinement_config.max_time_per_point,
