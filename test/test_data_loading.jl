@@ -20,16 +20,17 @@ using CSV
         config = load_experiment_config(fixtures_dir)
 
         @test config isa Dict
-        @test haskey(config, "p_true")
+        @test haskey(config, "function_name")
         @test haskey(config, "dimension")
         @test haskey(config, "basis")
-        @test haskey(config, "experiment_id")
 
-        # Check values
-        @test config["p_true"] == [0.2, 0.3, 0.5, 0.6]
+        # Check values (Deuflhard_4d fixture)
+        @test config["function_name"] == "Deuflhard_4d"
         @test config["dimension"] == 4
         @test config["basis"] == "chebyshev"
-        @test config["experiment_id"] == "test_exp_1"
+
+        # Note: Deuflhard_4d is parameter-free, so no p_true
+        @test !haskey(config, "p_true")
     end
 
     @testset "Load experiment config - missing file" begin
@@ -41,28 +42,30 @@ using CSV
         df4 = load_critical_points_for_degree(fixtures_dir, 4)
 
         @test df4 isa DataFrame
-        @test nrow(df4) == 3
-        @test hasproperty(df4, :x1)
-        @test hasproperty(df4, :x2)
-        @test hasproperty(df4, :x3)
-        @test hasproperty(df4, :x4)
-        @test hasproperty(df4, :z)
+        @test nrow(df4) == 81  # Deuflhard_4d degree 4 has 81 points
+        @test hasproperty(df4, :index)
+        @test hasproperty(df4, :p1)
+        @test hasproperty(df4, :p2)
+        @test hasproperty(df4, :p3)
+        @test hasproperty(df4, :p4)
+        @test hasproperty(df4, :objective)
 
         # Check data types
-        @test eltype(df4.x1) <: Real
-        @test eltype(df4.z) <: Real
+        @test eltype(df4.p1) <: Real
+        @test eltype(df4.objective) <: Real
 
-        # Check values
-        @test df4[1, :x1] ≈ 0.201
-        @test df4[1, :z] ≈ 1250.5
+        # Check that indices are sequential
+        @test df4[1, :index] == 1
+        @test df4[end, :index] == nrow(df4)
 
         # Test degree 6
         df6 = load_critical_points_for_degree(fixtures_dir, 6)
 
         @test df6 isa DataFrame
         @test nrow(df6) > nrow(df4)  # Should have more critical points
-        @test hasproperty(df6, :x1)
-        @test hasproperty(df6, :z)
+        @test hasproperty(df6, :p1)
+        @test hasproperty(df6, :objective)
+        @test nrow(df6) == 289  # Deuflhard_4d degree 6 has 289 points
     end
 
     @testset "Load critical points - missing file" begin
@@ -70,8 +73,8 @@ using CSV
     end
 
     @testset "Check for ground truth (p_true)" begin
-        # Should find p_true
-        @test has_ground_truth(fixtures_dir) == true
+        # Deuflhard_4d fixture has no p_true (parameter-free function)
+        @test has_ground_truth(fixtures_dir) == false
 
         # Should not find p_true in nonexistent directory
         @test has_ground_truth("/nonexistent/path") == false
@@ -93,28 +96,35 @@ using CSV
     end
 
     @testset "Integration: Load config and critical points together" begin
-        # This simulates what analyze_experiments.jl would do
+        # This simulates analyzing function minimization (not parameter recovery)
         config = load_experiment_config(fixtures_dir)
-        p_true = config["p_true"]
+        function_name = config["function_name"]
         degrees = [4, 6]
 
-        recovery_data = []
+        minimization_data = []
         for degree in degrees
             df = load_critical_points_for_degree(fixtures_dir, degree)
-            stats = compute_parameter_recovery_stats(df, p_true, 0.01)
 
-            push!(recovery_data, (
+            # Find minimum objective value
+            min_obj = minimum(df.objective)
+            min_idx = argmin(df.objective)
+            min_point = [df[min_idx, Symbol("p$i")] for i in 1:4]
+
+            push!(minimization_data, (
                 degree = degree,
                 num_points = nrow(df),
-                min_dist = stats["min_distance"],
-                recoveries = stats["num_recoveries"]
+                min_objective = min_obj,
+                min_point = min_point
             ))
         end
 
-        @test length(recovery_data) == 2
-        @test recovery_data[1].degree == 4
-        @test recovery_data[2].degree == 6
-        @test recovery_data[1].num_points < recovery_data[2].num_points
+        @test length(minimization_data) == 2
+        @test minimization_data[1].degree == 4
+        @test minimization_data[2].degree == 6
+        @test minimization_data[1].num_points < minimization_data[2].num_points
+
+        # Higher degree polynomial should find better minimum (lower objective)
+        @test minimization_data[2].min_objective <= minimization_data[1].min_objective
     end
 
     @testset "Load experiment results from directory" begin

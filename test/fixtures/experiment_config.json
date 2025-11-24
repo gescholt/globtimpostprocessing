@@ -1,15 +1,22 @@
 {
-  "sample_range": 0.8,
-  "model_func": "test_model_4d",
-  "p_center": [0.173, 0.297, 0.465, 0.624],
-  "p_true": [0.2, 0.3, 0.5, 0.6],
-  "dimension": 4,
-  "basis": "chebyshev",
-  "GN": 16,
-  "domain_range": 0.8,
-  "time_interval": [0.0, 10.0],
-  "ic": [1.0, 2.0, 1.0, 1.0],
-  "num_points": 25,
-  "experiment_id": "test_exp_1",
-  "degree_range": [4, 8]
+    "domain_center": [
+        0,
+        0,
+        0,
+        0
+    ],
+    "degrees": [
+        4,
+        6
+    ],
+    "function_name": "Deuflhard_4d",
+    "total_grid_points": 10000,
+    "deuflhard_2d_form": "(exp(x² + y²) - 3)² + (x + y - sin(3(x + y)))²",
+    "description": "4D Deuflhard test function - composition of two 2D Deuflhard functions",
+    "generated_at": "2025-11-24T13:25:11",
+    "dimension": 4,
+    "basis": "chebyshev",
+    "GN": 10,
+    "mathematical_form": "f(p) = Deuflhard(p[1:2]) + Deuflhard(p[3:4])",
+    "domain_range": 1.2
 }

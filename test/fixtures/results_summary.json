@@ -1,32 +1,26 @@
-[
-  {
-    "degree": 4,
-    "L2_norm": 1.5e7,
-    "best_value": 1230.5,
-    "worst_value": 721841.04,
-    "mean_value": 363360.19,
-    "condition_number": 16.0,
-    "computation_time": 48.5,
-    "critical_points": 3
-  },
-  {
-    "degree": 6,
-    "L2_norm": 8.2e6,
-    "best_value": 845.3,
-    "worst_value": 520100.2,
-    "mean_value": 260472.75,
-    "condition_number": 24.5,
-    "computation_time": 72.3,
-    "critical_points": 5
-  },
-  {
-    "degree": 8,
-    "L2_norm": 3.1e6,
-    "best_value": 231.8,
-    "worst_value": 180500.5,
-    "mean_value": 90366.15,
-    "condition_number": 35.2,
-    "computation_time": 98.7,
-    "critical_points": 8
-  }
-]
+{
+    "function": "Deuflhard_4d",
+    "dimension": 4,
+    "total_degrees": 2,
+    "degree_results": [
+        {
+            "construction_time_s": 1.894744873046875,
+            "l2_norm": 64.58087643992107,
+            "degree": 4,
+            "basis": "chebyshev",
+            "critical_points": 81,
+            "solving_time_s": 15.127527952194214
+        },
+        {
+            "construction_time_s": 0.22469496726989746,
+            "l2_norm": 26.328304616409827,
+            "degree": 6,
+            "basis": "chebyshev",
+            "critical_points": 289,
+            "solving_time_s": 2.9293930530548096
+        }
+    ],
+    "schema_version": "2.0.0",
+    "generated_at": "2025-11-24T13:25:11",
+    "generator_script": "globtimcore/test/fixtures/generate_postprocessing_fixtures.jl"
+}
