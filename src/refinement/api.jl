@@ -157,8 +157,8 @@ function refine_experiment_results(
         config                   # refinement_config
     )
 
-    # 7. Save results
-    save_refined_results(experiment_dir, result, raw_data.degree)
+    # 7. Save results (with Tier 1 diagnostics)
+    save_refined_results(experiment_dir, result, raw_data.degree, refinement_results)
     println()
 
     # 8. Print summary

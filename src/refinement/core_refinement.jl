@@ -30,17 +30,29 @@ Updated: 2025-11-22 (Moved to globtimpostprocessing)
 """
 Result of refining a single critical point.
 
-Fields:
+Fields (original):
 - `refined::Vector{Float64}`: Refined critical point coordinates
 - `value_raw::Float64`: Objective function value at initial point
 - `value_refined::Float64`: Objective function value at refined point
-- `converged::Bool`: Whether Optim.jl converged
+- `converged::Bool`: Whether Optim.jl converged (backward compatibility)
 - `iterations::Int`: Number of optimization iterations
 - `improvement::Float64`: |f(refined) - f(raw)|
 - `timed_out::Bool`: Whether refinement exceeded max_time
 - `error_message::Union{String,Nothing}`: Error message if refinement failed (nothing if no error)
+
+Tier 1 Diagnostics (zero-cost, always available):
+- `f_calls::Int`: Objective function evaluations
+- `g_calls::Int`: Gradient evaluations (0 for gradient-free methods)
+- `h_calls::Int`: Hessian evaluations (typically 0)
+- `time_elapsed::Float64`: Actual optimization time in seconds
+- `x_converged::Bool`: Parameter convergence (x_tol)
+- `f_converged::Bool`: Function value convergence (f_tol)
+- `g_converged::Bool`: Gradient norm convergence (g_tol, gradient methods only)
+- `iteration_limit_reached::Bool`: Hit max iteration limit
+- `convergence_reason::Symbol`: Primary stopping reason (:x_tol, :f_tol, :g_tol, :iterations, :timeout, :error)
 """
 struct RefinementResult
+    # Original fields (backward compatibility)
     refined::Vector{Float64}
     value_raw::Float64
     value_refined::Float64
@@ -49,6 +61,17 @@ struct RefinementResult
     improvement::Float64
     timed_out::Bool
     error_message::Union{String,Nothing}
+
+    # Tier 1 Diagnostics (Phase 2)
+    f_calls::Int
+    g_calls::Int
+    h_calls::Int
+    time_elapsed::Float64
+    x_converged::Bool
+    f_converged::Bool
+    g_converged::Bool
+    iteration_limit_reached::Bool
+    convergence_reason::Symbol
 end
 
 """
@@ -115,7 +138,17 @@ function refine_critical_point(
             0,
             0.0,
             false,  # not timed out
-            "Initial evaluation returned non-finite value: $value_raw"
+            "Initial evaluation returned non-finite value: $value_raw",
+            # Tier 1 diagnostics (error case)
+            1,  # f_calls (initial evaluation)
+            0,  # g_calls
+            0,  # h_calls
+            0.0,  # time_elapsed
+            false,  # x_converged
+            false,  # f_converged
+            false,  # g_converged
+            false,  # iteration_limit_reached
+            :error  # convergence_reason
         )
     end
 
@@ -147,6 +180,37 @@ function refine_critical_point(
         refined_point = Optim.minimizer(result)
         value_refined = Optim.minimum(result)
 
+        # Tier 1 Diagnostics: Extract fine-grained convergence info
+        x_conv = Optim.x_converged(result)
+        f_conv = Optim.f_converged(result)
+        g_conv = Optim.g_converged(result)
+        iter_limit = Optim.iteration_limit_reached(result)
+
+        # Extract call counts
+        f_calls = Optim.f_calls(result)
+        g_calls = Optim.g_calls(result)
+        h_calls = Optim.h_calls(result)
+
+        # Extract actual optimization time (may differ from elapsed_time)
+        time_run = Optim.time_run(result)
+
+        # Determine primary convergence reason
+        convergence_reason = if timed_out
+            :timeout
+        elseif g_conv
+            :g_tol  # Gradient norm converged (best for critical points)
+        elseif f_conv
+            :f_tol  # Function value converged
+        elseif x_conv
+            :x_tol  # Parameters converged
+        elseif iter_limit
+            :iterations  # Hit iteration limit without converging
+        elseif !Optim.converged(result)
+            :error  # Failed for other reason
+        else
+            :unknown  # Converged but unclear reason
+        end
+
         error_msg = if timed_out
             "Refinement timed out after $(round(elapsed_time, digits=1))s"
         elseif !Optim.converged(result)
@@ -163,7 +227,17 @@ function refine_critical_point(
             Optim.iterations(result),
             abs(value_refined - value_raw),
             timed_out,
-            error_msg
+            error_msg,
+            # Tier 1 diagnostics
+            f_calls,
+            g_calls,
+            h_calls,
+            time_run,
+            x_conv,
+            f_conv,
+            g_conv,
+            iter_limit,
+            convergence_reason
         )
     catch e
         # If optimization fails (e.g., non-finite values, errors), return initial point
@@ -181,7 +255,17 @@ function refine_critical_point(
             0,
             0.0,
             false,  # not timed out (errored instead)
-            error_msg
+            error_msg,
+            # Tier 1 diagnostics (error case)
+            1,  # f_calls (initial evaluation)
+            0,  # g_calls
+            0,  # h_calls
+            0.0,  # time_elapsed
+            false,  # x_converged
+            false,  # f_converged
+            false,  # g_converged
+            false,  # iteration_limit_reached
+            :error  # convergence_reason
         )
     end
 end

@@ -185,6 +185,159 @@ using Optim  # Need Optim for type checks
         @test result.timed_out isa Bool
         @test result.error_message === nothing || result.error_message isa String
     end
+
+    @testset "Phase 2: Tier 1 Diagnostics" begin
+        @testset "Diagnostic Fields Exist" begin
+            function simple(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            result = refine_critical_point(simple, [1.0, 1.0])
+
+            # Check Tier 1 diagnostic fields exist
+            @test hasfield(typeof(result), :f_calls)
+            @test hasfield(typeof(result), :g_calls)
+            @test hasfield(typeof(result), :h_calls)
+            @test hasfield(typeof(result), :time_elapsed)
+            @test hasfield(typeof(result), :x_converged)
+            @test hasfield(typeof(result), :f_converged)
+            @test hasfield(typeof(result), :g_converged)
+            @test hasfield(typeof(result), :iteration_limit_reached)
+            @test hasfield(typeof(result), :convergence_reason)
+
+            # Check types
+            @test result.f_calls isa Int
+            @test result.g_calls isa Int
+            @test result.h_calls isa Int
+            @test result.time_elapsed isa Float64
+            @test result.x_converged isa Bool
+            @test result.f_converged isa Bool
+            @test result.g_converged isa Bool
+            @test result.iteration_limit_reached isa Bool
+            @test result.convergence_reason isa Symbol
+        end
+
+        @testset "Call Counts Populated" begin
+            function sphere(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            result = refine_critical_point(sphere, [1.0, 1.0])
+
+            @test result.f_calls > 0  # Should have evaluated function
+            @test result.g_calls >= 0  # NelderMead doesn't use gradients
+            @test result.h_calls >= 0  # Hessian typically not used
+        end
+
+        @testset "Timing Information" begin
+            function simple(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            result = refine_critical_point(simple, [1.0, 1.0])
+
+            @test result.time_elapsed >= 0.0
+            @test result.time_elapsed < 10.0  # Should be fast for simple function
+        end
+
+        @testset "Fine-Grained Convergence Flags" begin
+            function quadratic(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            result = refine_critical_point(quadratic, [1.0, 1.0])
+
+            # At least one convergence criterion should be met if converged
+            if result.converged
+                @test result.x_converged || result.f_converged || result.g_converged
+            end
+
+            # Iteration limit should be false if converged normally
+            if result.converged && !result.timed_out
+                @test result.iteration_limit_reached == false
+            end
+        end
+
+        @testset "Convergence Reason Logic" begin
+            function simple(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            result = refine_critical_point(simple, [1.0, 1.0])
+
+            # Convergence reason should be one of the valid symbols
+            valid_reasons = [:x_tol, :f_tol, :g_tol, :iterations, :timeout, :error, :unknown]
+            @test result.convergence_reason in valid_reasons
+
+            # If converged, reason should not be :error or :iterations
+            if result.converged
+                @test result.convergence_reason in [:x_tol, :f_tol, :g_tol, :unknown]
+            end
+
+            # If timed out, reason should be :timeout
+            if result.timed_out
+                @test result.convergence_reason == :timeout
+            end
+
+            # If hit iteration limit, reason should be :iterations
+            if result.iteration_limit_reached && !result.converged
+                @test result.convergence_reason == :iterations
+            end
+        end
+
+        @testset "Timeout Convergence Reason" begin
+            function slow(p::Vector{Float64})
+                sleep(0.05)
+                return sum(p.^2)
+            end
+
+            result = refine_critical_point(
+                slow,
+                [1.0, 1.0];
+                max_time = 0.1
+            )
+
+            # If timed out, convergence reason should be :timeout
+            if result.timed_out
+                @test result.convergence_reason == :timeout
+            end
+        end
+
+        @testset "Error Case Diagnostics" begin
+            # Non-finite initial value
+            function bad_func(p::Vector{Float64})
+                return NaN
+            end
+
+            result = refine_critical_point(bad_func, [1.0, 1.0])
+
+            @test !result.converged
+            @test result.convergence_reason == :error
+            @test result.f_calls >= 1  # At least initial evaluation
+            @test result.error_message !== nothing
+        end
+
+        @testset "Batch Refinement Diagnostics" begin
+            function sphere(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            points = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+            results = refine_critical_points_batch(
+                sphere,
+                points;
+                show_progress = false
+            )
+
+            # All results should have diagnostics
+            @test all(r -> r.f_calls > 0, results)
+            @test all(r -> r.time_elapsed >= 0.0, results)
+            @test all(r -> r.convergence_reason in [:x_tol, :f_tol, :g_tol, :iterations, :timeout, :error, :unknown], results)
+
+            # All should converge for simple sphere
+            @test all(r -> r.converged, results)
+        end
+    end
 end
 
-println("✅ Phase 1 refinement tests passed!")
+println("✅ Phase 1 and Phase 2 Tier 1 refinement tests passed!")

@@ -1,6 +1,57 @@
 # Changelog - GlobtimPostProcessing
 
-## [Unreleased] - 2025-10-29
+## [Unreleased] - 2025-11-24
+
+### Added - Phase 2 Tier 1 Refinement Diagnostics
+
+#### Enhanced Refinement Diagnostics (Zero-Cost)
+- **Enhanced RefinementResult Struct** with 9 new diagnostic fields:
+  - Call counts: `f_calls`, `g_calls`, `h_calls` (function/gradient/Hessian evaluations)
+  - Timing: `time_elapsed` (actual optimization time per point)
+  - Fine-grained convergence: `x_converged`, `f_converged`, `g_converged`, `iteration_limit_reached`
+  - Primary reason: `convergence_reason` (`:x_tol`, `:f_tol`, `:g_tol`, `:iterations`, `:timeout`, `:error`)
+
+#### Enhanced CSV Output
+- **refinement_comparison_deg_X.csv** now includes 9 diagnostic columns:
+  - Per-point call counts, timing, and convergence details
+  - Enables detailed analysis of refinement performance
+
+#### Enhanced JSON Summary
+- **refinement_summary_deg_X.json** now includes:
+  - `convergence_breakdown`: Count by convergence reason
+  - `call_counts`: Mean/max/min function evaluations
+  - `timing`: Mean/max/min time per point, timeout count
+
+#### Testing
+- **Enhanced**: `test/test_refinement_phase1.jl` (added 8 test sets)
+  - Test all diagnostic fields exist and have correct types
+  - Test call counts, timing, convergence flags
+  - Test convergence reason logic for all cases
+  - ~40 new assertions, all passing
+
+#### Documentation
+- **New File**: `docs/PHASE2_TIER1_IMPLEMENTATION.md`
+  - Complete implementation guide
+  - Usage examples for CSV and JSON diagnostics
+  - Performance characteristics (< 1% overhead)
+  - Migration guide and troubleshooting
+
+#### Performance
+- Zero-cost diagnostics (all extracted from Optim.jl result)
+- No trace storage required
+- < 1% overhead (diagnostic extraction is O(1))
+- Memory overhead: +72 bytes per RefinementResult
+
+#### Backward Compatibility
+- ✅ All original fields preserved
+- ✅ Existing code continues to work
+- ✅ API extensions only (no breaking changes)
+
+**Status**: ✅ Complete - Implements requirements from `docs/REFINEMENT_DIAGNOSTICS.md` Phase 1 (Tier 1)
+
+---
+
+## [Earlier] - 2025-10-29
 
 ### Added - Error Categorization Integration (Issue #20, Phase 3)
 

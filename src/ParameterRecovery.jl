@@ -66,22 +66,36 @@ end
 
 Load critical points CSV for a specific polynomial degree.
 
+Supports both Phase 1 and Phase 2 file formats:
+- Phase 2: `critical_points_raw_deg_X.csv` with columns (index, p1, p2, ..., objective)
+- Phase 1: `critical_points_deg_X.csv` with columns (x1, x2, ..., z)
+
 # Arguments
 - `experiment_path`: Path to experiment directory
 - `degree`: Polynomial degree
 
 # Returns
-- DataFrame with columns: x1, x2, ..., x_dim, z
+- DataFrame with columns from CSV file
 
 # Throws
-- `SystemError` if CSV file doesn't exist
+- `ErrorException` if CSV file doesn't exist (neither format)
 """
 function load_critical_points_for_degree(experiment_path::String, degree::Int)
-    csv_file = joinpath(experiment_path, "critical_points_deg_$(degree).csv")
-    if !isfile(csv_file)
-        error("Critical points file not found: $csv_file")
+    # Try Phase 2 format first (preferred)
+    csv_file_raw = joinpath(experiment_path, "critical_points_raw_deg_$(degree).csv")
+    if isfile(csv_file_raw)
+        return CSV.read(csv_file_raw, DataFrame)
     end
-    return CSV.read(csv_file, DataFrame)
+
+    # Fall back to Phase 1 format
+    csv_file_legacy = joinpath(experiment_path, "critical_points_deg_$(degree).csv")
+    if isfile(csv_file_legacy)
+        return CSV.read(csv_file_legacy, DataFrame)
+    end
+
+    error("Critical points file not found for degree $degree. Tried:\n" *
+          "  Phase 2: $csv_file_raw\n" *
+          "  Phase 1: $csv_file_legacy")
 end
 
 """
