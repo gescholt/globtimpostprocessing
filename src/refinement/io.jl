@@ -362,7 +362,9 @@ function save_refined_results(
     sanitized_summary = sanitize_for_json(summary)
 
     open(summary_json_path, "w") do io
-        JSON.print(io, sanitized_summary, 2)
+        # Use JSON.json() which handles Inf/NaN by default
+        json_str = JSON.json(sanitized_summary)
+        write(io, json_str)
     end
 
     println("Refinement results saved to:")
