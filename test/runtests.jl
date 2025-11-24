@@ -84,4 +84,9 @@ using GlobtimPostProcessing
     @testset "Phase 1 Refinement" begin
         include("test_refinement_phase1.jl")
     end
+
+    # Run Integration tests with Real Fixtures (uses real globtimcore data)
+    @testset "Integration: Real Fixtures" begin
+        include("test_integration_real_fixtures.jl")
+    end
 end
