@@ -162,8 +162,8 @@ include("LandscapeFidelity.jl")  # Landscape fidelity: polynomial vs objective b
 # Critical point refinement (moved from globtimcore - 2025-11-22)
 include("refinement/core_refinement.jl")  # Core refinement algorithms
 include("refinement/config.jl")           # RefinementConfig struct
+include("refinement/gradient_validation.jl")  # Gradient norm validation (before io.jl - defines GradientValidationResult)
 include("refinement/io.jl")               # Load/save utilities
-include("refinement/gradient_validation.jl")  # Gradient norm validation
 include("refinement/api.jl")              # High-level API
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
