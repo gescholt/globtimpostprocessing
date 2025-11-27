@@ -186,31 +186,37 @@ struct RefinedExperimentResult
 end
 
 """
-    save_refined_results(experiment_dir::String, result::RefinedExperimentResult, degree::Int, refinement_results::Vector{RefinementResult})
+    save_refined_results(experiment_dir::String, result::RefinedExperimentResult, degree::Int, refinement_results::Vector{RefinementResult}; gradient_validation::Union{GradientValidationResult, Nothing}=nothing)
 
 Save refined critical points and comparison data to experiment directory.
 
 # Files Created
 - `critical_points_refined_deg_X.csv`: Refined critical points
-- `refinement_comparison_deg_X.csv`: Raw vs refined side-by-side (with Tier 1 diagnostics)
-- `refinement_summary.json`: Statistics and metadata (with convergence breakdown)
+- `refinement_comparison_deg_X.csv`: Raw vs refined side-by-side (with Tier 1 diagnostics and gradient validation)
+- `refinement_summary.json`: Statistics and metadata (with convergence breakdown and gradient validation)
 
 # Arguments
 - `experiment_dir::String`: Experiment output directory
 - `result::RefinedExperimentResult`: Refinement results
 - `degree::Int`: Polynomial degree
 - `refinement_results::Vector{RefinementResult}`: Detailed per-point refinement results (for Tier 1 diagnostics)
+- `gradient_validation::Union{GradientValidationResult, Nothing}=nothing`: Optional gradient validation results
 
 # Examples
 ```julia
 save_refined_results(experiment_dir, result, 12, refinement_results)
+
+# With gradient validation
+gradient_result = validate_critical_points(refined_points, objective_func)
+save_refined_results(experiment_dir, result, 12, refinement_results; gradient_validation=gradient_result)
 ```
 """
 function save_refined_results(
     experiment_dir::String,
     result::RefinedExperimentResult,
     degree::Int,
-    refinement_results::Vector{RefinementResult}
+    refinement_results::Vector{RefinementResult};
+    gradient_validation::Union{GradientValidationResult, Nothing} = nothing
 )
     # 1. Save refined critical points CSV
     refined_csv_path = joinpath(experiment_dir, "critical_points_refined_deg_$degree.csv")
@@ -287,6 +293,12 @@ function save_refined_results(
     comparison_df[!, :iter_limit] = [r.iteration_limit_reached for r in refinement_results]
     comparison_df[!, :convergence_reason] = [String(r.convergence_reason) for r in refinement_results]
 
+    # Add gradient validation columns if provided
+    if gradient_validation !== nothing
+        comparison_df[!, :gradient_norm] = gradient_validation.norms
+        comparison_df[!, :gradient_valid] = gradient_validation.valid
+    end
+
     CSV.write(comparison_csv_path, comparison_df)
 
     # 3. Save summary JSON
@@ -320,6 +332,21 @@ function save_refined_results(
         "points_timed_out" => result.n_timeout
     )
 
+    # Gradient validation statistics (if provided)
+    gradient_stats = if gradient_validation !== nothing
+        Dict(
+            "n_valid" => gradient_validation.n_valid,
+            "n_invalid" => gradient_validation.n_invalid,
+            "tolerance" => gradient_validation.tolerance,
+            "mean_norm" => gradient_validation.mean_norm,
+            "max_norm" => gradient_validation.max_norm,
+            "min_norm" => gradient_validation.min_norm,
+            "validation_rate" => gradient_validation.n_valid / length(gradient_validation.norms)
+        )
+    else
+        nothing
+    end
+
     summary = Dict(
         "degree" => degree,
         "n_raw_points" => result.n_raw,
@@ -336,6 +363,8 @@ function save_refined_results(
         "convergence_breakdown" => convergence_breakdown,
         "call_counts" => call_counts,
         "timing" => timing,
+        # Gradient validation
+        "gradient_validation" => gradient_stats,
         "config" => Dict(
             "method" => string(typeof(result.refinement_config.method)),
             "max_time_per_point" => result.refinement_config.max_time_per_point,
