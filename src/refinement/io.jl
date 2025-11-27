@@ -114,8 +114,8 @@ function load_raw_critical_points(
     df = CSV.read(csv_path, DataFrame)
 
     # Extract critical points (assuming columns are dimensions)
-    # Find dimension columns (starts with dim or x)
-    dim_cols = filter(c -> occursin(r"^(dim|x)\d+$", String(c)), names(df))
+    # Find dimension columns (starts with dim, x, or p)
+    dim_cols = filter(c -> occursin(r"^(dim|x|p)\d+$", String(c)), names(df))
 
     if isempty(dim_cols)
         # Fall back to all numeric columns
