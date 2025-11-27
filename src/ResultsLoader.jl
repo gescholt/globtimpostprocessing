@@ -194,17 +194,29 @@ Load from results_summary.json format (primary globtimcore output).
 function load_from_results_summary(dir_path::String, results_file::String)
     data = JSON.parsefile(results_file)
 
-    # Handle two formats:
+    # Handle multiple formats:
     # 1. Array format: [{degree: 4, ...}, {degree: 5, ...}]
-    # 2. Dict format: {results_summary: {degree_4: {...}, degree_5: {...}}}
+    # 2. Dict format with results_summary: {results_summary: {degree_4: {...}, degree_5: {...}}}
+    # 3. Dict format with degree_results: {degree_results: [{degree: 4, ...}, ...]}
     if data isa Vector
-        # Convert array format to dict format
+        # Format 1: Convert array format to dict format
         normalized_data = Dict{String, Any}(
             "results_summary" => Dict{String, Any}(
                 "degree_$(result["degree"])" => result
                 for result in data if haskey(result, "degree")
             )
         )
+        data = normalized_data
+    elseif data isa AbstractDict && haskey(data, "degree_results") && !haskey(data, "results_summary")
+        # Format 3: Convert degree_results array to results_summary dict
+        degree_results = data["degree_results"]
+        results_summary = Dict{String, Any}(
+            "degree_$(result["degree"])" => result
+            for result in degree_results if haskey(result, "degree")
+        )
+        # Create new dict with results_summary, preserving other fields
+        normalized_data = Dict{String, Any}(data)
+        normalized_data["results_summary"] = results_summary
         data = normalized_data
     end
 
@@ -306,11 +318,11 @@ function load_from_experiment_result(dir_path::String, result_file::String)
 end
 
 """
-    discover_tracking_labels(data::Dict) -> (Vector{String}, Vector{String})
+    discover_tracking_labels(data::AbstractDict) -> (Vector{String}, Vector{String})
 
 Discover enabled tracking labels from results_summary.json data.
 """
-function discover_tracking_labels(data::Dict)
+function discover_tracking_labels(data::AbstractDict)
     enabled_tracking = String[]
     tracking_capabilities = String[]
 
@@ -360,11 +372,11 @@ function discover_tracking_labels(data::Dict)
 end
 
 """
-    load_critical_points_from_csvs(dir_path::String, data::Dict) -> Union{DataFrame, Nothing}
+    load_critical_points_from_csvs(dir_path::String, data::AbstractDict) -> Union{DataFrame, Nothing}
 
 Load critical points from CSV files (critical_points_deg_N.csv).
 """
-function load_critical_points_from_csvs(dir_path::String, data::Dict)
+function load_critical_points_from_csvs(dir_path::String, data::AbstractDict)
     results_summary = get(data, "results_summary", Dict())
 
     if isempty(results_summary)
@@ -396,11 +408,11 @@ function load_critical_points_from_csvs(dir_path::String, data::Dict)
 end
 
 """
-    extract_performance_metrics(data::Dict) -> Union{Dict, Nothing}
+    extract_performance_metrics(data::AbstractDict) -> Union{Dict, Nothing}
 
 Extract timing and performance metrics from results_summary.
 """
-function extract_performance_metrics(data::Dict)
+function extract_performance_metrics(data::AbstractDict)
     results_summary = get(data, "results_summary", Dict())
 
     if isempty(results_summary)
@@ -451,11 +463,11 @@ function extract_performance_metrics(data::Dict)
 end
 
 """
-    extract_tolerance_validation(data::Dict) -> Union{Dict, Nothing}
+    extract_tolerance_validation(data::AbstractDict) -> Union{Dict, Nothing}
 
 Extract refinement and validation statistics.
 """
-function extract_tolerance_validation(data::Dict)
+function extract_tolerance_validation(data::AbstractDict)
     results_summary = get(data, "results_summary", Dict())
 
     if isempty(results_summary)
