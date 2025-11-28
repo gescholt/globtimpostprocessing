@@ -79,7 +79,6 @@ function refine_experiment_results(
     println()
 
     # 2. Refine using batch processor
-    println("Refining critical points...")
     start_time = time()
 
     refinement_results = refine_critical_points_batch(

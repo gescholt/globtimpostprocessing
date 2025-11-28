@@ -334,12 +334,15 @@ function refine_critical_points_batch(
     refined_results = RefinementResult[]
     n_points = length(points)
 
-    for (i, pt) in enumerate(points)
-        if show_progress
-            print("  Refining point $i/$n_points...")
-            flush(stdout)
-        end
+    # Track statistics for summary
+    n_converged = 0
+    n_timeout = 0
+    n_failed = 0
 
+    # Create progress bar (only if show_progress is true)
+    prog = show_progress ? Progress(n_points; desc="Refining critical points ", showspeed=true) : nothing
+
+    for pt in points
         result = refine_critical_point(
             objective_func, pt;
             method=method,
@@ -351,16 +354,32 @@ function refine_critical_points_batch(
 
         push!(refined_results, result)
 
-        # Show result status
-        if show_progress
-            if result.converged
-                println(" ✓")
-            elseif result.timed_out
-                println(" ⏱ TIMEOUT ($(result.error_message))")
-            else
-                println(" ✗ ($(result.error_message))")
-            end
+        # Update statistics
+        if result.converged
+            n_converged += 1
+        elseif result.timed_out
+            n_timeout += 1
+        else
+            n_failed += 1
         end
+
+        # Update progress bar
+        if !isnothing(prog)
+            next!(prog)
+        end
+    end
+
+    # Print summary after progress bar completes
+    if show_progress && n_points > 0
+        pct = round(100 * n_converged / n_points, digits=1)
+        summary_parts = ["$n_converged/$n_points converged ($pct%)"]
+        if n_timeout > 0
+            push!(summary_parts, "$n_timeout timeout")
+        end
+        if n_failed > 0
+            push!(summary_parts, "$n_failed failed")
+        end
+        println("Refinement complete: ", join(summary_parts, ", "))
     end
 
     return refined_results

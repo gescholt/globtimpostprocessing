@@ -43,6 +43,7 @@ using ProgressMeter
 # using Globtim  # COMMENTED OUT: Removed dependency (only needed for ErrorCategorization)
 using StatsBase
 using Optim  # Critical point refinement
+using ForwardDiff  # Gradient computation for validation
 
 # Core functionality exports
 export load_experiment_results, load_campaign_results
@@ -93,6 +94,11 @@ export refine_experiment_results, refine_critical_points
 export RefinedExperimentResult, RefinementResult
 export load_raw_critical_points, save_refined_results, RawCriticalPointsData
 export refine_critical_point, refine_critical_points_batch
+
+# Gradient validation exports
+export compute_gradient_norms, compute_gradient_norm
+export validate_critical_points, add_gradient_validation!
+export GradientValidationResult
 
 # Define types first
 """
@@ -156,6 +162,7 @@ include("LandscapeFidelity.jl")  # Landscape fidelity: polynomial vs objective b
 # Critical point refinement (moved from globtimcore - 2025-11-22)
 include("refinement/core_refinement.jl")  # Core refinement algorithms
 include("refinement/config.jl")           # RefinementConfig struct
+include("refinement/gradient_validation.jl")  # Gradient norm validation (before io.jl - defines GradientValidationResult)
 include("refinement/io.jl")               # Load/save utilities
 include("refinement/api.jl")              # High-level API
 
