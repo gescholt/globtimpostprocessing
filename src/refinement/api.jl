@@ -22,8 +22,8 @@ using local optimization on the original objective function.
 
 # Files Created
 - `critical_points_refined_deg_X.csv`: Refined critical points
-- `refinement_comparison_deg_X.csv`: Raw vs refined side-by-side
-- `refinement_summary.json`: Statistics (convergence, improvement, timing)
+- `refinement_comparison_deg_X.csv`: Raw vs refined side-by-side (includes gradient norms)
+- `refinement_summary_deg_X.json`: Statistics (convergence, improvement, timing, gradient validation)
 
 # Examples
 ```julia
@@ -57,6 +57,7 @@ println("Best estimate: ", best_params)
 - Falls back to old filename format (`critical_points_deg_X.csv`) for compatibility
 - Progress messages show refinement status for each point
 - Failed refinements are tracked but excluded from refined_points
+- Gradient validation automatically runs on converged points (||∇f(x*)|| ≈ 0 check)
 """
 function refine_experiment_results(
     experiment_dir::String,
@@ -156,11 +157,20 @@ function refine_experiment_results(
         config                   # refinement_config
     )
 
-    # 7. Save results (with Tier 1 diagnostics)
-    save_refined_results(experiment_dir, result, raw_data.degree, refinement_results)
+    # 7. Gradient validation (if we have refined points)
+    gradient_validation = if n_converged > 0
+        println("Validating gradient norms...")
+        validate_critical_points(refined_points, objective_func; tolerance=config.f_abstol)
+    else
+        nothing
+    end
+
+    # 8. Save results (with Tier 1 diagnostics and gradient validation)
+    save_refined_results(experiment_dir, result, raw_data.degree, refinement_results;
+                        gradient_validation=gradient_validation)
     println()
 
-    # 8. Print summary
+    # 9. Print summary
     println("Refinement Summary")
     println("="^80)
     println("Total points:        ", result.n_raw)
@@ -179,6 +189,15 @@ function refine_experiment_results(
                 result.best_raw_value - result.best_refined_value))
     end
     println()
+    # Gradient validation summary
+    if gradient_validation !== nothing
+        println("Gradient Validation (tol=$(gradient_validation.tolerance)):")
+        println("  Valid critical pts: ", gradient_validation.n_valid, "/", n_converged,
+                " (", round(100 * gradient_validation.n_valid / n_converged, digits=1), "%)")
+        println("  Mean ||∇f||:        ", @sprintf("%.6e", gradient_validation.mean_norm))
+        println("  Max ||∇f||:         ", @sprintf("%.6e", gradient_validation.max_norm))
+        println()
+    end
     println("Total time:          ", @sprintf("%.2f", result.total_time), " seconds")
     println("="^80)
 
