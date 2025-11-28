@@ -6,6 +6,15 @@ High-level API functions for refining critical points from globtimcore experimen
 Created: 2025-11-22 (Architecture cleanup)
 """
 
+# Terminal colors for summary output
+const RESET = "\033[0m"
+const BOLD = "\033[1m"
+const GREEN = "\033[32m"
+const YELLOW = "\033[33m"
+const RED = "\033[31m"
+const CYAN = "\033[36m"
+const DIM = "\033[2m"
+
 """
     refine_experiment_results(experiment_dir, objective_func, config=RefinementConfig())
 
@@ -168,38 +177,9 @@ function refine_experiment_results(
     # 8. Save results (with Tier 1 diagnostics and gradient validation)
     save_refined_results(experiment_dir, result, raw_data.degree, refinement_results;
                         gradient_validation=gradient_validation)
-    println()
 
-    # 9. Print summary
-    println("Refinement Summary")
-    println("="^80)
-    println("Total points:        ", result.n_raw)
-    println("Converged:           ", result.n_converged, " (",
-            round(100 * result.n_converged / result.n_raw, digits=1), "%)")
-    println("Failed:              ", result.n_failed)
-    println("Timeout:             ", result.n_timeout)
-    println()
-    if n_converged > 0
-        println("Mean improvement:    ", @sprintf("%.6e", result.mean_improvement))
-        println("Max improvement:     ", @sprintf("%.6e", result.max_improvement))
-        println()
-        println("Best raw value:      ", @sprintf("%.6e", result.best_raw_value))
-        println("Best refined value:  ", @sprintf("%.6e", result.best_refined_value))
-        println("Overall improvement: ", @sprintf("%.6e",
-                result.best_raw_value - result.best_refined_value))
-    end
-    println()
-    # Gradient validation summary
-    if gradient_validation !== nothing
-        println("Gradient Validation (tol=$(gradient_validation.tolerance)):")
-        println("  Valid critical pts: ", gradient_validation.n_valid, "/", n_converged,
-                " (", round(100 * gradient_validation.n_valid / n_converged, digits=1), "%)")
-        println("  Mean ||∇f||:        ", @sprintf("%.6e", gradient_validation.mean_norm))
-        println("  Max ||∇f||:         ", @sprintf("%.6e", gradient_validation.max_norm))
-        println()
-    end
-    println("Total time:          ", @sprintf("%.2f", result.total_time), " seconds")
-    println("="^80)
+    # 9. Print formatted summary
+    print_refinement_summary(result, gradient_validation)
 
     return result
 end
@@ -245,4 +225,105 @@ function refine_critical_points(
         objective_func,
         config
     )
+end
+
+"""
+    print_refinement_summary(result, gradient_validation)
+
+Print a formatted refinement summary using PrettyTables with colors.
+"""
+function print_refinement_summary(
+    result::RefinedExperimentResult,
+    gradient_validation::Union{GradientValidationResult, Nothing}
+)
+    # Color helpers
+    function color_rate(rate::Float64)
+        if rate >= 0.8
+            return "$(GREEN)$(round(rate * 100, digits=1))%$(RESET)"
+        elseif rate >= 0.5
+            return "$(YELLOW)$(round(rate * 100, digits=1))%$(RESET)"
+        else
+            return "$(RED)$(round(rate * 100, digits=1))%$(RESET)"
+        end
+    end
+
+    function format_sci(x::Float64)
+        if x == Inf || x == -Inf || isnan(x)
+            return "$(DIM)N/A$(RESET)"
+        end
+        @sprintf("%.4e", x)
+    end
+
+    # Build summary data
+    convergence_rate = result.n_converged / result.n_raw
+
+    # Section 1: Convergence Statistics
+    conv_data = Any[
+        "$(BOLD)Total Points$(RESET)"      "$(CYAN)$(result.n_raw)$(RESET)"
+        "$(GREEN)✓$(RESET) Converged"      "$(result.n_converged) ($(color_rate(convergence_rate)))"
+        "$(RED)✗$(RESET) Failed"           "$(result.n_failed)"
+        "$(YELLOW)⏱$(RESET) Timeout"       "$(result.n_timeout)"
+    ]
+
+    println()
+    println("$(BOLD)$(CYAN)╔══════════════════════════════════════════════════════════════════════════════╗$(RESET)")
+    println("$(BOLD)$(CYAN)║$(RESET)                        $(BOLD)REFINEMENT SUMMARY$(RESET)                                $(BOLD)$(CYAN)║$(RESET)")
+    println("$(BOLD)$(CYAN)╚══════════════════════════════════════════════════════════════════════════════╝$(RESET)")
+    println()
+
+    # Convergence table
+    println("$(BOLD)Convergence$(RESET)")
+    pretty_table(conv_data,
+        header = ["Metric", "Value"],
+        alignment = [:l, :r],
+        tf = tf_unicode_rounded,
+        show_header = false,
+        crop = :none)
+
+    # Section 2: Improvement Statistics (only if converged > 0)
+    if result.n_converged > 0
+        println()
+        println("$(BOLD)Improvement$(RESET)")
+
+        improvement_data = Any[
+            "Mean improvement"     format_sci(result.mean_improvement)
+            "Max improvement"      format_sci(result.max_improvement)
+            "Best raw value"       format_sci(result.best_raw_value)
+            "$(GREEN)Best refined value$(RESET)" "$(GREEN)$(format_sci(result.best_refined_value))$(RESET)"
+            "Overall gain"         format_sci(result.best_raw_value - result.best_refined_value)
+        ]
+
+        pretty_table(improvement_data,
+            header = ["Metric", "Value"],
+            alignment = [:l, :r],
+            tf = tf_unicode_rounded,
+            show_header = false,
+            crop = :none)
+    end
+
+    # Section 3: Gradient Validation (if available)
+    if gradient_validation !== nothing
+        println()
+        grad_rate = gradient_validation.n_valid / length(gradient_validation.norms)
+
+        grad_data = Any[
+            "Valid critical points" "$(gradient_validation.n_valid)/$(length(gradient_validation.norms)) ($(color_rate(grad_rate)))"
+            "Mean ||∇f||"           format_sci(gradient_validation.mean_norm)
+            "Max ||∇f||"            format_sci(gradient_validation.max_norm)
+            "Tolerance"             "$(gradient_validation.tolerance)"
+        ]
+
+        println("$(BOLD)Gradient Validation$(RESET)")
+        pretty_table(grad_data,
+            header = ["Metric", "Value"],
+            alignment = [:l, :r],
+            tf = tf_unicode_rounded,
+            show_header = false,
+            crop = :none)
+    end
+
+    # Section 4: Timing
+    println()
+    println("$(DIM)Total time: $(@sprintf("%.2f", result.total_time)) seconds$(RESET)")
+    println()
 end

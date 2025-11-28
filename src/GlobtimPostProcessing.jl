@@ -44,6 +44,7 @@ using ProgressMeter
 using StatsBase
 using Optim  # Critical point refinement
 using ForwardDiff  # Gradient computation for validation
+using PrettyTables  # Rich terminal table formatting
 
 # Core functionality exports
 export load_experiment_results, load_campaign_results
@@ -94,6 +95,7 @@ export refine_experiment_results, refine_critical_points
 export RefinedExperimentResult, RefinementResult
 export load_raw_critical_points, save_refined_results, RawCriticalPointsData
 export refine_critical_point, refine_critical_points_batch
+export print_refinement_summary
 
 # Gradient validation exports
 export compute_gradient_norms, compute_gradient_norm
