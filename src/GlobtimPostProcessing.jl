@@ -79,6 +79,9 @@ export check_l2_quality
 export detect_stagnation, StagnationResult
 export check_objective_distribution_quality, ObjectiveDistributionResult
 
+# Table formatting exports (display functions)
+export format_metrics_table, format_compact_summary, format_grouped_metrics
+
 # Critical point classification exports
 export classify_critical_point, classify_all_critical_points!
 export count_classifications, find_distinct_local_minima
