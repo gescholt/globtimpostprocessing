@@ -29,8 +29,9 @@ using CSV
         @test config["dimension"] == 4
         @test config["basis"] == "chebyshev"
 
-        # Note: Deuflhard_4d is parameter-free, so no p_true
-        @test !haskey(config, "p_true")
+        # Fixture includes p_true for parameter recovery testing
+        @test haskey(config, "p_true")
+        @test config["p_true"] == [0.2, 0.3, 0.5, 0.6]
     end
 
     @testset "Load experiment config - missing file" begin
@@ -73,8 +74,8 @@ using CSV
     end
 
     @testset "Check for ground truth (p_true)" begin
-        # Deuflhard_4d fixture has no p_true (parameter-free function)
-        @test has_ground_truth(fixtures_dir) == false
+        # Fixture has p_true for parameter recovery testing
+        @test has_ground_truth(fixtures_dir) == true
 
         # Should not find p_true in nonexistent directory
         @test has_ground_truth("/nonexistent/path") == false
