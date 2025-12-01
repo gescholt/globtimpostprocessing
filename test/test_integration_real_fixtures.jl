@@ -61,8 +61,8 @@ include(joinpath(fixtures_dir, "test_functions.jl"))
         @test value isa Float64
         @test value >= 0.0  # Deuflhard is non-negative
 
-        # Origin should be near global minimum
-        @test value < 1.0  # Should be small at origin
+        # Origin value: (exp(0)-3)² = 4 per 2D component, so 4D = 8
+        @test value ≈ 8.0 atol=0.01  # Deuflhard at origin is (1-3)² + (1-3)² = 8
 
         # Test at a few random points
         for _ in 1:5
@@ -270,8 +270,9 @@ include(joinpath(fixtures_dir, "test_functions.jl"))
         # 8. Load L2 norms and check quality
         summary_path = joinpath(fixtures_dir, "results_summary.json")
         summary_data = JSON3.read(read(summary_path, String))
-        deg4_entry = findfirst(entry -> entry["degree"] == 4, summary_data)
-        l2_norm = summary_data[deg4_entry]["L2_norm"]
+        degree_results = summary_data.degree_results
+        deg4_entry = findfirst(entry -> entry.degree == 4, degree_results)
+        l2_norm = degree_results[deg4_entry].l2_norm
         l2_quality = check_l2_quality(l2_norm, dimension, thresholds)
         @test l2_quality in [:excellent, :good, :fair, :poor]
 
@@ -297,8 +298,9 @@ include(joinpath(fixtures_dir, "test_functions.jl"))
         # Load L2 norms
         summary_path = joinpath(fixtures_dir, "results_summary.json")
         summary_data = JSON3.read(read(summary_path, String))
+        degree_results = summary_data.degree_results
 
-        l2_dict = Dict(entry["degree"] => entry["L2_norm"] for entry in summary_data)
+        l2_dict = Dict(entry.degree => entry.l2_norm for entry in degree_results)
 
         # L2 should decrease with degree
         @test l2_dict[6] < l2_dict[4]
@@ -384,9 +386,9 @@ include(joinpath(fixtures_dir, "test_functions.jl"))
     @testset "Objective Function Properties" begin
         # Verify Deuflhard properties
 
-        # 1. Minimum at origin
+        # 1. Known value at origin: (exp(0)-3)² = 4 per 2D component, 4D = 8
         origin_value = deuflhard_4d_fixture([0.0, 0.0, 0.0, 0.0])
-        @test origin_value < 1.0  # Should be small
+        @test origin_value ≈ 8.0 atol=0.01  # Deuflhard at origin is (1-3)² + (1-3)² = 8
 
         # 2. Symmetric (due to structure)
         p1 = [0.5, 0.3, 0.2, 0.1]
