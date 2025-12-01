@@ -13,25 +13,11 @@ Data analysis and reporting engine for GlobTim experiment results. This package 
 - **Campaign Analysis**: Aggregate and compare results across multiple experiments
 - **Label-Driven Processing**: Automatically discovers available data from experiment metadata
 
-## Installation
-
-GlobtimPostProcessing is **not registered in Julia General**. Set up the entire GlobalOptim ecosystem:
-
-```bash
-# Clone the setup repository
-git clone git@git.mpi-cbg.de:globaloptim/setup.git GlobalOptim
-cd GlobalOptim
-
-# Run automated setup (develops all packages)
+### Run automated setup (develops all packages)
+```
 julia setup_globaloptim.jl
 ```
 
-### Manual Development (Alternative)
-
-```julia
-using Pkg
-Pkg.develop(path="/path/to/GlobalOptim/globtimpostprocessing")
-```
 
 ## Quick Start
 
