@@ -142,18 +142,22 @@ function compute_parameter_recovery_stats(
     # Determine dimension from DataFrame columns
     dim = length(p_true)
 
+    # Detect column naming convention: Phase 1 (x1, x2, ...) or Phase 2 (p1, p2, ...)
+    uses_phase2_format = hasproperty(df, :p1)
+    col_prefix = uses_phase2_format ? "p" : "x"
+
     # Check DataFrame has required columns
     for i in 1:dim
-        col_name = Symbol("x$i")
+        col_name = Symbol("$(col_prefix)$i")
         if !hasproperty(df, col_name)
-            error("DataFrame missing column: $col_name")
+            error("DataFrame missing column: $col_name (tried $(col_prefix)1, $(col_prefix)2, ...)")
         end
     end
 
     # Compute distances for all critical points
     distances = Float64[]
     for row in eachrow(df)
-        p_found = [row[Symbol("x$i")] for i in 1:dim]
+        p_found = [row[Symbol("$(col_prefix)$i")] for i in 1:dim]
         dist = param_distance(p_found, p_true)
         push!(distances, dist)
     end
