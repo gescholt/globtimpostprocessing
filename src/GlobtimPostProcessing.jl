@@ -43,7 +43,8 @@ using ProgressMeter
 # using Globtim  # COMMENTED OUT: Removed dependency (only needed for ErrorCategorization)
 using StatsBase
 using Optim  # Critical point refinement
-using ForwardDiff  # Gradient computation for validation
+using ForwardDiff  # Gradient computation for validation (algebraic objectives)
+using FiniteDiff   # Numerical gradients for ODE-based objectives
 using PrettyTables  # Rich terminal table formatting
 
 # Core functionality exports

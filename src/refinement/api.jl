@@ -168,8 +168,10 @@ function refine_experiment_results(
 
     # 7. Gradient validation (if we have refined points)
     gradient_validation = if n_converged > 0
-        println("Validating gradient norms...")
-        validate_critical_points(refined_points, objective_func; tolerance=config.f_abstol)
+        println("Validating gradient norms ($(config.gradient_method))...")
+        validate_critical_points(refined_points, objective_func;
+                                tolerance=config.f_abstol,
+                                gradient_method=config.gradient_method)
     else
         nothing
     end

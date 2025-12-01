@@ -20,23 +20,24 @@ Configuration for critical point refinement.
 - `parallel::Bool`: Use distributed refinement (default: false, not yet implemented)
 - `robust_mode::Bool`: Return Inf on objective failure instead of error (default: true)
 - `show_progress::Bool`: Display progress counter (default: true)
+- `gradient_method::Symbol`: Gradient computation method for validation (:forwarddiff or :finitediff)
 
 # Presets
-Use `ode_refinement_config()` for ODE-based objectives (longer timeouts, robust mode).
+Use `ode_refinement_config()` for ODE-based objectives (longer timeouts, robust mode, finitediff).
 
 # Examples
 ```julia
-# Default config (general-purpose)
+# Default config (general-purpose, uses ForwardDiff)
 config = RefinementConfig()
 
-# ODE-specific config (longer timeout, robust mode)
+# ODE-specific config (longer timeout, robust mode, uses FiniteDiff)
 config_ode = ode_refinement_config()
 
-# Custom config
+# Custom config with numerical gradients
 config_custom = RefinementConfig(
     max_time_per_point = 60.0,
     f_abstol = 1e-8,
-    show_progress = false
+    gradient_method = :finitediff
 )
 ```
 """
@@ -49,6 +50,7 @@ struct RefinementConfig
     parallel::Bool
     robust_mode::Bool
     show_progress::Bool
+    gradient_method::Symbol
 end
 
 """
@@ -65,6 +67,7 @@ Construct RefinementConfig with keyword arguments.
 - `parallel = false`: Use parallel refinement (not yet implemented)
 - `robust_mode = true`: Return Inf on objective failure
 - `show_progress = true`: Display progress counter
+- `gradient_method = :forwarddiff`: Gradient method (:forwarddiff or :finitediff)
 
 # Examples
 ```julia
@@ -76,6 +79,9 @@ config = RefinementConfig(f_abstol=1e-8, x_abstol=1e-8)
 
 # Silent mode
 config = RefinementConfig(show_progress=false)
+
+# Numerical gradients for ODE objectives
+config = RefinementConfig(gradient_method=:finitediff)
 ```
 """
 function RefinementConfig(;
@@ -86,7 +92,8 @@ function RefinementConfig(;
     max_iterations::Int = 300,
     parallel::Bool = false,
     robust_mode::Bool = true,
-    show_progress::Bool = true
+    show_progress::Bool = true,
+    gradient_method::Symbol = :forwarddiff
 )
     return RefinementConfig(
         method,
@@ -96,7 +103,8 @@ function RefinementConfig(;
         max_iterations,
         parallel,
         robust_mode,
-        show_progress
+        show_progress,
+        gradient_method
     )
 end
 
@@ -105,8 +113,8 @@ end
 
 ODE-specific preset for refinement configuration.
 
-Uses longer timeouts and robust mode optimized for ODE parameter estimation problems
-where objective evaluations involve solving stiff ODEs.
+Uses longer timeouts, robust mode, and numerical gradients optimized for ODE parameter
+estimation problems where objective evaluations involve solving stiff ODEs.
 
 # Keyword Arguments
 - `max_time_per_point = 60.0`: 2x longer timeout for stiff ODEs
@@ -129,6 +137,7 @@ config = ode_refinement_config(f_abstol=1e-8)
 # Notes
 - Always uses gradient-free NelderMead (ForwardDiff incompatible with ODE solvers)
 - Robust mode enabled (returns Inf on ODE solver failure)
+- Uses FiniteDiff for gradient validation (ForwardDiff incompatible with ODE solvers)
 - Longer timeout to handle stiff problems
 """
 function ode_refinement_config(;
@@ -139,6 +148,7 @@ function ode_refinement_config(;
         method = Optim.NelderMead(),  # Gradient-free required for ODE
         max_time_per_point = max_time_per_point,
         robust_mode = true,  # Return Inf on ODE solver failure
+        gradient_method = :finitediff,  # Numerical gradients for ODE objectives
         kwargs...
     )
 end
