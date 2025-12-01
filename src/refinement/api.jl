@@ -6,14 +6,7 @@ High-level API functions for refining critical points from globtimcore experimen
 Created: 2025-11-22 (Architecture cleanup)
 """
 
-# Terminal colors for summary output
-const RESET = "\033[0m"
-const BOLD = "\033[1m"
-const GREEN = "\033[32m"
-const YELLOW = "\033[33m"
-const RED = "\033[31m"
-const CYAN = "\033[36m"
-const DIM = "\033[2m"
+# Note: Colors are handled via PrettyTables Crayons in print_refinement_summary()
 
 """
     refine_experiment_results(experiment_dir, objective_func, config=RefinementConfig())
@@ -238,68 +231,80 @@ function print_refinement_summary(
     result::RefinedExperimentResult,
     gradient_validation::Union{GradientValidationResult, Nothing}
 )
-    # Color helpers
-    function color_rate(rate::Float64)
-        if rate >= 0.8
-            return "$(GREEN)$(round(rate * 100, digits=1))%$(RESET)"
-        elseif rate >= 0.5
-            return "$(YELLOW)$(round(rate * 100, digits=1))%$(RESET)"
-        else
-            return "$(RED)$(round(rate * 100, digits=1))%$(RESET)"
-        end
-    end
+    # Crayons for coloring
+    cr_green = Crayon(foreground = :green)
+    cr_yellow = Crayon(foreground = :yellow)
+    cr_red = Crayon(foreground = :red)
+    cr_cyan = Crayon(foreground = :cyan)
+    cr_bold = Crayon(bold = true)
+    cr_dim = Crayon(foreground = :dark_gray)
 
     function format_sci(x::Float64)
         if x == Inf || x == -Inf || isnan(x)
-            return "$(DIM)N/A$(RESET)"
+            return "N/A"
         end
         @sprintf("%.4e", x)
+    end
+
+    function format_rate(rate::Float64)
+        "$(round(rate * 100, digits=1))%"
     end
 
     # Build summary data
     convergence_rate = result.n_converged / result.n_raw
 
+    # Header
+    println()
+    println(cr_bold(cr_cyan("╔══════════════════════════════════════════════════════════════════════════════╗")))
+    println(cr_bold(cr_cyan("║")) * "                        " * cr_bold("REFINEMENT SUMMARY") * "                                " * cr_bold(cr_cyan("║")))
+    println(cr_bold(cr_cyan("╚══════════════════════════════════════════════════════════════════════════════╝")))
+    println()
+
     # Section 1: Convergence Statistics
     conv_data = Any[
-        "$(BOLD)Total Points$(RESET)"      "$(CYAN)$(result.n_raw)$(RESET)"
-        "$(GREEN)✓$(RESET) Converged"      "$(result.n_converged) ($(color_rate(convergence_rate)))"
-        "$(RED)✗$(RESET) Failed"           "$(result.n_failed)"
-        "$(YELLOW)⏱$(RESET) Timeout"       "$(result.n_timeout)"
+        "Total Points"    result.n_raw
+        "✓ Converged"     "$(result.n_converged) ($(format_rate(convergence_rate)))"
+        "✗ Failed"        result.n_failed
+        "⏱ Timeout"       result.n_timeout
     ]
 
-    println()
-    println("$(BOLD)$(CYAN)╔══════════════════════════════════════════════════════════════════════════════╗$(RESET)")
-    println("$(BOLD)$(CYAN)║$(RESET)                        $(BOLD)REFINEMENT SUMMARY$(RESET)                                $(BOLD)$(CYAN)║$(RESET)")
-    println("$(BOLD)$(CYAN)╚══════════════════════════════════════════════════════════════════════════════╝$(RESET)")
-    println()
+    # Highlighter for convergence rate coloring
+    conv_hl = Highlighter(
+        (data, i, j) -> i == 2 && j == 2,
+        convergence_rate >= 0.8 ? cr_green : (convergence_rate >= 0.5 ? cr_yellow : cr_red)
+    )
 
-    # Convergence table
-    println("$(BOLD)Convergence$(RESET)")
+    println(cr_bold("Convergence"))
     pretty_table(conv_data,
         header = ["Metric", "Value"],
         alignment = [:l, :r],
         tf = tf_unicode_rounded,
         show_header = false,
+        highlighters = (conv_hl,),
         crop = :none)
 
     # Section 2: Improvement Statistics (only if converged > 0)
     if result.n_converged > 0
         println()
-        println("$(BOLD)Improvement$(RESET)")
+        println(cr_bold("Improvement"))
 
         improvement_data = Any[
             "Mean improvement"     format_sci(result.mean_improvement)
             "Max improvement"      format_sci(result.max_improvement)
             "Best raw value"       format_sci(result.best_raw_value)
-            "$(GREEN)Best refined value$(RESET)" "$(GREEN)$(format_sci(result.best_refined_value))$(RESET)"
+            "Best refined value"   format_sci(result.best_refined_value)
             "Overall gain"         format_sci(result.best_raw_value - result.best_refined_value)
         ]
+
+        # Highlight best refined value in green
+        imp_hl = Highlighter((data, i, j) -> i == 4, cr_green)
 
         pretty_table(improvement_data,
             header = ["Metric", "Value"],
             alignment = [:l, :r],
             tf = tf_unicode_rounded,
             show_header = false,
+            highlighters = (imp_hl,),
             crop = :none)
     end
 
@@ -309,23 +314,30 @@ function print_refinement_summary(
         grad_rate = gradient_validation.n_valid / length(gradient_validation.norms)
 
         grad_data = Any[
-            "Valid critical points" "$(gradient_validation.n_valid)/$(length(gradient_validation.norms)) ($(color_rate(grad_rate)))"
+            "Valid critical points" "$(gradient_validation.n_valid)/$(length(gradient_validation.norms)) ($(format_rate(grad_rate)))"
             "Mean ||∇f||"           format_sci(gradient_validation.mean_norm)
             "Max ||∇f||"            format_sci(gradient_validation.max_norm)
-            "Tolerance"             "$(gradient_validation.tolerance)"
+            "Tolerance"             string(gradient_validation.tolerance)
         ]
 
-        println("$(BOLD)Gradient Validation$(RESET)")
+        # Highlighter for gradient validation rate
+        grad_hl = Highlighter(
+            (data, i, j) -> i == 1 && j == 2,
+            grad_rate >= 0.8 ? cr_green : (grad_rate >= 0.5 ? cr_yellow : cr_red)
+        )
+
+        println(cr_bold("Gradient Validation"))
         pretty_table(grad_data,
             header = ["Metric", "Value"],
             alignment = [:l, :r],
             tf = tf_unicode_rounded,
             show_header = false,
+            highlighters = (grad_hl,),
             crop = :none)
     end
 
     # Section 4: Timing
     println()
-    println("$(DIM)Total time: $(@sprintf("%.2f", result.total_time)) seconds$(RESET)")
+    println(cr_dim("Total time: $(@sprintf("%.2f", result.total_time)) seconds"))
     println()
 end
