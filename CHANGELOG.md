@@ -1,5 +1,40 @@
 # Changelog - GlobtimPostProcessing
 
+## [Unreleased] - 2025-11-28
+
+### Added - Gradient Norm Validation (Phase 2 Tier 2)
+
+#### Gradient Validation for Critical Points
+- **New Module**: `src/refinement/gradient_validation.jl`
+  - `compute_gradient_norms()` - Batch gradient norm computation using ForwardDiff
+  - `compute_gradient_norm()` - Single-point gradient norm
+  - `validate_critical_points()` - Validate points against tolerance threshold
+  - `add_gradient_validation!()` - Add validation columns to DataFrames
+  - `GradientValidationResult` - Result struct with validation statistics
+
+#### Automatic Integration
+- Gradient validation automatically runs on converged points in `refine_experiment_results()`
+- Uses `config.f_abstol` as validation tolerance
+- Results included in printed summary output
+
+#### Enhanced Output
+- **refinement_comparison_deg_X.csv** now includes:
+  - `gradient_norm` - ||∇f(x)|| for each refined point
+  - `gradient_valid` - Boolean validation status
+- **refinement_summary_deg_X.json** now includes:
+  - `gradient_validation` section with n_valid, n_invalid, mean_norm, max_norm, validation_rate
+
+#### Dependencies
+- Added `ForwardDiff` (v0.10) for automatic differentiation
+
+#### Documentation
+- Updated `docs/REFINEMENT_DIAGNOSTICS.md` - marked gradient validation complete
+- Archived `gradient_validation_plan.md` to `docs/archive/`
+
+**Status**: ✅ Complete - Implements gradient norm validation from Phase 2 Tier 2
+
+---
+
 ## [Unreleased] - 2025-11-24
 
 ### Added - Phase 2 Tier 1 Refinement Diagnostics

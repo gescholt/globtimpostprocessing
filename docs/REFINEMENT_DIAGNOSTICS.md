@@ -19,10 +19,13 @@ This document specifies requirements and future directions for capturing compreh
 - **Documentation**: See `docs/PHASE2_TIER1_IMPLEMENTATION.md`
 - **Commit**: `e4798c2` - feat: Implement Phase 2 Tier 1 Refinement Diagnostics
 
-### Phase 2 (Tier 2): ⏳ **NOT STARTED**
-- Optional trajectory storage (`store_trajectory=true`)
-- Final gradient norm computation
-- Convergence speed metrics
+### Phase 2 (Tier 2): 🟡 **PARTIAL**
+- ⏳ Optional trajectory storage (`store_trajectory=true`)
+- ✅ Final gradient norm computation — **IMPLEMENTED** (2025-11-28)
+  - See `src/refinement/gradient_validation.jl`
+  - Automatically runs on converged points in `refine_experiment_results()`
+  - Outputs to CSV (`gradient_norm`, `gradient_valid` columns) and JSON summary
+- ⏳ Convergence speed metrics
 - Requires memory overhead (opt-in feature)
 
 ### Phase 3 (Tier 3): ⏳ **NOT STARTED**
@@ -252,27 +255,30 @@ end
 
 These diagnostics require `store_trace=true` in Optim options, which has memory cost proportional to iterations.
 
-#### 1. Final Gradient Norm (BFGS Only)
+#### 1. Final Gradient Norm ✅ IMPLEMENTED (2025-11-28)
 
-**Required**: Gradient norm at final iteration
+**Status**: Implemented via ForwardDiff (works with any optimizer including NelderMead)
+
+**Implementation**: `src/refinement/gradient_validation.jl`
 
 ```julia
-final_gradient_norm::Union{Float64,Nothing}
+# Compute gradient norms for all refined points
+result = validate_critical_points(refined_points, objective_func; tolerance=1e-6)
+
+# Access results
+result.norms        # Vector of ||∇f(x)|| for each point
+result.valid        # Vector{Bool} - which points pass validation
+result.n_valid      # Count of valid critical points
+result.mean_norm    # Mean gradient norm
 ```
 
-**Value**: Verify critical point quality. True critical points should have ‖∇f‖ ≈ 0.
+**Integration**: Automatically called by `refine_experiment_results()` for converged points.
 
-**Implementation**:
-```julia
-# Requires store_trace=true
-if !isempty(Optim.trace(result))
-    final_g_norm = last(Optim.trace(result)).g_norm
-else
-    final_g_norm = nothing
-end
-```
+**Output Files**:
+- CSV: `gradient_norm`, `gradient_valid` columns
+- JSON: `gradient_validation` section with statistics
 
-**Note**: For NelderMead (gradient-free), would need separate ForwardDiff call.
+**Note**: Uses ForwardDiff.gradient (works with any optimizer, not just BFGS).
 
 #### 2. Optimization Trajectory
 

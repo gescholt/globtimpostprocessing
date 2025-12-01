@@ -38,15 +38,16 @@ struct GradientValidationResult
 end
 
 """
-    compute_gradient_norms(points::Vector{Vector{Float64}}, objective::Function) -> Vector{Float64}
+    compute_gradient_norms(points, objective; gradient_method=:forwarddiff) -> Vector{Float64}
 
-Compute gradient norms at critical points using ForwardDiff.
+Compute gradient norms at critical points.
 
 For each point x, computes ||∇f(x)||₂ (Euclidean norm of gradient).
 
 # Arguments
 - `points::Vector{Vector{Float64}}`: Critical points to evaluate
 - `objective::Function`: Objective function f(x::Vector{Float64}) -> Float64
+- `gradient_method::Symbol`: `:forwarddiff` (default) or `:finitediff`
 
 # Returns
 - `Vector{Float64}`: Gradient norms for each point
@@ -57,22 +58,33 @@ f(x) = (x[1] - 1.0)^2 + (x[2] - 2.0)^2
 points = [[1.0, 2.0], [0.9, 1.9]]  # First is true critical point
 norms = compute_gradient_norms(points, f)
 # norms ≈ [0.0, 0.283...]  # First near zero, second has nonzero gradient
+
+# For ODE-based objectives, use numerical gradients
+norms = compute_gradient_norms(points, ode_objective; gradient_method=:finitediff)
 ```
 
 # Notes
-- Uses ForwardDiff.gradient for automatic differentiation
-- Returns Inf if gradient computation fails (e.g., non-differentiable point)
+- `:forwarddiff`: Uses ForwardDiff.gradient (fast, exact for algebraic functions)
+- `:finitediff`: Uses FiniteDiff.finite_difference_gradient (works with ODE objectives)
+- Returns Inf if gradient computation fails
 - Computation is done point-by-point (no parallelization)
 """
 function compute_gradient_norms(
     points::Vector{Vector{Float64}},
-    objective::Function
+    objective::Function;
+    gradient_method::Symbol = :forwarddiff
 )::Vector{Float64}
     norms = Vector{Float64}(undef, length(points))
 
     for (i, pt) in enumerate(points)
         try
-            grad = ForwardDiff.gradient(objective, pt)
+            grad = if gradient_method == :forwarddiff
+                ForwardDiff.gradient(objective, pt)
+            elseif gradient_method == :finitediff
+                FiniteDiff.finite_difference_gradient(objective, pt)
+            else
+                error("Unknown gradient_method: $gradient_method. Use :forwarddiff or :finitediff")
+            end
             norms[i] = LinearAlgebra.norm(grad)
         catch e
             # If gradient computation fails, return Inf
@@ -84,13 +96,14 @@ function compute_gradient_norms(
 end
 
 """
-    compute_gradient_norm(point::Vector{Float64}, objective::Function) -> Float64
+    compute_gradient_norm(point, objective; gradient_method=:forwarddiff) -> Float64
 
-Compute gradient norm at a single critical point using ForwardDiff.
+Compute gradient norm at a single critical point.
 
 # Arguments
 - `point::Vector{Float64}`: Critical point to evaluate
 - `objective::Function`: Objective function f(x::Vector{Float64}) -> Float64
+- `gradient_method::Symbol`: `:forwarddiff` (default) or `:finitediff`
 
 # Returns
 - `Float64`: Gradient norm ||∇f(point)||₂
@@ -99,14 +112,24 @@ Compute gradient norm at a single critical point using ForwardDiff.
 ```julia
 f(x) = (x[1] - 1.0)^2 + (x[2] - 2.0)^2
 norm = compute_gradient_norm([1.0, 2.0], f)  # Returns ≈ 0.0
+
+# For ODE objectives
+norm = compute_gradient_norm(point, ode_func; gradient_method=:finitediff)
 ```
 """
 function compute_gradient_norm(
     point::Vector{Float64},
-    objective::Function
+    objective::Function;
+    gradient_method::Symbol = :forwarddiff
 )::Float64
     try
-        grad = ForwardDiff.gradient(objective, point)
+        grad = if gradient_method == :forwarddiff
+            ForwardDiff.gradient(objective, point)
+        elseif gradient_method == :finitediff
+            FiniteDiff.finite_difference_gradient(objective, point)
+        else
+            error("Unknown gradient_method: $gradient_method. Use :forwarddiff or :finitediff")
+        end
         return LinearAlgebra.norm(grad)
     catch e
         return Inf
@@ -117,7 +140,8 @@ end
     validate_critical_points(
         points::Vector{Vector{Float64}},
         objective::Function;
-        tolerance::Float64 = 1e-6
+        tolerance::Float64 = 1e-6,
+        gradient_method::Symbol = :forwarddiff
     ) -> GradientValidationResult
 
 Validate critical points by checking if gradient norms are below tolerance.
@@ -129,6 +153,7 @@ gradient norms and classifies points as valid (norm < tolerance) or invalid.
 - `points::Vector{Vector{Float64}}`: Critical points to validate
 - `objective::Function`: Objective function f(x::Vector{Float64}) -> Float64
 - `tolerance::Float64 = 1e-6`: Maximum gradient norm for valid critical point
+- `gradient_method::Symbol = :forwarddiff`: Gradient method (:forwarddiff or :finitediff)
 
 # Returns
 - `GradientValidationResult`: Validation results with norms, validity, and statistics
@@ -141,6 +166,9 @@ points = [[1.0, 2.0], [1.001, 2.001], [0.5, 1.0]]
 result = validate_critical_points(points, f; tolerance=1e-4)
 println("Valid: ", result.n_valid, "/", length(points))
 println("Norms: ", result.norms)
+
+# For ODE objectives, use numerical gradients
+result = validate_critical_points(points, ode_func; gradient_method=:finitediff)
 ```
 
 # Notes
@@ -148,14 +176,16 @@ println("Norms: ", result.norms)
 - Points with Inf gradient norm (computation failed) are invalid
 - Use stricter tolerance (e.g., 1e-8) for high-precision validation
 - Use relaxed tolerance (e.g., 1e-4) for approximate validation
+- Use `gradient_method=:finitediff` for ODE-based objectives
 """
 function validate_critical_points(
     points::Vector{Vector{Float64}},
     objective::Function;
-    tolerance::Float64 = 1e-6
+    tolerance::Float64 = 1e-6,
+    gradient_method::Symbol = :forwarddiff
 )::GradientValidationResult
     # Compute gradient norms
-    norms = compute_gradient_norms(points, objective)
+    norms = compute_gradient_norms(points, objective; gradient_method=gradient_method)
 
     # Classify points
     valid = norms .< tolerance
@@ -191,7 +221,8 @@ end
         comparison_df::DataFrame,
         objective::Function;
         tolerance::Float64 = 1e-6,
-        use_refined::Bool = true
+        use_refined::Bool = true,
+        gradient_method::Symbol = :forwarddiff
     ) -> GradientValidationResult
 
 Add gradient validation columns to a refinement comparison DataFrame.
@@ -204,6 +235,7 @@ new columns for gradient norm and validity.
 - `objective::Function`: Objective function f(x::Vector{Float64}) -> Float64
 - `tolerance::Float64 = 1e-6`: Tolerance for gradient norm validation
 - `use_refined::Bool = true`: Use refined points (true) or raw points (false)
+- `gradient_method::Symbol = :forwarddiff`: Gradient method (:forwarddiff or :finitediff)
 
 # Returns
 - `GradientValidationResult`: Validation result summary
@@ -222,6 +254,9 @@ df = CSV.read("refinement_comparison_deg_12.csv", DataFrame)
 result = add_gradient_validation!(df, objective_func; tolerance=1e-6)
 println("Valid critical points: ", result.n_valid)
 
+# For ODE objectives, use numerical gradients
+result = add_gradient_validation!(df, ode_func; gradient_method=:finitediff)
+
 # Save updated DataFrame
 CSV.write("refinement_comparison_deg_12.csv", df)
 ```
@@ -231,12 +266,14 @@ CSV.write("refinement_comparison_deg_12.csv", df)
 - For refined points, uses columns named `refined_dim1`, `refined_dim2`, etc.
 - For raw points, uses columns named `raw_dim1`, `raw_dim2`, etc.
 - Points with NaN coordinates (failed refinement) get Inf gradient norm
+- Use `gradient_method=:finitediff` for ODE-based objectives
 """
 function add_gradient_validation!(
     comparison_df::DataFrame,
     objective::Function;
     tolerance::Float64 = 1e-6,
-    use_refined::Bool = true
+    use_refined::Bool = true,
+    gradient_method::Symbol = :forwarddiff
 )::GradientValidationResult
     # Determine column prefix based on whether using refined or raw points
     prefix = use_refined ? "refined_dim" : "raw_dim"
@@ -268,7 +305,7 @@ function add_gradient_validation!(
         if any(isnan, pt)
             norms[i] = Inf  # Can't compute gradient for NaN coordinates
         else
-            norms[i] = compute_gradient_norm(pt, objective)
+            norms[i] = compute_gradient_norm(pt, objective; gradient_method=gradient_method)
         end
     end
 

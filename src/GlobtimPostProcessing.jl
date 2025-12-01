@@ -43,7 +43,9 @@ using ProgressMeter
 # using Globtim  # COMMENTED OUT: Removed dependency (only needed for ErrorCategorization)
 using StatsBase
 using Optim  # Critical point refinement
-using ForwardDiff  # Gradient computation for validation
+using ForwardDiff  # Gradient computation for validation (algebraic objectives)
+using FiniteDiff   # Numerical gradients for ODE-based objectives
+using PrettyTables  # Rich terminal table formatting
 
 # Core functionality exports
 export load_experiment_results, load_campaign_results
@@ -78,6 +80,9 @@ export check_l2_quality
 export detect_stagnation, StagnationResult
 export check_objective_distribution_quality, ObjectiveDistributionResult
 
+# Table formatting exports (display functions)
+export format_metrics_table, format_compact_summary, format_grouped_metrics
+
 # Critical point classification exports
 export classify_critical_point, classify_all_critical_points!
 export count_classifications, find_distinct_local_minima
@@ -94,6 +99,7 @@ export refine_experiment_results, refine_critical_points
 export RefinedExperimentResult, RefinementResult
 export load_raw_critical_points, save_refined_results, RawCriticalPointsData
 export refine_critical_point, refine_critical_points_batch
+export print_refinement_summary
 
 # Gradient validation exports
 export compute_gradient_norms, compute_gradient_norm
