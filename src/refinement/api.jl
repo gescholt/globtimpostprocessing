@@ -66,20 +66,8 @@ function refine_experiment_results(
     objective_func::Function,
     config::RefinementConfig = RefinementConfig()
 )
-    println("="^80)
-    println("Critical Point Refinement")
-    println("="^80)
-    println("Experiment directory: $experiment_dir")
-    println("Config: $(typeof(config.method)), timeout=$(config.max_time_per_point)s, ",
-            "tol=$(config.f_abstol)")
-    println()
-
     # 1. Load raw critical points from CSV
-    println("Loading raw critical points...")
     raw_data = load_raw_critical_points(experiment_dir)
-    println("  Found $(raw_data.n_points) critical points at degree $(raw_data.degree)")
-    println("  Source: $(basename(raw_data.source_file))")
-    println()
 
     # 2. Refine using batch processor
     start_time = time()
@@ -96,7 +84,6 @@ function refine_experiment_results(
     )
 
     total_time = time() - start_time
-    println()
 
     # 3. Separate converged/failed/timeout
     converged_indices = findall(r -> r.converged, refinement_results)
@@ -224,120 +211,31 @@ end
 """
     print_refinement_summary(result, gradient_validation)
 
-Print a formatted refinement summary using PrettyTables with colors.
+Print a compact refinement summary (3 lines).
 """
 function print_refinement_summary(
     result::RefinedExperimentResult,
     gradient_validation::Union{GradientValidationResult, Nothing}
 )
-    # Crayons for coloring
-    cr_green = Crayon(foreground = :green)
-    cr_yellow = Crayon(foreground = :yellow)
-    cr_red = Crayon(foreground = :red)
-    cr_cyan = Crayon(foreground = :cyan)
-    cr_bold = Crayon(bold = true)
-    cr_dim = Crayon(foreground = :dark_gray)
+    # Line 1: Convergence
+    conv_rate = round(100 * result.n_converged / result.n_raw, digits=1)
+    println("Critical points: $(result.n_raw) raw → $(result.n_converged) refined ($conv_rate%)")
 
-    function format_sci(x::Float64)
-        if x == Inf || x == -Inf || isnan(x)
-            return "N/A"
-        end
-        @sprintf("%.4e", x)
-    end
-
-    function format_rate(rate::Float64)
-        "$(round(rate * 100, digits=1))%"
-    end
-
-    # Build summary data
-    convergence_rate = result.n_converged / result.n_raw
-
-    # Header
-    println()
-    println(cr_bold(cr_cyan("╔══════════════════════════════════════════════════════════════════════════════╗")))
-    println("$(cr_bold(cr_cyan("║")))                        $(cr_bold("REFINEMENT SUMMARY"))                                $(cr_bold(cr_cyan("║")))")
-    println(cr_bold(cr_cyan("╚══════════════════════════════════════════════════════════════════════════════╝")))
-    println()
-
-    # Section 1: Convergence Statistics
-    conv_data = Any[
-        "Total Points"    result.n_raw
-        "✓ Converged"     "$(result.n_converged) ($(format_rate(convergence_rate)))"
-        "✗ Failed"        result.n_failed
-        "⏱ Timeout"       result.n_timeout
-    ]
-
-    # Highlighter for convergence rate coloring
-    conv_hl = Highlighter(
-        (data, i, j) -> i == 2 && j == 2,
-        convergence_rate >= 0.8 ? cr_green : (convergence_rate >= 0.5 ? cr_yellow : cr_red)
-    )
-
-    println(cr_bold("Convergence"))
-    pretty_table(conv_data,
-        header = ["Metric", "Value"],
-        alignment = [:l, :r],
-        tf = tf_unicode_rounded,
-        show_header = false,
-        highlighters = (conv_hl,),
-        crop = :none)
-
-    # Section 2: Improvement Statistics (only if converged > 0)
+    # Line 2: Improvement (if converged)
     if result.n_converged > 0
-        println()
-        println(cr_bold("Improvement"))
-
-        improvement_data = Any[
-            "Mean improvement"     format_sci(result.mean_improvement)
-            "Max improvement"      format_sci(result.max_improvement)
-            "Best raw value"       format_sci(result.best_raw_value)
-            "Best refined value"   format_sci(result.best_refined_value)
-            "Overall gain"         format_sci(result.best_raw_value - result.best_refined_value)
-        ]
-
-        # Highlight best refined value in green
-        imp_hl = Highlighter((data, i, j) -> i == 4, cr_green)
-
-        pretty_table(improvement_data,
-            header = ["Metric", "Value"],
-            alignment = [:l, :r],
-            tf = tf_unicode_rounded,
-            show_header = false,
-            highlighters = (imp_hl,),
-            crop = :none)
+        improvement = round(100 * (1 - result.best_refined_value / result.best_raw_value), digits=1)
+        @printf("Best objective: %.2e → %.2e (%.1f%% improvement)\n",
+                result.best_raw_value, result.best_refined_value, improvement)
     end
 
-    # Section 3: Gradient Validation (if available)
+    # Line 3: Gradient validation (if available)
     if gradient_validation !== nothing
-        println()
-        grad_rate = gradient_validation.n_valid / length(gradient_validation.norms)
-
-        grad_data = Any[
-            "Valid critical points" "$(gradient_validation.n_valid)/$(length(gradient_validation.norms)) ($(format_rate(grad_rate)))"
-            "Mean ||∇f||"           format_sci(gradient_validation.mean_norm)
-            "Max ||∇f||"            format_sci(gradient_validation.max_norm)
-            "Tolerance"             string(gradient_validation.tolerance)
-        ]
-
-        # Highlighter for gradient validation rate
-        grad_hl = Highlighter(
-            (data, i, j) -> i == 1 && j == 2,
-            grad_rate >= 0.8 ? cr_green : (grad_rate >= 0.5 ? cr_yellow : cr_red)
-        )
-
-        println(cr_bold("Gradient Validation"))
-        pretty_table(grad_data,
-            header = ["Metric", "Value"],
-            alignment = [:l, :r],
-            tf = tf_unicode_rounded,
-            show_header = false,
-            highlighters = (grad_hl,),
-            crop = :none)
+        n_total = length(gradient_validation.norms)
+        grad_rate = round(100 * gradient_validation.n_valid / n_total, digits=1)
+        mean_norm = isnan(gradient_validation.mean_norm) ? 0.0 : gradient_validation.mean_norm
+        @printf("Gradient validation: %d/%d valid (%.1f%%), mean ||∇f||=%.2e\n",
+                gradient_validation.n_valid, n_total, grad_rate, mean_norm)
     end
-
-    # Section 4: Timing
-    println()
-    println(cr_dim("Total time: $(@sprintf("%.2f", result.total_time)) seconds"))
     println()
 end
 
