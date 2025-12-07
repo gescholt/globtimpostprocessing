@@ -99,7 +99,7 @@ export refine_experiment_results, refine_critical_points
 export RefinedExperimentResult, RefinementResult
 export load_raw_critical_points, save_refined_results, RawCriticalPointsData
 export refine_critical_point, refine_critical_points_batch
-export print_refinement_summary
+export print_refinement_summary, print_comparison_table
 
 # Gradient validation exports
 export compute_gradient_norms, compute_gradient_norm

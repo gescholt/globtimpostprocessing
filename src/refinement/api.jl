@@ -340,3 +340,132 @@ function print_refinement_summary(
     println(cr_dim("Total time: $(@sprintf("%.2f", result.total_time)) seconds"))
     println()
 end
+
+"""
+    print_comparison_table(result, gradient_validation; n_show=10, sort_by=:refined_value)
+
+Print a comparison table of raw vs refined critical points using PrettyTables.
+
+# Arguments
+- `result::RefinedExperimentResult`: Refinement results
+- `gradient_validation::Union{GradientValidationResult, Nothing}`: Optional gradient validation
+- `n_show::Int = 10`: Number of points to display (use `Inf` for all)
+- `sort_by::Symbol = :refined_value`: Sort by `:raw_value`, `:refined_value`, `:improvement`, or `:index`
+
+# Examples
+```julia
+result = refine_experiment_results(dir, objective)
+print_comparison_table(result)  # Show top 10 by refined value
+
+# Show all points sorted by improvement
+print_comparison_table(result; n_show=Inf, sort_by=:improvement)
+```
+"""
+function print_comparison_table(
+    result::RefinedExperimentResult,
+    gradient_validation::Union{GradientValidationResult, Nothing} = nothing;
+    n_show::Union{Int, Float64} = 10,
+    sort_by::Symbol = :refined_value
+)
+    cr_bold = Crayon(bold = true)
+    cr_cyan = Crayon(foreground = :cyan)
+
+    n_dim = length(result.raw_points[1])
+    n_display = isinf(n_show) ? result.n_raw : min(Int(n_show), result.n_raw)
+
+    # Build indices based on sort order
+    indices = collect(1:result.n_raw)
+    if sort_by == :raw_value
+        sort!(indices, by = i -> result.raw_values[i])
+    elseif sort_by == :refined_value
+        # Sort converged first by refined value, then non-converged
+        sort!(indices, by = i -> begin
+            if result.convergence_status[i]
+                converged_idx = sum(result.convergence_status[1:i])
+                return result.refined_values[converged_idx]
+            else
+                return Inf
+            end
+        end)
+    elseif sort_by == :improvement
+        sort!(indices, by = i -> begin
+            if result.convergence_status[i]
+                converged_idx = sum(result.convergence_status[1:i])
+                return -result.improvements[converged_idx]  # Negative for descending
+            else
+                return 0.0
+            end
+        end, rev = true)
+    end
+    # :index keeps original order
+
+    indices = indices[1:n_display]
+
+    # Build table data
+    function format_point(pt::Vector{Float64})
+        if length(pt) <= 4
+            return "(" * join([@sprintf("%.3f", x) for x in pt], ", ") * ")"
+        else
+            return "(" * join([@sprintf("%.3f", x) for x in pt[1:3]], ", ") * ", ...)"
+        end
+    end
+
+    function format_sci_short(x::Float64)
+        if isnan(x) || isinf(x)
+            return "N/A"
+        end
+        @sprintf("%.3e", x)
+    end
+
+    # Build data matrix
+    has_gradients = gradient_validation !== nothing
+    n_cols = has_gradients ? 7 : 6
+    data = Matrix{Any}(undef, n_display, n_cols)
+
+    for (row, i) in enumerate(indices)
+        data[row, 1] = i  # Index
+
+        # Raw point and value
+        data[row, 2] = format_point(result.raw_points[i])
+        data[row, 3] = format_sci_short(result.raw_values[i])
+
+        # Refined point and value (or N/A if not converged)
+        if result.convergence_status[i]
+            converged_idx = sum(result.convergence_status[1:i])
+            data[row, 4] = format_point(result.refined_points[converged_idx])
+            data[row, 5] = format_sci_short(result.refined_values[converged_idx])
+            data[row, 6] = format_sci_short(result.improvements[converged_idx])
+
+            if has_gradients
+                data[row, 7] = format_sci_short(gradient_validation.norms[converged_idx])
+            end
+        else
+            data[row, 4] = "failed"
+            data[row, 5] = "N/A"
+            data[row, 6] = "N/A"
+            if has_gradients
+                data[row, 7] = "N/A"
+            end
+        end
+    end
+
+    # Header
+    header = has_gradients ?
+        ["Idx", "Raw Point", "Raw Val", "Refined Point", "Ref Val", "Improv", "||∇f||"] :
+        ["Idx", "Raw Point", "Raw Val", "Refined Point", "Ref Val", "Improv"]
+
+    alignment = has_gradients ?
+        [:r, :l, :r, :l, :r, :r, :r] :
+        [:r, :l, :r, :l, :r, :r]
+
+    println()
+    println(cr_bold(cr_cyan("Raw vs Refined Critical Points (showing $n_display of $(result.n_raw))")))
+    println()
+
+    pretty_table(data,
+        header = header,
+        alignment = alignment,
+        tf = tf_unicode_rounded,
+        crop = :none)
+    println()
+end
