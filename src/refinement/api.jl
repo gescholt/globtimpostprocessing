@@ -268,7 +268,6 @@ function print_comparison_table(
     cr_bold = Crayon(bold = true)
     cr_cyan = Crayon(foreground = :cyan)
 
-    n_dim = length(result.raw_points[1])
     n_display = isinf(n_show) ? result.n_raw : min(Int(n_show), result.n_raw)
 
     # Build indices based on sort order
@@ -299,15 +298,6 @@ function print_comparison_table(
 
     indices = indices[1:n_display]
 
-    # Build table data
-    function format_point(pt::Vector{Float64})
-        if length(pt) <= 4
-            return "(" * join([@sprintf("%.3f", x) for x in pt], ", ") * ")"
-        else
-            return "(" * join([@sprintf("%.3f", x) for x in pt[1:3]], ", ") * ", ...)"
-        end
-    end
-
     function format_sci_short(x::Float64)
         if isnan(x) || isinf(x)
             return "N/A"
@@ -315,49 +305,41 @@ function print_comparison_table(
         @sprintf("%.3e", x)
     end
 
-    # Build data matrix
+    # Build data matrix (Idx, Raw Val, Ref Val, Improv, [||∇f||])
     has_gradients = gradient_validation !== nothing
-    n_cols = has_gradients ? 7 : 6
+    n_cols = has_gradients ? 5 : 4
     data = Matrix{Any}(undef, n_display, n_cols)
 
     for (row, i) in enumerate(indices)
         data[row, 1] = i  # Index
+        data[row, 2] = format_sci_short(result.raw_values[i])
 
-        # Raw point and value
-        data[row, 2] = format_point(result.raw_points[i])
-        data[row, 3] = format_sci_short(result.raw_values[i])
-
-        # Refined point and value (or N/A if not converged)
         if result.convergence_status[i]
             converged_idx = sum(result.convergence_status[1:i])
-            data[row, 4] = format_point(result.refined_points[converged_idx])
-            data[row, 5] = format_sci_short(result.refined_values[converged_idx])
-            data[row, 6] = format_sci_short(result.improvements[converged_idx])
-
+            data[row, 3] = format_sci_short(result.refined_values[converged_idx])
+            data[row, 4] = format_sci_short(result.improvements[converged_idx])
             if has_gradients
-                data[row, 7] = format_sci_short(gradient_validation.norms[converged_idx])
+                data[row, 5] = format_sci_short(gradient_validation.norms[converged_idx])
             end
         else
-            data[row, 4] = "failed"
-            data[row, 5] = "N/A"
-            data[row, 6] = "N/A"
+            data[row, 3] = "N/A"
+            data[row, 4] = "N/A"
             if has_gradients
-                data[row, 7] = "N/A"
+                data[row, 5] = "N/A"
             end
         end
     end
 
-    # Header
     header = has_gradients ?
-        ["Idx", "Raw Point", "Raw Val", "Refined Point", "Ref Val", "Improv", "||∇f||"] :
-        ["Idx", "Raw Point", "Raw Val", "Refined Point", "Ref Val", "Improv"]
+        ["Idx", "Raw Val", "Ref Val", "Improv", "||∇f||"] :
+        ["Idx", "Raw Val", "Ref Val", "Improv"]
 
     alignment = has_gradients ?
-        [:r, :l, :r, :l, :r, :r, :r] :
-        [:r, :l, :r, :l, :r, :r]
+        [:r, :r, :r, :r, :r] :
+        [:r, :r, :r, :r]
 
     println()
-    println(cr_bold(cr_cyan("Raw vs Refined Critical Points (showing $n_display of $(result.n_raw))")))
+    println(cr_bold(cr_cyan("Raw vs Refined (showing $n_display of $(result.n_raw))")))
     println()
 
     pretty_table(data,
