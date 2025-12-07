@@ -294,9 +294,19 @@ function save_refined_results(
     comparison_df[!, :convergence_reason] = [String(r.convergence_reason) for r in refinement_results]
 
     # Add gradient validation columns if provided
+    # Gradient validation only covers converged points, so expand to n_raw
     if gradient_validation !== nothing
-        comparison_df[!, :gradient_norm] = gradient_validation.norms
-        comparison_df[!, :gradient_valid] = gradient_validation.valid
+        gradient_norms = fill(Inf, result.n_raw)
+        gradient_valid_col = fill(false, result.n_raw)
+        for (j, converged) in enumerate(result.convergence_status)
+            if converged
+                converged_idx = sum(result.convergence_status[1:j])
+                gradient_norms[j] = gradient_validation.norms[converged_idx]
+                gradient_valid_col[j] = gradient_validation.valid[converged_idx]
+            end
+        end
+        comparison_df[!, :gradient_norm] = gradient_norms
+        comparison_df[!, :gradient_valid] = gradient_valid_col
     end
 
     CSV.write(comparison_csv_path, comparison_df)
@@ -396,8 +406,4 @@ function save_refined_results(
         write(io, json_str)
     end
 
-    println("Refinement results saved to:")
-    println("  - Refined points: $refined_csv_path")
-    println("  - Comparison: $comparison_csv_path")
-    println("  - Summary: $summary_json_path")
 end

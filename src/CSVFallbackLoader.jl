@@ -25,7 +25,7 @@ Check if an experiment directory has the minimum required files for CSV fallback
 
 Returns true if:
 1. experiment_config.json exists and is valid JSON
-2. At least one critical_points_deg_*.csv file exists
+2. At least one critical_points_raw_deg_*.csv file exists
 """
 function can_use_csv_fallback(dir_path::String)
     # Check for experiment config
@@ -41,8 +41,8 @@ function can_use_csv_fallback(dir_path::String)
         return false
     end
 
-    # Check for at least one CSV file
-    csv_files = filter(f -> occursin(r"critical_points_deg_\d+\.csv", f), readdir(dir_path))
+    # Check for at least one CSV file (new format only)
+    csv_files = filter(f -> occursin(r"critical_points_raw_deg_\d+\.csv", f), readdir(dir_path))
     return !isempty(csv_files)
 end
 
@@ -53,7 +53,7 @@ Load experiment results directly from CSV files and config, bypassing corrupted 
 
 # Data Sources
 - `experiment_config.json`: Experiment parameters and metadata
-- `critical_points_deg_*.csv`: Critical point coordinates and objective values
+- `critical_points_raw_deg_*.csv`: Critical point coordinates and objective values
 
 # Reconstructed Fields
 - experiment_id: From config or directory name
@@ -138,47 +138,43 @@ function load_experiment_from_csv_fallback(dir_path::String)
 end
 
 """
-    load_all_critical_points_csvs(dir_path::String) -> Union{DataFrame, Nothing}
+    load_all_critical_points_csvs(dir_path::String) -> DataFrame
 
-Load and combine all critical_points_deg_*.csv files from an experiment directory.
+Load and combine all critical_points_raw_deg_*.csv files from an experiment directory.
 
 Returns a single DataFrame with:
-- x1, x2, ..., xn: Critical point coordinates
-- z: Objective value at the critical point
+- p1, p2, ..., pn: Critical point coordinates
+- objective: Objective value at the critical point
 - degree: Polynomial degree (added column)
 """
 function load_all_critical_points_csvs(dir_path::String)
-    csv_files = filter(f -> occursin(r"critical_points_deg_\d+\.csv", f), readdir(dir_path))
+    csv_files = filter(f -> occursin(r"critical_points_raw_deg_\d+\.csv", f), readdir(dir_path))
 
     if isempty(csv_files)
-        return nothing
+        error("No critical_points_raw_deg_*.csv files found in $dir_path")
     end
 
     all_points = DataFrame[]
 
     for csv_file in csv_files
         # Extract degree from filename
-        m = match(r"critical_points_deg_(\d+)\.csv", csv_file)
+        m = match(r"critical_points_raw_deg_(\d+)\.csv", csv_file)
         if m === nothing
-            continue
+            error("Unexpected CSV filename format: $csv_file")
         end
 
         degree = parse(Int, m.captures[1])
         csv_path = joinpath(dir_path, csv_file)
 
-        try
-            df = CSV.read(csv_path, DataFrame)
+        df = CSV.read(csv_path, DataFrame)
 
-            # Add degree column
-            df[!, :degree] = fill(degree, nrow(df))
+        # Add degree column
+        df[!, :degree] = fill(degree, nrow(df))
 
-            push!(all_points, df)
-        catch e
-            @warn "Failed to load $csv_file" exception=e
-        end
+        push!(all_points, df)
     end
 
-    return isempty(all_points) ? nothing : vcat(all_points...)
+    return vcat(all_points...)
 end
 
 """
@@ -189,6 +185,8 @@ Compute basic statistics from critical points DataFrame.
 This provides minimal statistics that can be computed without the full
 results_summary.json data.
 
+Expects new CSV format with columns: index, p1, p2, ..., pN, objective, degree
+
 Returns:
 - degrees: List of degrees with data
 - points_per_degree: Count of critical points per degree
@@ -196,8 +194,12 @@ Returns:
 - overall_best: Overall best objective value and point
 """
 function compute_basic_statistics_from_csv(critical_points::DataFrame)
-    if critical_points === nothing || nrow(critical_points) == 0
-        return Dict("error" => "No critical points data available")
+    if nrow(critical_points) == 0
+        error("No critical points data available")
+    end
+
+    if !("objective" in names(critical_points))
+        error("Missing 'objective' column in DataFrame. Found columns: $(names(critical_points))")
     end
 
     stats = Dict{String, Any}()
@@ -213,10 +215,7 @@ function compute_basic_statistics_from_csv(critical_points::DataFrame)
         degree = first(group.degree)
         push!(degrees, degree)
         points_per_degree[degree] = nrow(group)
-
-        if "z" in names(group)
-            best_by_degree[degree] = minimum(group.z)
-        end
+        best_by_degree[degree] = minimum(group.objective)
     end
 
     stats["degrees"] = sort(degrees)
@@ -224,16 +223,15 @@ function compute_basic_statistics_from_csv(critical_points::DataFrame)
     stats["best_by_degree"] = best_by_degree
 
     # Overall best
-    if "z" in names(critical_points)
-        best_idx = argmin(critical_points.z)
-        stats["overall_best_value"] = critical_points[best_idx, :z]
+    best_idx = argmin(critical_points.objective)
+    stats["overall_best_value"] = critical_points[best_idx, :objective]
 
-        # Extract coordinates
-        coord_cols = filter(c -> startswith(string(c), "x"), names(critical_points))
-        best_point = [critical_points[best_idx, c] for c in coord_cols]
-        stats["overall_best_point"] = best_point
-        stats["overall_best_degree"] = critical_points[best_idx, :degree]
-    end
+    # Extract coordinates (p1, p2, ..., pN)
+    coord_cols = filter(c -> occursin(r"^p\d+$", string(c)), names(critical_points))
+    sort!(coord_cols, by=c -> parse(Int, match(r"p(\d+)", string(c))[1]))
+    best_point = [critical_points[best_idx, c] for c in coord_cols]
+    stats["overall_best_point"] = best_point
+    stats["overall_best_degree"] = critical_points[best_idx, :degree]
 
     return stats
 end

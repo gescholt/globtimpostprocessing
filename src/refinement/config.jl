@@ -21,6 +21,7 @@ Configuration for critical point refinement.
 - `robust_mode::Bool`: Return Inf on objective failure instead of error (default: true)
 - `show_progress::Bool`: Display progress counter (default: true)
 - `gradient_method::Symbol`: Gradient computation method for validation (:forwarddiff or :finitediff)
+- `gradient_tolerance::Float64`: Tolerance for gradient norm validation (default: 1e-8, use 1e-4 for ODE)
 
 # Presets
 Use `ode_refinement_config()` for ODE-based objectives (longer timeouts, robust mode, finitediff).
@@ -51,6 +52,7 @@ struct RefinementConfig
     robust_mode::Bool
     show_progress::Bool
     gradient_method::Symbol
+    gradient_tolerance::Float64
 end
 
 """
@@ -68,6 +70,7 @@ Construct RefinementConfig with keyword arguments.
 - `robust_mode = true`: Return Inf on objective failure
 - `show_progress = true`: Display progress counter
 - `gradient_method = :forwarddiff`: Gradient method (:forwarddiff or :finitediff)
+- `gradient_tolerance = 1e-8`: Gradient norm tolerance for validation (use 1e-4 for ODE)
 
 # Examples
 ```julia
@@ -93,7 +96,8 @@ function RefinementConfig(;
     parallel::Bool = false,
     robust_mode::Bool = true,
     show_progress::Bool = true,
-    gradient_method::Symbol = :forwarddiff
+    gradient_method::Symbol = :forwarddiff,
+    gradient_tolerance::Float64 = 1e-8
 )
     return RefinementConfig(
         method,
@@ -104,7 +108,8 @@ function RefinementConfig(;
         parallel,
         robust_mode,
         show_progress,
-        gradient_method
+        gradient_method,
+        gradient_tolerance
     )
 end
 
@@ -118,6 +123,7 @@ estimation problems where objective evaluations involve solving stiff ODEs.
 
 # Keyword Arguments
 - `max_time_per_point = 60.0`: 2x longer timeout for stiff ODEs
+- `gradient_tolerance = 1e-4`: Realistic tolerance for ODE solver accuracy (~1e-6 solver tolerance)
 - `kwargs...`: Additional arguments passed to RefinementConfig
 
 # Examples
@@ -142,6 +148,7 @@ config = ode_refinement_config(f_abstol=1e-8)
 """
 function ode_refinement_config(;
     max_time_per_point::Float64 = 60.0,
+    gradient_tolerance::Float64 = 1e-4,
     kwargs...
 )
     return RefinementConfig(;
@@ -149,6 +156,7 @@ function ode_refinement_config(;
         max_time_per_point = max_time_per_point,
         robust_mode = true,  # Return Inf on ODE solver failure
         gradient_method = :finitediff,  # Numerical gradients for ODE objectives
+        gradient_tolerance = gradient_tolerance,  # Realistic for ODE solver accuracy (~1e-6)
         kwargs...
     )
 end
