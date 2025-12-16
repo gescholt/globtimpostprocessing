@@ -1,16 +1,33 @@
 # GlobtimPostProcessing.jl
 
-Data analysis and reporting engine for GlobTim experiment results.
+Local refinement engine for critical points computed by globtimcore.
 
 ## Overview
 
-GlobtimPostProcessing.jl is the **analysis layer** of the GlobTim workflow. It loads, analyzes, refines, and summarizes experimental results produced by [Globtim.jl](https://gescholt.github.io/Globtim.jl/stable/).
+GlobtimPostProcessing.jl **refines critical point candidates** found by [Globtim.jl](https://gescholt.github.io/Globtim.jl/stable/) into verified, high-accuracy critical points.
 
-```
-globtimcore                    globtimpostprocessing           globtimplots
-(runs experiments)      →      (analyzes results)        →     (visualizes)
+!!! info "Why Refinement is Necessary"
+    Polynomial approximation methods find critical point **candidates**, but these have limited numerical accuracy (~1e-3 to 1e-6). Local optimization refines these candidates to machine precision (~1e-12) and validates them by checking ||∇f(x*)|| ≈ 0.
 
-Exports CSV/JSON               Loads, refines, reports         Creates plots
+```mermaid
+flowchart LR
+    subgraph globtimcore
+        A["Polynomial Approximation<br/>~1e-3 to 1e-6 accuracy"]
+    end
+
+    subgraph globtimpostprocessing
+        B["1. Load raw CPs"] --> C["2. Local optimize<br/>(BFGS/Nelder-Mead)"]
+        C --> D["3. Validate ‖∇f‖≈0"]
+        D --> E["4. Report & diagnose"]
+    end
+
+    subgraph Result
+        F["Verified Critical Points<br/>~1e-12 accuracy"]
+    end
+
+    A -->|CSV| B
+    E --> F
+    F -->|"refined data"| G["globtimplots"]
 ```
 
 ## Key Features
@@ -62,13 +79,13 @@ best_params = refined.refined_points[refined.best_refined_idx]
 
 ## Package Architecture
 
-This package is designed for **pure data analysis** without visualization dependencies:
+This package is the **refinement layer** without visualization dependencies:
 
 | Package | Purpose |
 |---------|---------|
-| **globtimcore** | Core optimization algorithms, experiment execution |
-| **globtimpostprocessing** | Result loading, statistical analysis, text reports |
-| **globtimplots** | Visualization of analysis results |
+| **globtimcore** | Polynomial approximation, critical point candidates |
+| **globtimpostprocessing** | Local refinement, validation, quality diagnostics |
+| **globtimplots** | Visualization of refined results |
 
 For plotting and visualization, use the separate [GlobtimPlots](https://git.mpi-cbg.de/globaloptim/globtimplots) package:
 

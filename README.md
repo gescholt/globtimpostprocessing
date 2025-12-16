@@ -1,6 +1,8 @@
 # GlobtimPostProcessing.jl
 
-Data analysis and reporting engine for GlobTim experiment results. This package loads, analyzes, refines, and summarizes experimental results from `globtimcore`.
+> **Core Purpose**: Take raw critical point **candidates** from globtimcore's polynomial approximation and **refine** them to high numerical accuracy using local optimization. The polynomial approximation finds *where* critical points might be (~1e-3 to 1e-6 accuracy); this package determines *if* they are true critical points and computes their precise coordinates (~1e-12 accuracy).
+
+Local refinement engine for critical points computed by globtimcore. This package loads, refines, validates, and reports on experimental results.
 
 > **Note**: For visualization/plotting, use the separate `globtimplots` package.
 
@@ -158,14 +160,28 @@ When running `refine_experiment_results()`, these files are created:
 
 ## Architecture
 
-```
-globtimcore                    globtimpostprocessing           globtimplots
-(runs experiments)      →      (analyzes results)        →     (visualizes)
+```mermaid
+flowchart LR
+    subgraph globtimcore
+        A["Polynomial Approximation<br/>~1e-3 to 1e-6 accuracy"]
+    end
 
-Exports CSV/JSON               Loads, refines, reports         Creates plots
+    subgraph globtimpostprocessing
+        B["1. Load raw CPs"] --> C["2. Local optimize<br/>(BFGS/Nelder-Mead)"]
+        C --> D["3. Validate ‖∇f‖≈0"]
+        D --> E["4. Report & diagnose"]
+    end
+
+    subgraph Result
+        F["Verified Critical Points<br/>~1e-12 accuracy"]
+    end
+
+    A -->|CSV| B
+    E --> F
+    F -->|"refined data"| G["globtimplots<br/>(Visualizes results)"]
 ```
 
-This package is the **analysis layer** — it processes data but does not create visualizations. For plots, use `globtimplots`:
+This package is the **refinement layer** — it refines critical point candidates but does not create visualizations. For plots, use `globtimplots`:
 
 ```julia
 using GlobtimPostProcessing
@@ -179,6 +195,31 @@ stats = compute_statistics(result)
 fig = create_experiment_plots(result, stats)
 save_plot(fig, "analysis.png")
 ```
+
+## Quick Reference Card
+
+**Most common workflow:**
+```julia
+using GlobtimPostProcessing
+
+# 1. Refine critical points from globtimcore output
+refined = refine_experiment_results("experiment_dir", my_objective)
+
+# 2. Check results
+refined.n_converged       # Number of converged points
+refined.best_refined_value # Best objective value found
+refined.refined_points    # Vector of refined coordinates
+```
+
+**Key functions:**
+| Task | Function |
+|------|----------|
+| Refine all points | `refine_experiment_results(dir, objective)` |
+| Validate gradients | `validate_critical_points(points, objective)` |
+| Check L2 quality | `check_l2_quality(dir)` |
+| Load results | `load_experiment_results(dir)` |
+
+---
 
 ## API Reference
 

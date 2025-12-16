@@ -9,7 +9,23 @@
 
 ## Package Purpose
 
-**GlobtimPostProcessing is the DATA ANALYSIS and REPORTING engine** - statistical analysis, result aggregation, and report generation for globtimcore experiments. This package loads, analyzes, and summarizes experimental results WITHOUT creating plots.
+**GlobtimPostProcessing is the LOCAL REFINEMENT engine** for critical points computed by globtimcore. It takes raw critical point *candidates* from polynomial approximation and refines them to high numerical accuracy using local optimization (BFGS/Nelder-Mead).
+
+### Primary Function: Critical Point Refinement
+
+globtimcore finds critical point **candidates** via polynomial approximation. These candidates may have limited numerical accuracy (~1e-3 to 1e-6). GlobtimPostProcessing **refines** these candidates into verified critical points by:
+
+1. **Loading** raw critical points from globtimcore CSV output
+2. **Local optimization** (Optim.jl) from each candidate point
+3. **Gradient validation** - verifying ||∇f(x*)|| ≈ 0
+4. **Reporting** which candidates are true critical points with high precision (~1e-12)
+
+### Secondary Functions
+
+- Quality diagnostics (L2 error, stagnation detection)
+- Parameter recovery analysis (distance to ground truth)
+- Campaign aggregation and reporting
+- Statistical analysis WITHOUT creating plots
 
 ## Critical Design Principle: NO PLOTTING IN THIS PACKAGE
 
@@ -90,35 +106,27 @@
 - Objective function evaluation → Use `globtimcore`
 - StandardExperiment execution → Use `globtimcore`
 
-## Architecture: Separation of Concerns
+## Architecture: Critical Point Refinement Pipeline
 
-```
-┌─────────────────────────────────────────┐
-│         globtimcore                     │
-│  (Runs experiments, exports data)       │
-│  - Executes optimization                │
-│  - Exports CSV/JSON/JLD2                │
-└─────────────────────────────────────────┘
-           │
-           │ produces data
-           ▼
-┌─────────────────────────────────────────┐
-│    globtimpostprocessing                │
-│  (Analyzes data, generates reports)     │
-│  - Loads results                        │
-│  - Computes statistics                  │
-│  - Generates text reports               │
-│  - Exports analysis CSVs                │
-└─────────────────────────────────────────┘
-           │
-           │ analysis results
-           ▼
-┌─────────────────────────────────────────┐
-│         globtimplots                    │
-│  (Visualizes analysis results)          │
-│  - Creates plots from analysis data     │
-│  - Generates figures                    │
-└─────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph globtimcore
+        A["Polynomial Approximation<br/>~1e-3 to 1e-6 accuracy"]
+    end
+
+    subgraph globtimpostprocessing
+        B["1. Load raw CPs"] --> C["2. Local optimize<br/>(BFGS/Nelder-Mead)"]
+        C --> D["3. Validate ‖∇f‖≈0"]
+        D --> E["4. Report & diagnose"]
+    end
+
+    subgraph Result
+        F["Verified Critical Points<br/>~1e-12 accuracy"]
+    end
+
+    A -->|CSV| B
+    E --> F
+    F -->|"refined data"| G["globtimplots<br/>(Visualizes results)"]
 ```
 
 ## Dependency on globtimcore

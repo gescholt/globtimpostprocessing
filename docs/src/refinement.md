@@ -2,6 +2,42 @@
 
 This guide covers the critical point refinement system in GlobtimPostProcessing.jl.
 
+## Why Refinement is Necessary
+
+!!! warning "Polynomial approximation has limited accuracy"
+    Critical points found by polynomial approximation are **candidates**, not verified solutions. Their numerical accuracy is typically 1e-3 to 1e-6, which may be insufficient for:
+    - Parameter estimation problems requiring high precision
+    - Verifying that candidates are true critical points (not numerical artifacts)
+    - Downstream analysis requiring accurate function values
+
+!!! tip "Local optimization provides verification"
+    By running local optimization from each candidate:
+    1. True critical points converge to high precision (~1e-12)
+    2. False positives fail to converge or move to different locations
+    3. Gradient validation (||∇f|| ≈ 0) confirms criticality
+
+```mermaid
+flowchart TB
+    subgraph "Input: Raw Candidates"
+        A["Critical point candidates<br/>from globtimcore<br/>(~1e-3 to 1e-6 accuracy)"]
+    end
+
+    subgraph "Refinement Process"
+        B["Local optimization<br/>(BFGS/Nelder-Mead)"] --> C{"Converged?"}
+        C -->|Yes| D["Gradient validation<br/>‖∇f(x*)‖ ≈ 0"]
+        C -->|No| E["Mark as failed"]
+        D -->|Valid| F["Verified critical point"]
+        D -->|Invalid| G["Mark as suspicious"]
+    end
+
+    subgraph "Output: Verified Points"
+        H["High-precision critical points<br/>(~1e-12 accuracy)"]
+    end
+
+    A --> B
+    F --> H
+```
+
 ## Overview
 
 Critical points found by polynomial approximation methods may have limited numerical accuracy. The refinement system uses local optimization (Optim.jl) to improve accuracy by starting from the polynomial critical points and converging to nearby objective function minima.
@@ -31,6 +67,30 @@ refined = refine_experiment_results(
 # Check results
 println("Converged: \$(refined.n_converged)/\$(refined.n_raw)")
 println("Best value: \$(refined.best_refined_value)")
+```
+
+**Expected output:**
+```
+Refining 25 critical points from degree 10...
+  [========================================] 100%  25/25
+────────────────────────────────────────────────────────
+  Refinement Summary (degree 10)
+────────────────────────────────────────────────────────
+  Raw points:        25
+  Converged:         20 (80.0%)
+  Best value:        2.34e-12
+────────────────────────────────────────────────────────
+  Convergence breakdown:
+    g_tol:           15
+    f_tol:           3
+    x_tol:           2
+    timeout:         3
+    iterations:      2
+────────────────────────────────────────────────────────
+  Gradient validation:
+    Valid:           18/20 (90.0%)
+    Mean ||∇f||:     3.21e-9
+────────────────────────────────────────────────────────
 ```
 
 ## RefinementConfig Options
@@ -192,17 +252,17 @@ The `convergence_reason` field indicates why optimization stopped:
 
 ## Interpreting Results
 
-### Good Results
-- High convergence rate (>80%)
-- Most convergence by `:g_tol` (gradient criterion)
-- High gradient validation rate (>90%)
-- Mean gradient norm < 1e-6
+!!! success "Good Results"
+    - **Convergence rate > 80%**: Most candidates are true critical points
+    - **Most convergence by `:g_tol`**: Gradient criterion is ideal for critical points
+    - **Gradient validation rate > 90%**: Refined points are verified critical points
+    - **Mean gradient norm < 1e-6**: High precision achieved
 
-### Warning Signs
-- Low convergence rate (<50%)
-- Many timeouts → increase `max_time_per_point`
-- Many iteration limits → increase `max_iterations`
-- Low gradient validation → points may not be true critical points
+!!! danger "Warning Signs"
+    - **Convergence rate < 50%**: Many candidates may be false positives
+    - **Many timeouts**: Increase `max_time_per_point`
+    - **Many iteration limits**: Increase `max_iterations`
+    - **Low gradient validation**: Points may not be true critical points
 
 ### Troubleshooting
 
