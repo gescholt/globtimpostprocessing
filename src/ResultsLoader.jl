@@ -51,7 +51,9 @@ function is_single_experiment(path::String)
     end
 
     files = readdir(path)
-    has_csv = any(f -> endswith(f, ".csv") && startswith(f, "critical_points_deg_"), files)
+    # Support both new format (critical_points_raw_deg_X.csv) and legacy (critical_points_deg_X.csv)
+    has_csv = any(f -> endswith(f, ".csv") &&
+        (startswith(f, "critical_points_raw_deg_") || startswith(f, "critical_points_deg_")), files)
     has_results = "results_summary.json" in files || "results_summary.jld2" in files
 
     return has_csv || has_results
@@ -389,7 +391,10 @@ function load_critical_points_from_csvs(dir_path::String, data::AbstractDict)
         degree_str = replace(string(degree_key), "degree_" => "")
         degree = parse(Int, degree_str)
 
-        csv_file = joinpath(dir_path, "critical_points_deg_$(degree).csv")
+        # Try new format first (Phase 2), fall back to legacy format
+        csv_file_raw = joinpath(dir_path, "critical_points_raw_deg_$(degree).csv")
+        csv_file_legacy = joinpath(dir_path, "critical_points_deg_$(degree).csv")
+        csv_file = isfile(csv_file_raw) ? csv_file_raw : csv_file_legacy
 
         if !isfile(csv_file)
             continue

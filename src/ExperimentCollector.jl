@@ -155,7 +155,9 @@ function validate_experiment(exp_path::String)::ValidationResult
         files = readdir(exp_path)
 
         # Check for critical points CSV files
-        has_csv = any(f -> startswith(f, "critical_points_deg_") && endswith(f, ".csv"), files)
+        # Support both new format (critical_points_raw_deg_X.csv) and legacy (critical_points_deg_X.csv)
+        has_csv = any(f -> endswith(f, ".csv") &&
+            (startswith(f, "critical_points_raw_deg_") || startswith(f, "critical_points_deg_")), files)
 
         # Check for config file
         has_config = "experiment_config.json" in files

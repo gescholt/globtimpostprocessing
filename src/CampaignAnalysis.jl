@@ -181,8 +181,9 @@ function aggregate_csv_metrics_by_degree(campaign::CampaignResults)
     for exp in campaign.experiments
         exp_path = exp.source_path
 
-        # Find all CSV files for this experiment
-        csv_files = filter(f -> startswith(basename(f), "critical_points_deg_"),
+        # Find all CSV files for this experiment (both new and legacy formats)
+        csv_files = filter(f -> startswith(basename(f), "critical_points_raw_deg_") ||
+                               startswith(basename(f), "critical_points_deg_"),
                           readdir(exp_path, join=true, sort=false))
 
         for csv_file in csv_files
@@ -879,8 +880,9 @@ function print_parameter_recovery_table(campaign::CampaignResults)
             continue  # Skip if no true parameters
         end
 
-        # Load critical points by degree
-        csv_files = filter(f -> startswith(basename(f), "critical_points_deg_"),
+        # Load critical points by degree (both new and legacy formats)
+        csv_files = filter(f -> startswith(basename(f), "critical_points_raw_deg_") ||
+                               startswith(basename(f), "critical_points_deg_"),
                           readdir(exp_path, join=true))
 
         if isempty(csv_files)
