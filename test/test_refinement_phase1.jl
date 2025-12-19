@@ -338,6 +338,188 @@ using Optim  # Need Optim for type checks
             @test all(r -> r.converged, results)
         end
     end
+
+    @testset "Phase 3: Box-Constrained Optimization" begin
+        @testset "RefinementConfig Bounds Fields" begin
+            # Default config has no bounds
+            config = RefinementConfig()
+            @test config.lower_bounds === nothing
+            @test config.upper_bounds === nothing
+
+            # Config with bounds
+            lb = [-1.0, -1.0]
+            ub = [1.0, 1.0]
+            bounded_config = RefinementConfig(lower_bounds=lb, upper_bounds=ub)
+            @test bounded_config.lower_bounds == lb
+            @test bounded_config.upper_bounds == ub
+        end
+
+        @testset "Initial Point Clamping" begin
+            # Objective with minimum at [0, 0]
+            function sphere(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            # Start OUTSIDE bounds [-1, 1]^2
+            initial_outside = [2.0, 3.0]
+            lb = [-1.0, -1.0]
+            ub = [1.0, 1.0]
+
+            result = refine_critical_point(
+                sphere,
+                initial_outside;
+                lower_bounds=lb,
+                upper_bounds=ub,
+                max_iterations=100
+            )
+
+            # Initial should have been clamped: raw_value = sphere([1,1]) = 2.0
+            @test result.value_raw ≈ 2.0 atol=1e-10  # clamp([2,3], -1, 1) = [1,1]
+            @test result.converged
+        end
+
+        @testset "Refined Points Stay Within Bounds" begin
+            function sphere(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            lb = [-1.0, -1.0]
+            ub = [1.0, 1.0]
+
+            # Multiple starting points, some inside, some outside bounds
+            test_cases = [
+                [0.5, 0.5],    # Inside bounds
+                [1.5, 1.5],    # Outside bounds (will be clamped)
+                [-2.0, 0.0],   # Partially outside
+                [0.0, 3.0],    # Partially outside
+            ]
+
+            for initial in test_cases
+                result = refine_critical_point(
+                    sphere,
+                    initial;
+                    lower_bounds=lb,
+                    upper_bounds=ub,
+                    max_iterations=200
+                )
+
+                # Refined point must be within bounds
+                @test all(result.refined .>= lb)
+                @test all(result.refined .<= ub)
+            end
+        end
+
+        @testset "Bounded vs Unbounded Behavior" begin
+            # Objective with minimum OUTSIDE typical bounds at [2, 2]
+            function offset_sphere(p::Vector{Float64})
+                return (p[1] - 2.0)^2 + (p[2] - 2.0)^2
+            end
+
+            initial = [1.0, 1.0]
+            lb = [-1.0, -1.0]
+            ub = [1.0, 1.0]
+
+            # Unbounded: should find true minimum at [2, 2]
+            result_unbounded = refine_critical_point(
+                offset_sphere,
+                initial;
+                max_iterations=200
+            )
+            @test result_unbounded.refined[1] ≈ 2.0 atol=0.1
+            @test result_unbounded.refined[2] ≈ 2.0 atol=0.1
+
+            # Bounded: should stay at bound [1, 1]
+            result_bounded = refine_critical_point(
+                offset_sphere,
+                initial;
+                lower_bounds=lb,
+                upper_bounds=ub,
+                max_iterations=200
+            )
+            @test all(result_bounded.refined .<= ub)
+            @test result_bounded.refined[1] ≈ 1.0 atol=0.01
+            @test result_bounded.refined[2] ≈ 1.0 atol=0.01
+        end
+
+        @testset "Batch Refinement With Bounds" begin
+            function sphere(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            lb = [-0.5, -0.5]
+            ub = [0.5, 0.5]
+
+            # Some points inside, some outside bounds
+            points = [
+                [0.3, 0.3],    # Inside
+                [1.0, 1.0],    # Outside (will be clamped to [0.5, 0.5])
+                [-0.2, 0.4],   # Inside
+                [-1.0, 2.0],   # Outside (will be clamped to [-0.5, 0.5])
+            ]
+
+            results = refine_critical_points_batch(
+                sphere,
+                points;
+                lower_bounds=lb,
+                upper_bounds=ub,
+                max_iterations=100,
+                show_progress=false
+            )
+
+            @test length(results) == 4
+            @test all(r -> all(r.refined .>= lb), results)
+            @test all(r -> all(r.refined .<= ub), results)
+            @test all(r -> r.converged, results)
+        end
+
+        @testset "Asymmetric Bounds" begin
+            function sphere(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            # Asymmetric bounds: minimum at origin is within bounds
+            lb = [-2.0, -0.5]
+            ub = [0.5, 2.0]
+
+            result = refine_critical_point(
+                sphere,
+                [0.3, 0.3];
+                lower_bounds=lb,
+                upper_bounds=ub,
+                max_iterations=100
+            )
+
+            @test result.converged
+            @test all(result.refined .>= lb)
+            @test all(result.refined .<= ub)
+            @test result.value_refined < 1e-4  # Should reach near-zero
+        end
+
+        @testset "Higher Dimensions (4D)" begin
+            function sphere_4d(p::Vector{Float64})
+                return sum(p.^2)
+            end
+
+            lb = fill(-1.0, 4)
+            ub = fill(1.0, 4)
+
+            # Start outside in some dimensions
+            initial = [0.5, 1.5, -0.5, 2.0]
+
+            result = refine_critical_point(
+                sphere_4d,
+                initial;
+                lower_bounds=lb,
+                upper_bounds=ub,
+                max_iterations=200
+            )
+
+            @test length(result.refined) == 4
+            @test all(result.refined .>= lb)
+            @test all(result.refined .<= ub)
+            @test result.converged
+        end
+    end
 end
 
-println("✅ Phase 1 and Phase 2 Tier 1 refinement tests passed!")
+println("✅ Phase 1, Phase 2 Tier 1, and Phase 3 Box-Constrained refinement tests passed!")
