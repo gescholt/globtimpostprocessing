@@ -211,7 +211,7 @@ function demo_3_real_experiment(experiment_path::String;
         df = result.critical_points
         classify_all_critical_points!(df)
 
-        num_minima = count(==(""minimum"), df.point_classification)
+        num_minima = count(==("minimum"), df.point_classification)
         num_saddles = count(==("saddle"), df.point_classification)
         num_maxima = count(==("maximum"), df.point_classification)
 

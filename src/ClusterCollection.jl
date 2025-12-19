@@ -24,8 +24,8 @@ tracking_file = find_tracking_file("tracking_dir", "batch_id_or_issue")
 tracking_data = read_tracking_json(tracking_file)
 sessions = tracking_data["sessions"]
 
-# Collect batch
-collect_batch(tracking_file, output_dir, cluster_host="scholten@r04n02")
+# Collect batch (requires ENV["CLUSTER_HOST"] and ENV["REMOTE_HPC_RESULTS"])
+collect_batch(tracking_file, output_dir)
 ```
 """
 module ClusterCollection
@@ -194,7 +194,7 @@ end
 Generate rsync command for collecting experiment results.
 
 # Arguments
-- `cluster_host`: SSH host (e.g., "scholten@r04n02")
+- `cluster_host`: SSH host (e.g., "user@cluster.example.com")
 - `remote_dir`: Remote experiment directory path
 - `local_dir`: Local destination directory
 
@@ -250,8 +250,8 @@ end
 
 """
     collect_batch(tracking_file::String, output_dir::String;
-                  cluster_host::String="scholten@r04n02",
-                  remote_hpc_results::String="/home/scholten/globtimcore/hpc_results",
+                  cluster_host::String=get(ENV, "CLUSTER_HOST", ""),
+                  remote_hpc_results::String=get(ENV, "REMOTE_HPC_RESULTS", ""),
                   dry_run::Bool=false) -> Dict
 
 Collect all experiments in a batch from HPC cluster.
@@ -259,23 +259,38 @@ Collect all experiments in a batch from HPC cluster.
 # Arguments
 - `tracking_file`: Path to tracking JSON file
 - `output_dir`: Local directory to collect experiments to
-- `cluster_host`: SSH host for cluster (default: "scholten@r04n02")
-- `remote_hpc_results`: Remote hpc_results directory path
+- `cluster_host`: SSH host for cluster (requires ENV["CLUSTER_HOST"] or explicit param)
+- `remote_hpc_results`: Remote hpc_results directory path (requires ENV["REMOTE_HPC_RESULTS"] or explicit param)
 - `dry_run`: If true, print commands without executing (default: false)
 
 Returns collection summary Dict.
 
+# Required Environment Variables (if not passed explicitly)
+- `CLUSTER_HOST`: SSH host string (e.g., "user@cluster.example.com")
+- `REMOTE_HPC_RESULTS`: Path to hpc_results on cluster (e.g., "/home/user/hpc_results")
+
 # Example
 ```julia
+# Set environment variables
+ENV["CLUSTER_HOST"] = "user@cluster.example.com"
+ENV["REMOTE_HPC_RESULTS"] = "/home/user/hpc_results"
+
 collect_batch("tracking/batch_20251006_115044.json",
               "collected_experiments_20251013",
               dry_run=true)
 ```
 """
 function collect_batch(tracking_file::String, output_dir::String;
-                      cluster_host::String="scholten@r04n02",
-                      remote_hpc_results::String="/home/scholten/globtimcore/hpc_results",
+                      cluster_host::String=get(ENV, "CLUSTER_HOST", ""),
+                      remote_hpc_results::String=get(ENV, "REMOTE_HPC_RESULTS", ""),
                       dry_run::Bool=false)
+    # Validate required configuration
+    if isempty(cluster_host)
+        error("cluster_host not specified. Set ENV[\"CLUSTER_HOST\"] or pass cluster_host parameter explicitly.")
+    end
+    if isempty(remote_hpc_results)
+        error("remote_hpc_results not specified. Set ENV[\"REMOTE_HPC_RESULTS\"] or pass remote_hpc_results parameter explicitly.")
+    end
     println("🔍 Collecting batch from tracking file: $(basename(tracking_file))")
 
     # Read tracking data
@@ -352,7 +367,7 @@ end
 Collect individual experiments from cluster (legacy function for compatibility).
 
 # Arguments
-- `cluster_host`: SSH host (e.g., "scholten@r04n02")
+- `cluster_host`: SSH host (e.g., "user@cluster.example.com")
 - `results_dir`: Remote results directory path
 - `output_dir`: Local destination directory
 - `pattern`: Optional regex pattern to filter experiment directories
@@ -362,8 +377,8 @@ Returns vector of collected experiment directory names.
 
 # Example
 ```julia
-collect_cluster_experiments("scholten@r04n02",
-                           "/home/scholten/globtimcore/hpc_results",
+collect_cluster_experiments("user@cluster.example.com",
+                           "/home/user/hpc_results",
                            "collected_experiments_20251013",
                            pattern="minimal_4d_lv_test_.*")
 ```

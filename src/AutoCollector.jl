@@ -162,7 +162,7 @@ Configuration for the auto-collector daemon.
 
 # Fields
 - `tracking_dir`: Directory containing tracking JSON files
-- `cluster_host`: SSH hostname for cluster (e.g., "scholten@r04n02")
+- `cluster_host`: SSH hostname for cluster (e.g., "user@cluster.example.com")
 - `cluster_results_dir`: Remote results directory path
 - `output_base`: Local directory for collected results
 - `cleanup_tmux`: Whether to cleanup tmux sessions after collection (default: true)
@@ -182,26 +182,36 @@ end
 """
     CollectorConfig(; kwargs...) -> CollectorConfig
 
-Create CollectorConfig with defaults from environment variables.
+Create CollectorConfig from environment variables or explicit parameters.
 
-Environment variable defaults:
-- `TRACKING_DIR`: \$HOME/GlobalOptim/globtimcore/experiments/lv4d_campaign_2025/tracking
-- `CLUSTER_HOST`: scholten@r04n02
-- `CLUSTER_RESULTS_DIR`: /home/scholten/globtimcore/hpc_results
-- `OUTPUT_BASE`: \$HOME/GlobalOptim/globtimpostprocessing
+# Required Environment Variables (if not passed explicitly)
+- `TRACKING_DIR`: Local directory containing tracking JSON files
+- `CLUSTER_HOST`: SSH host string (e.g., "user@cluster.example.com")
+- `CLUSTER_RESULTS_DIR`: Path to hpc_results on cluster
+- `OUTPUT_BASE`: Local base directory for collected results
+
+All four environment variables must be set, or the corresponding parameters must be passed explicitly.
 """
 function CollectorConfig(;
-    tracking_dir::String = get(ENV, "TRACKING_DIR",
-        joinpath(homedir(), "GlobalOptim/globtimcore/experiments/lv4d_campaign_2025/tracking")),
-    cluster_host::String = get(ENV, "CLUSTER_HOST", "scholten@r04n02"),
-    cluster_results_dir::String = get(ENV, "CLUSTER_RESULTS_DIR",
-        "/home/scholten/globtimcore/hpc_results"),
-    output_base::String = get(ENV, "OUTPUT_BASE",
-        joinpath(homedir(), "GlobalOptim/globtimpostprocessing")),
+    tracking_dir::String = get(ENV, "TRACKING_DIR", ""),
+    cluster_host::String = get(ENV, "CLUSTER_HOST", ""),
+    cluster_results_dir::String = get(ENV, "CLUSTER_RESULTS_DIR", ""),
+    output_base::String = get(ENV, "OUTPUT_BASE", ""),
     cleanup_tmux::Bool = true,
     check_interval::Int = 300,
     collect_immediately::Bool = true
 )
+    # Validate required configuration
+    missing_vars = String[]
+    isempty(tracking_dir) && push!(missing_vars, "TRACKING_DIR")
+    isempty(cluster_host) && push!(missing_vars, "CLUSTER_HOST")
+    isempty(cluster_results_dir) && push!(missing_vars, "CLUSTER_RESULTS_DIR")
+    isempty(output_base) && push!(missing_vars, "OUTPUT_BASE")
+
+    if !isempty(missing_vars)
+        error("Missing required configuration. Set environment variables or pass explicitly: $(join(missing_vars, ", "))")
+    end
+
     return CollectorConfig(
         tracking_dir, cluster_host, cluster_results_dir, output_base,
         cleanup_tmux, check_interval, collect_immediately

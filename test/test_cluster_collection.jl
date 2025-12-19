@@ -186,8 +186,8 @@ end
         end
 
         @testset "Rsync Command Generation" begin
-            cluster_host = "scholten@r04n02"
-            remote_dir = "/home/scholten/globtimcore/hpc_results/experiment_001"
+            cluster_host = "user@cluster.example.com"
+            remote_dir = "/home/user/hpc_results/experiment_001"
             local_dir = "/tmp/collected/experiment_001"
 
             cmd = ClusterCollection.build_rsync_command(cluster_host, remote_dir, local_dir)
