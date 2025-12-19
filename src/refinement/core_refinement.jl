@@ -83,6 +83,8 @@ Refine a single critical point using local optimization with adaptive tolerances
 - `objective_func`: Function to minimize, signature f(x::Vector{Float64}) -> Float64
 - `initial_point::Vector{Float64}`: Initial guess from HomotopyContinuation
 - `method`: Optimization method (default: NelderMead() - gradient-free, robust)
+- `lower_bounds::Union{Nothing, Vector{Float64}}`: Box constraint lower bounds (default: nothing = unconstrained)
+- `upper_bounds::Union{Nothing, Vector{Float64}}`: Box constraint upper bounds (default: nothing = unconstrained)
 - `f_abstol::Float64`: Absolute function tolerance for convergence (default: 1e-6, relaxed for robustness)
 - `x_abstol::Float64`: Absolute parameter tolerance for convergence (default: 1e-6)
 - `max_time::Union{Float64,Nothing}`: Maximum time in seconds per refinement (default: nothing = no timeout)
@@ -115,11 +117,15 @@ end
 - NelderMead by default (simplex method, gradient-free, robust for ODE problems)
 - Convergence criteria relaxed from 1e-10 to 1e-6 for practical convergence
 - With max_time set, refinement will be interrupted if it exceeds the time limit
+- When bounds are provided, uses Optim.Fminbox for box-constrained optimization
+- Initial point is clamped to bounds before optimization when bounds are provided
 """
 function refine_critical_point(
     objective_func,
     initial_point::Vector{Float64};
     method = Optim.NelderMead(),
+    lower_bounds::Union{Nothing, Vector{Float64}} = nothing,
+    upper_bounds::Union{Nothing, Vector{Float64}} = nothing,
     f_abstol::Float64 = 1e-6,
     x_abstol::Float64 = 1e-6,
     max_time::Union{Float64,Nothing} = nothing,
@@ -164,12 +170,26 @@ function refine_critical_point(
             iterations = max_iterations
         )
 
-        result = Optim.optimize(
-            objective_func,
-            initial_point,
-            method,
-            opt_options
-        )
+        # Choose bounded or unbounded optimization
+        result = if lower_bounds !== nothing && upper_bounds !== nothing
+            # Clamp initial point to bounds
+            clamped_point = clamp.(initial_point, lower_bounds, upper_bounds)
+            Optim.optimize(
+                objective_func,
+                lower_bounds,
+                upper_bounds,
+                clamped_point,
+                Optim.Fminbox(method),
+                opt_options
+            )
+        else
+            Optim.optimize(
+                objective_func,
+                initial_point,
+                method,
+                opt_options
+            )
+        end
 
         elapsed_time = time() - start_time
 
@@ -279,6 +299,8 @@ Refine multiple critical points in batch with progress tracking.
 - `objective_func`: Function to minimize
 - `points::Vector{Vector{Float64}}`: Array of initial points from HomotopyContinuation
 - `method`: Optimization method (default: NelderMead() - gradient-free)
+- `lower_bounds::Union{Nothing, Vector{Float64}}`: Box constraint lower bounds (default: nothing = unconstrained)
+- `upper_bounds::Union{Nothing, Vector{Float64}}`: Box constraint upper bounds (default: nothing = unconstrained)
 - `f_abstol::Float64`: Absolute function tolerance (default: 1e-6)
 - `x_abstol::Float64`: Absolute parameter tolerance (default: 1e-6)
 - `max_time::Union{Float64,Nothing}`: Maximum time per point in seconds (default: nothing = no timeout)
@@ -320,11 +342,14 @@ end
 - Uses gradient-free NelderMead by default for robustness
 - With max_time set, each refinement will timeout if it exceeds the limit
 - Progress counter shows which point is being refined (e.g., "Refining 3/15...")
+- When bounds are provided, uses Optim.Fminbox for box-constrained optimization
 """
 function refine_critical_points_batch(
     objective_func,
     points::Vector{Vector{Float64}};
     method = Optim.NelderMead(),
+    lower_bounds::Union{Nothing, Vector{Float64}} = nothing,
+    upper_bounds::Union{Nothing, Vector{Float64}} = nothing,
     f_abstol::Float64 = 1e-6,
     x_abstol::Float64 = 1e-6,
     max_time::Union{Float64,Nothing} = nothing,
@@ -346,6 +371,8 @@ function refine_critical_points_batch(
         result = refine_critical_point(
             objective_func, pt;
             method=method,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
             f_abstol=f_abstol,
             x_abstol=x_abstol,
             max_time=max_time,

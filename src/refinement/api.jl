@@ -76,6 +76,8 @@ function refine_experiment_results(
         objective_func,
         raw_data.points;
         method = config.method,
+        lower_bounds = config.lower_bounds,
+        upper_bounds = config.upper_bounds,
         max_time = config.max_time_per_point,
         f_abstol = config.f_abstol,
         x_abstol = config.x_abstol,

@@ -22,6 +22,8 @@ Configuration for critical point refinement.
 - `show_progress::Bool`: Display progress counter (default: true)
 - `gradient_method::Symbol`: Gradient computation method for validation (:forwarddiff or :finitediff)
 - `gradient_tolerance::Float64`: Tolerance for gradient norm validation (default: 1e-8, use 1e-4 for ODE)
+- `lower_bounds::Union{Nothing, Vector{Float64}}`: Box constraint lower bounds (default: nothing = unconstrained)
+- `upper_bounds::Union{Nothing, Vector{Float64}}`: Box constraint upper bounds (default: nothing = unconstrained)
 
 # Presets
 Use `ode_refinement_config()` for ODE-based objectives (longer timeouts, robust mode, finitediff).
@@ -53,6 +55,8 @@ struct RefinementConfig
     show_progress::Bool
     gradient_method::Symbol
     gradient_tolerance::Float64
+    lower_bounds::Union{Nothing, Vector{Float64}}
+    upper_bounds::Union{Nothing, Vector{Float64}}
 end
 
 """
@@ -71,6 +75,8 @@ Construct RefinementConfig with keyword arguments.
 - `show_progress = true`: Display progress counter
 - `gradient_method = :forwarddiff`: Gradient method (:forwarddiff or :finitediff)
 - `gradient_tolerance = 1e-8`: Gradient norm tolerance for validation (use 1e-4 for ODE)
+- `lower_bounds = nothing`: Box constraint lower bounds (Vector{Float64} or nothing)
+- `upper_bounds = nothing`: Box constraint upper bounds (Vector{Float64} or nothing)
 
 # Examples
 ```julia
@@ -97,7 +103,9 @@ function RefinementConfig(;
     robust_mode::Bool = true,
     show_progress::Bool = true,
     gradient_method::Symbol = :forwarddiff,
-    gradient_tolerance::Float64 = 1e-8
+    gradient_tolerance::Float64 = 1e-8,
+    lower_bounds::Union{Nothing, Vector{Float64}} = nothing,
+    upper_bounds::Union{Nothing, Vector{Float64}} = nothing
 )
     return RefinementConfig(
         method,
@@ -109,7 +117,9 @@ function RefinementConfig(;
         robust_mode,
         show_progress,
         gradient_method,
-        gradient_tolerance
+        gradient_tolerance,
+        lower_bounds,
+        upper_bounds
     )
 end
 
