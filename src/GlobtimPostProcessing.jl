@@ -106,6 +106,11 @@ export compute_gradient_norms, compute_gradient_norm
 export validate_critical_points, add_gradient_validation!
 export GradientValidationResult
 
+# Valley walking exports (positive-dimensional minima tracing)
+export ValleyWalkConfig, ValleyTraceResult
+export detect_valley, trace_valley, trace_valleys_from_critical_points
+export walk_newton_projection, walk_predictor_corrector
+
 # Define types first
 """
     ExperimentResult
@@ -171,6 +176,9 @@ include("refinement/config.jl")           # RefinementConfig struct
 include("refinement/gradient_validation.jl")  # Gradient norm validation (before io.jl - defines GradientValidationResult)
 include("refinement/io.jl")               # Load/save utilities
 include("refinement/api.jl")              # High-level API
+
+# Valley walking (positive-dimensional minima tracing)
+include("ValleyWalking.jl")
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
 # To create visualizations, use:
