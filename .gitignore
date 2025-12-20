@@ -38,6 +38,12 @@ Thumbs.db
 # *.jld2
 .glab-env
 
+# Claude Code and internal configs (not for public release)
+.claude/
+.claudemem
+.gitlab_config
+.gitlab-ci.yml
+
 # Test scripts in root (should be in test/ or examples/)
 /test_*.jl
 /interactive_*.jl
