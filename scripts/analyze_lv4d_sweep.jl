@@ -1,28 +1,23 @@
 #!/usr/bin/env julia
 """
-Analyze Domain × Degree Sweep Results
-
-Aggregates results from domain_degree_sweep.sh and identifies optimal configurations
-for LV4D parameter estimation.
+Analyze LV4D Experiment Results
 
 Usage:
-    julia --project=globtimpostprocessing globtimpostprocessing/scripts/analyze_lv4d_sweep.jl [results_dir]
+    julia --project=globtimpostprocessing scripts/analyze_lv4d_sweep.jl [options] [results_dir]
+
+Options:
+    --verbose, -v    Show detailed output including file paths and histograms
+    --help, -h       Show this help
 
 Arguments:
-    results_dir: Path to lotka_volterra_4d results or single experiment directory
-
-Output:
-    - domain_degree_summary.csv: Aggregated metrics per (domain, degree)
-    - Console report with optimal configurations
-
-PE-01 Experiment Analysis - January 2026
+    results_dir      Path to experiment directory or parent containing experiments
 """
 
 const SCRIPT_DIR = @__DIR__
 const PROJECT_ROOT = abspath(joinpath(SCRIPT_DIR, ".."))
 
 using Pkg
-Pkg.activate(PROJECT_ROOT)
+Pkg.activate(PROJECT_ROOT; io=devnull)
 
 using DataFrames
 using CSV
@@ -31,6 +26,9 @@ using Statistics
 using Printf
 using Dates
 using PrettyTables
+
+# Global verbosity flag
+VERBOSE = Ref(false)
 
 # Parse experiment directory name to extract parameters
 # Handles both old and new naming conventions:
@@ -159,146 +157,82 @@ function format_bin_label(lo, hi)
     end
 end
 
-# Analyze and print gradient norm distribution with adaptive binning
+# Analyze gradient norm distribution (verbose mode only for histogram)
 function analyze_gradient_distribution(metrics_df::DataFrame)
     if !("gradient_norm" in names(metrics_df))
-        println("No gradient_norm column found.")
-        return
+        return nothing
     end
 
     grads = metrics_df.gradient_norm
     valid_grads = filter(x -> !isnan(x) && x > 0, grads)
     n_valid = length(valid_grads)
 
-    println("="^80)
-    println("GRADIENT NORM DISTRIBUTION ($n_valid critical points)")
-    println("="^80)
-    println()
-
     if n_valid == 0
-        println("No valid gradient norms found.")
-        return
+        return nothing
     end
 
-    # Percentiles
     sorted_grads = sort(valid_grads)
     p_min = minimum(sorted_grads)
-    p25 = quantile(sorted_grads, 0.25)
     p50 = quantile(sorted_grads, 0.50)
-    p75 = quantile(sorted_grads, 0.75)
-    p_max = maximum(sorted_grads)
 
-    println("Percentiles:")
-    @printf("  min: %.2e    p25: %.2e    median: %.2e    p75: %.2e    max: %.2e\n",
-            p_min, p25, p50, p75, p_max)
-    println()
+    if VERBOSE[]
+        println()
+        @printf("Gradient Norms (%d CPs): min=%.2e  median=%.2e\n", n_valid, p_min, p50)
 
-    # Adaptive log-scale histogram
-    bins = make_log_bins(valid_grads)
-
-    println("Log-scale histogram:")
-    for i in 1:(length(bins)-1)
-        count = sum(bins[i] .<= valid_grads .< bins[i+1])
-        pct = count / n_valid * 100
-        bar = repeat("█", min(50, round(Int, pct / 2)))
-        label = format_bin_label(bins[i], bins[i+1])
-        @printf("  %-18s %4d (%5.1f%%) %s\n", label, count, pct, bar)
-    end
-    println()
-
-    # Per-domain breakdown
-    println("By domain (median gradient norm):")
-    for domain in sort(unique(metrics_df.domain))
-        domain_grads = filter(x -> !isnan(x) && x > 0, metrics_df[metrics_df.domain .== domain, :gradient_norm])
-        if !isempty(domain_grads)
-            med = quantile(domain_grads, 0.5)
-            min_g = minimum(domain_grads)
-            @printf("  domain=%.4f: median=%.2e, min=%.2e (n=%d)\n",
-                    domain, med, min_g, length(domain_grads))
+        # Histogram only in verbose mode
+        bins = make_log_bins(valid_grads)
+        for i in 1:(length(bins)-1)
+            count = sum(bins[i] .<= valid_grads .< bins[i+1])
+            if count > 0
+                pct = count / n_valid * 100
+                bar = repeat("█", min(40, round(Int, pct / 2.5)))
+                label = format_bin_label(bins[i], bins[i+1])
+                @printf("  %-16s %3d (%4.1f%%) %s\n", label, count, pct, bar)
+            end
         end
     end
-    println()
 
-    # Threshold analysis
-    println("Gradient validation threshold analysis:")
-    @printf("  Current threshold (1e-6):  %d/%d pass (%.1f%%)\n",
-            sum(valid_grads .< 1e-6), n_valid, 100 * sum(valid_grads .< 1e-6) / n_valid)
-    @printf("  Relaxed (1e-3):            %d/%d pass (%.1f%%)\n",
-            sum(valid_grads .< 1e-3), n_valid, 100 * sum(valid_grads .< 1e-3) / n_valid)
-    @printf("  Relaxed (1e+2):            %d/%d pass (%.1f%%)\n",
-            sum(valid_grads .< 1e2), n_valid, 100 * sum(valid_grads .< 1e2) / n_valid)
-    @printf("  Min observed:              %.2e\n", p_min)
+    return (min=p_min, median=p50, n=n_valid,
+            pass_1e6=sum(valid_grads .< 1e-6),
+            pass_1e3=sum(valid_grads .< 1e-3))
 end
 
-# Analyze and print objective value (z) distribution at critical points
+# Analyze objective value distribution (verbose mode only for histogram)
 function analyze_objective_distribution(metrics_df::DataFrame)
     if !("z" in names(metrics_df))
-        println("No z column found.")
-        return
+        return nothing
     end
 
     z_vals = metrics_df.z
     valid_z = filter(x -> !isnan(x) && isfinite(x) && x > 0, z_vals)
     n_valid = length(valid_z)
 
-    println("="^80)
-    println("OBJECTIVE VALUE DISTRIBUTION ($n_valid critical points)")
-    println("="^80)
-    println()
-
     if n_valid == 0
-        println("No valid objective values found.")
-        return
+        return nothing
     end
 
-    # Percentiles
     sorted_z = sort(valid_z)
     p_min = minimum(sorted_z)
-    p25 = quantile(sorted_z, 0.25)
     p50 = quantile(sorted_z, 0.50)
-    p75 = quantile(sorted_z, 0.75)
-    p_max = maximum(sorted_z)
 
-    println("Percentiles:")
-    @printf("  min: %.2e    p25: %.2e    median: %.2e    p75: %.2e    max: %.2e\n",
-            p_min, p25, p50, p75, p_max)
-    println()
+    if VERBOSE[]
+        @printf("Objective Values (%d CPs): min=%.4f  median=%.2e\n", n_valid, p_min, p50)
 
-    # Adaptive log-scale histogram
-    bins = make_log_bins(valid_z)
-
-    println("Log-scale histogram:")
-    for i in 1:(length(bins)-1)
-        count = sum(bins[i] .<= valid_z .< bins[i+1])
-        pct = count / n_valid * 100
-        bar = repeat("█", min(50, round(Int, pct / 2)))
-        label = format_bin_label(bins[i], bins[i+1])
-        @printf("  %-18s %4d (%5.1f%%) %s\n", label, count, pct, bar)
-    end
-    println()
-
-    # Per-domain breakdown
-    println("By domain (median objective value):")
-    for domain in sort(unique(metrics_df.domain))
-        domain_z = filter(x -> !isnan(x) && isfinite(x) && x > 0, metrics_df[metrics_df.domain .== domain, :z])
-        if !isempty(domain_z)
-            med = quantile(domain_z, 0.5)
-            min_z = minimum(domain_z)
-            @printf("  domain=%.4f: median=%.2e, min=%.2e (n=%d)\n",
-                    domain, med, min_z, length(domain_z))
+        bins = make_log_bins(valid_z)
+        for i in 1:(length(bins)-1)
+            count = sum(bins[i] .<= valid_z .< bins[i+1])
+            if count > 0
+                pct = count / n_valid * 100
+                bar = repeat("█", min(40, round(Int, pct / 2.5)))
+                label = format_bin_label(bins[i], bins[i+1])
+                @printf("  %-16s %3d (%4.1f%%) %s\n", label, count, pct, bar)
+            end
         end
     end
-    println()
 
-    # Summary: best critical points (lowest objective values)
-    println("Best critical points (lowest objective):")
-    @printf("  Minimum f(x): %.4f\n", p_min)
-    @printf("  Below 1.0:    %d/%d (%.1f%%)\n",
-            sum(valid_z .< 1.0), n_valid, 100 * sum(valid_z .< 1.0) / n_valid)
-    @printf("  Below 10.0:   %d/%d (%.1f%%)\n",
-            sum(valid_z .< 10.0), n_valid, 100 * sum(valid_z .< 10.0) / n_valid)
-    @printf("  Below 100.0:  %d/%d (%.1f%%)\n",
-            sum(valid_z .< 100.0), n_valid, 100 * sum(valid_z .< 100.0) / n_valid)
+    return (min=p_min, median=p50, n=n_valid,
+            below_1=sum(valid_z .< 1.0),
+            below_10=sum(valid_z .< 10.0))
 end
 
 # Load results from a single experiment directory
@@ -386,280 +320,144 @@ end
 
 # Main analysis function
 function analyze_sweep(results_dir::String)
-    println("="^70)
-    println("PE-01: Domain × Degree Sweep Analysis")
-    println("="^70)
-    println("Results directory: $results_dir")
-    println()
-
-    # Find all experiment directories
+    # Find experiment directories
     if !isdir(results_dir)
-        error("Results directory not found: $results_dir")
+        error("Not found: $results_dir")
     end
 
-    # Check if this is a single experiment directory
-    if is_single_experiment(results_dir)
-        println("Single experiment mode: $(basename(results_dir))")
-        exp_dirs = [results_dir]
+    exp_dirs = if is_single_experiment(results_dir)
+        [results_dir]
     else
-        exp_dirs = filter(isdir, [joinpath(results_dir, d) for d in readdir(results_dir)])
-        exp_dirs = filter(d -> startswith(basename(d), "lv4d_"), exp_dirs)
+        filter(d -> startswith(basename(d), "lv4d_") && isdir(d),
+               [joinpath(results_dir, d) for d in readdir(results_dir)])
     end
 
-    println("Found $(length(exp_dirs)) experiment directories")
-
-    # Load all results
+    # Load results
     all_results = DataFrame[]
     for exp_dir in exp_dirs
         result = load_experiment_results(exp_dir)
-        if result !== nothing
-            push!(all_results, result)
-        end
+        result !== nothing && push!(all_results, result)
     end
 
     if isempty(all_results)
-        println("No valid results found!")
-        return
+        println("No valid results found in $(length(exp_dirs)) directories")
+        return nothing
     end
 
     df = vcat(all_results...)
-    println("Loaded $(nrow(df)) individual experiment results")
-    println()
 
-    # Show available configurations
-    println("Available configurations:")
-    gn_values = sort(unique(df.GN))
-    domain_values = sort(unique(df.domain))
-    degree_values = sort(unique(df.degree))
-    println("  GN: $(gn_values)")
-    println("  Domains: $(domain_values)")
-    println("  Degrees: $(degree_values)")
+    # Header
+    exp_name = basename(results_dir)
+    n_exp = length(exp_dirs)
     println()
+    println("LV4D Analysis: $exp_name ($n_exp exp, $(nrow(df)) results)")
+    println("─"^70)
 
-    # Filter to small domains (0.01-0.15) and reasonable degrees (4-20)
-    # This is intentionally flexible to analyze whatever results are available
-    sweep_filter = (df.domain .<= 0.15) .& (df.degree .>= 4) .& (df.degree .<= 20)
+    # Filter and aggregate
+    sweep_filter = (df.degree .>= 4) .& (df.degree .<= 20)
     df_sweep = df[sweep_filter, :]
-
     if nrow(df_sweep) == 0
-        println("No results with domain <= 0.15")
-        df_sweep = df  # Fall back to all results
+        df_sweep = df
     end
 
-    println("Sweep results: $(nrow(df_sweep)) experiments")
-    println()
-
-    # Aggregate by (GN, domain, degree) to avoid mixing different GN experiments
     summary = combine(
         groupby(df_sweep, [:GN, :domain, :degree]),
         :L2_norm => mean => :mean_L2,
-        :L2_norm => std => :std_L2,
         :gradient_valid_rate => mean => :mean_grad_valid,
-        :gradient_valid_rate => std => :std_grad_valid,
         :recovery_error => mean => :mean_recovery,
-        :recovery_error => std => :std_recovery,
         :recovery_error => (x -> mean(x .< 0.05)) => :success_rate,
-        :hessian_minima => mean => :mean_minima,
         :critical_points => mean => :mean_crit_pts,
-        :computation_time => mean => :mean_time,
         nrow => :n_seeds
     )
-
-    # Sort by GN, domain, then degree
     sort!(summary, [:GN, :domain, :degree])
 
-    # Print summary table using PrettyTables
-    println("="^80)
-    println("SUMMARY: Mean metrics per (GN, domain, degree)")
-    println("="^80)
-    println()
-
-    # Build data matrix for PrettyTables
+    # Build and print summary table
     n_rows = nrow(summary)
-    data = Matrix{Any}(undef, n_rows, 9)
+    data = Matrix{Any}(undef, n_rows, 8)
     for (i, row) in enumerate(eachrow(summary))
         data[i, 1] = row.GN
         data[i, 2] = row.domain
         data[i, 3] = row.degree
-        data[i, 4] = isnan(row.mean_L2) ? "-" : round(row.mean_L2, digits=2)
-        data[i, 5] = @sprintf("%.1f%%", row.mean_grad_valid * 100)
+        data[i, 4] = isnan(row.mean_L2) ? "-" : round(row.mean_L2, digits=1)
+        data[i, 5] = @sprintf("%.0f%%", row.mean_grad_valid * 100)
         data[i, 6] = isnan(row.mean_recovery) ? "-" : @sprintf("%.2f%%", row.mean_recovery * 100)
-        data[i, 7] = @sprintf("%.1f%%", row.success_rate * 100)
-        data[i, 8] = Int(round(row.mean_crit_pts))  # Critical points as integer
-        data[i, 9] = row.n_seeds
+        data[i, 7] = @sprintf("%.0f%%", row.success_rate * 100)
+        data[i, 8] = Int(round(row.mean_crit_pts))
     end
 
     pretty_table(data,
-        header = ["GN", "Domain", "Deg", "L2", "Grad%", "RecErr%", "Succ%", "Crit", "n"],
-        alignment = [:r, :r, :r, :r, :r, :r, :r, :r, :r],
+        header = ["GN", "Domain", "Deg", "L2", "Grad", "RecErr", "Succ", "CPs"],
+        alignment = [:r, :r, :r, :r, :r, :r, :r, :r],
         tf = tf_unicode_rounded,
         crop = :none
     )
-    println()
 
-    # Save summary CSV
+    # Save files silently
     output_dir = joinpath(results_dir, "sweep_analysis")
     mkpath(output_dir)
-    summary_file = joinpath(output_dir, "domain_degree_summary.csv")
-    CSV.write(summary_file, summary)
-    println("Summary saved: $summary_file")
+    CSV.write(joinpath(output_dir, "summary.csv"), summary)
+    CSV.write(joinpath(output_dir, "raw.csv"), df_sweep)
 
-    # Also save raw results
-    raw_file = joinpath(output_dir, "all_sweep_results.csv")
-    CSV.write(raw_file, df_sweep)
-    println("Raw results saved: $raw_file")
-    println()
-
-    # Load and analyze critical point metrics (gradient norms and objective values)
+    # Critical point metrics (verbose only for histograms)
     all_metrics = DataFrame[]
     for exp_dir in exp_dirs
-        metrics_df = load_critical_point_metrics(exp_dir)
-        if metrics_df !== nothing
-            push!(all_metrics, metrics_df)
-        end
+        m = load_critical_point_metrics(exp_dir)
+        m !== nothing && push!(all_metrics, m)
     end
 
+    grad_stats = nothing
+    obj_stats = nothing
     if !isempty(all_metrics)
         metrics_df = vcat(all_metrics...)
-        analyze_gradient_distribution(metrics_df)
-        println()
-        analyze_objective_distribution(metrics_df)
-        println()
+        grad_stats = analyze_gradient_distribution(metrics_df)
+        obj_stats = analyze_objective_distribution(metrics_df)
     end
 
-    # Find optimal configurations
-    println("="^80)
-    println("OPTIMAL CONFIGURATIONS")
-    println("="^80)
-    println()
-
-    # Filter out rows with NaN L2 for finding best
+    # Compact summary line
     valid_l2 = summary[.!isnan.(summary.mean_L2), :]
-
-    # Best L2 norm
     if nrow(valid_l2) > 0
-        best_l2_idx = argmin(valid_l2.mean_L2)
-        best_l2 = valid_l2[best_l2_idx, :]
-        println("Best L2 approximation:")
-        println("  GN=$(best_l2.GN), domain=$(best_l2.domain), degree=$(best_l2.degree): L2=$(round(best_l2.mean_L2, digits=3)) (n=$(best_l2.n_seeds))")
-    else
-        println("Best L2 approximation: No valid results")
-        best_l2 = summary[1, :]  # Fallback for later use
-    end
-    println()
-
-    # Best gradient validation
-    best_grad_idx = argmax(summary.mean_grad_valid)
-    best_grad = summary[best_grad_idx, :]
-    println("Best gradient validation:")
-    println("  GN=$(best_grad.GN), domain=$(best_grad.domain), degree=$(best_grad.degree): $(round(best_grad.mean_grad_valid * 100, digits=1))% valid (n=$(best_grad.n_seeds))")
-    println()
-
-    # Best recovery success rate
-    best_success_idx = argmax(summary.success_rate)
-    best_success = summary[best_success_idx, :]
-    println("Best recovery success (<5% error):")
-    println("  GN=$(best_success.GN), domain=$(best_success.domain), degree=$(best_success.degree): $(round(best_success.success_rate * 100, digits=1))% success (n=$(best_success.n_seeds))")
-    println()
-
-    # Best overall (Pareto-optimal: L2 < 0.1, grad_valid > 0.5, success > 0.8)
-    excellent = summary[(summary.mean_L2 .< 0.1) .& (summary.mean_grad_valid .> 0.5) .& (summary.success_rate .> 0.8), :]
-    if nrow(excellent) > 0
-        println("EXCELLENT configurations (L2<0.1, GradValid>50%, Success>80%):")
-        for row in eachrow(excellent)
-            println("  GN=$(row.GN), domain=$(row.domain), degree=$(row.degree): L2=$(round(row.mean_L2, digits=3)), GradValid=$(round(row.mean_grad_valid * 100, digits=1))%, Success=$(round(row.success_rate * 100, digits=1))%")
-        end
-    else
-        println("No configurations meet all excellent criteria (L2<0.1, GradValid>50%, Success>80%)")
-
-        # Find threshold where gradient validation starts working
-        good_grad = summary[summary.mean_grad_valid .> 0.1, :]
-        if nrow(good_grad) > 0
-            println("\nConfigurations with >10% gradient validation:")
-            for row in eachrow(good_grad)
-                println("  GN=$(row.GN), domain=$(row.domain), degree=$(row.degree): L2=$(round(row.mean_L2, digits=3)), GradValid=$(round(row.mean_grad_valid * 100, digits=1))%")
-            end
-        else
-            println("\nNo configurations achieved >10% gradient validation yet.")
-            println("Consider: smaller domains (< 0.01) or higher GN or higher degrees")
-        end
-    end
-    println()
-
-    # Domain threshold analysis (grouped by GN) using PrettyTables
-    println("="^80)
-    println("DOMAIN THRESHOLD ANALYSIS (by GN)")
-    println("="^80)
-    println()
-
-    for gn in sort(unique(summary.GN))
-        println("GN=$gn:")
-        gn_results = summary[summary.GN .== gn, :]
-
-        # Build table data
-        domains = sort(unique(gn_results.domain))
-        table_data = Matrix{Any}(undef, length(domains), 5)
-
-        for (i, domain) in enumerate(domains)
-            domain_results = gn_results[gn_results.domain .== domain, :]
-            if nrow(domain_results) == 0
-                continue
-            end
-
-            best_idx = argmax(domain_results.success_rate)
-            best = domain_results[best_idx, :]
-
-            table_data[i, 1] = domain
-            table_data[i, 2] = best.degree
-            table_data[i, 3] = round(best.mean_L2, digits=2)
-            table_data[i, 4] = @sprintf("%.1f%%", best.mean_grad_valid * 100)
-            table_data[i, 5] = @sprintf("%.1f%%", best.success_rate * 100)
-        end
-
-        pretty_table(table_data,
-            header = ["Domain", "Deg", "L2", "Grad%", "Succ%"],
-            alignment = [:r, :r, :r, :r, :r],
-            tf = tf_unicode_rounded,
-            crop = :none
-        )
+        best_idx = argmax(summary.success_rate)
+        best = summary[best_idx, :]
         println()
-    end
+        @printf("Best: GN=%d dom=%.1e deg=%d → L2=%.1f RecErr=%.2f%% Succ=%.0f%%\n",
+                best.GN, best.domain, best.degree, best.mean_L2,
+                best.mean_recovery * 100, best.success_rate * 100)
 
-    # Save optimal configurations
-    optimal_file = joinpath(output_dir, "optimal_configurations.txt")
-    open(optimal_file, "w") do io
-        println(io, "PE-01 Domain-Degree Sweep: Optimal Configurations")
-        println(io, "Generated: $(now())")
-        println(io, "="^60)
-        println(io)
-        println(io, "Best L2: GN=$(best_l2.GN), domain=$(best_l2.domain), degree=$(best_l2.degree), L2=$(best_l2.mean_L2)")
-        println(io, "Best GradValid: GN=$(best_grad.GN), domain=$(best_grad.domain), degree=$(best_grad.degree), rate=$(best_grad.mean_grad_valid)")
-        println(io, "Best Success: GN=$(best_success.GN), domain=$(best_success.domain), degree=$(best_success.degree), rate=$(best_success.success_rate)")
-        println(io)
-        if nrow(excellent) > 0
-            println(io, "Excellent configurations:")
-            for row in eachrow(excellent)
-                println(io, "  GN=$(row.GN), domain=$(row.domain), degree=$(row.degree)")
-            end
+        # Show grad/obj stats on one line if available
+        if grad_stats !== nothing && obj_stats !== nothing
+            @printf("CPs: n=%d  ‖∇f‖_min=%.1e  f_min=%.3f\n",
+                    grad_stats.n, grad_stats.min, obj_stats.min)
         end
     end
-    println("Optimal configurations saved: $optimal_file")
+
+    # Verbose: show file paths
+    if VERBOSE[]
+        println()
+        println("Saved: $(joinpath(output_dir, "summary.csv"))")
+    end
 
     println()
-    println("="^80)
-    println("ANALYSIS COMPLETE")
-    println("="^80)
-
     return summary
 end
 
 # Main entry point
 function main()
+    # Parse arguments
+    args = filter(a -> !startswith(a, "-"), ARGS)
+    flags = filter(a -> startswith(a, "-"), ARGS)
+
+    # Handle flags
+    if "-h" in flags || "--help" in flags
+        println(@doc analyze_lv4d_sweep)
+        return
+    end
+
+    VERBOSE[] = "-v" in flags || "--verbose" in flags
+
     # Determine results directory
-    results_dir = if length(ARGS) >= 1
-        ARGS[1]
+    results_dir = if !isempty(args)
+        args[1]
     else
-        # Default: look for globtim_results relative to GlobalOptim root
         globoptim_root = abspath(joinpath(PROJECT_ROOT, ".."))
         results_root = get(ENV, "GLOBTIM_RESULTS_ROOT", joinpath(globoptim_root, "globtim_results"))
         joinpath(results_root, "lotka_volterra_4d")
@@ -667,6 +465,18 @@ function main()
 
     analyze_sweep(results_dir)
 end
+
+# Module docstring for help
+@doc """
+Analyze LV4D Experiment Results
+
+Usage:
+    julia --project=globtimpostprocessing scripts/analyze_lv4d_sweep.jl [options] [results_dir]
+
+Options:
+    --verbose, -v    Show detailed output including file paths and histograms
+    --help, -h       Show this help
+""" analyze_lv4d_sweep
 
 # Run main
 if abspath(PROGRAM_FILE) == @__FILE__
