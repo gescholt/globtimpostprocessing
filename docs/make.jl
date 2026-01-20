@@ -9,7 +9,8 @@ makedocs(
         repolink = "https://github.com/gescholt/GlobtimPostProcessing.jl",
         canonical = "https://gescholt.github.io/GlobtimPostProcessing.jl/stable/",
         edit_link = "main",
-        assets = String[]
+        assets = String[],
+        analytics="G-22HWCKE0JK"
     ),
     pages = [
         "Home" => "index.md",
