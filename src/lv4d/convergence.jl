@@ -9,6 +9,34 @@ Computes convergence rate: error ∝ domain^α
 # ============================================================================
 
 """
+    analyze_convergence(results_root::String, filter::ExperimentFilter; export_csv::Bool=false)
+
+Analyze convergence rate using ExperimentFilter for experiment selection.
+
+# Arguments
+- `results_root::String`: Path to LV4D results directory
+- `filter::ExperimentFilter`: Filter specification (should specify gn and degree range)
+- `export_csv::Bool=false`: Whether to export data for plotting
+
+# Example
+```julia
+filter = ExperimentFilter(gn=fixed(8), degree=sweep(4, 12))
+analyze_convergence(results_root, filter; export_csv=true)
+```
+"""
+function analyze_convergence(results_root::String, filter::ExperimentFilter; export_csv::Bool=false)
+    # Extract gn and degree range from filter
+    gn = filter.gn isa FixedValue ? filter.gn.value : 8
+    degree_min = filter.degree isa SweepRange ? filter.degree.min :
+                 filter.degree isa FixedValue ? filter.degree.value : 4
+    degree_max = filter.degree isa SweepRange ? filter.degree.max :
+                 filter.degree isa FixedValue ? filter.degree.value : 10
+
+    analyze_convergence(results_root; gn=gn, degree_min=degree_min, degree_max=degree_max,
+                       export_csv=export_csv)
+end
+
+"""
     analyze_convergence(results_root::String; gn::Int=8, degree_min::Int=4, degree_max::Int=10,
                        export_csv::Bool=false)
 
@@ -101,6 +129,16 @@ Convenience method that finds results root automatically.
 function analyze_convergence(; gn::Int=8, degree_min::Int=4, degree_max::Int=10, export_csv::Bool=false)
     results_root = find_results_root()
     analyze_convergence(results_root; gn=gn, degree_min=degree_min, degree_max=degree_max, export_csv=export_csv)
+end
+
+"""
+    analyze_convergence(filter::ExperimentFilter; export_csv::Bool=false)
+
+Convenience method that finds results root automatically and uses filter.
+"""
+function analyze_convergence(filter::ExperimentFilter; export_csv::Bool=false)
+    results_root = find_results_root()
+    analyze_convergence(results_root, filter; export_csv=export_csv)
 end
 
 # ============================================================================

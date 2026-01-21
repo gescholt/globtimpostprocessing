@@ -268,33 +268,98 @@ end
 # ============================================================================
 
 """
-    load_sweep_experiments(results_root::String; pattern=nothing) -> Vector{LV4DExperimentData}
+    LoadResult
+
+Result of loading experiments with success/failure tracking.
+
+# Fields
+- `loaded::Vector{LV4DExperimentData}`: Successfully loaded experiments
+- `failed::Vector{String}`: Paths to experiments that failed to load
+- `errors::Dict{String, String}`: Error messages for failed loads
+"""
+struct LoadResult
+    loaded::Vector{LV4DExperimentData}
+    failed::Vector{String}
+    errors::Dict{String, String}
+end
+
+"""
+    load_sweep_experiments(results_root::String; pattern=nothing, report_failures::Bool=false) -> Vector{LV4DExperimentData}
 
 Load multiple experiments from a results directory.
 
 # Arguments
 - `results_root::String`: Directory containing experiment subdirectories
 - `pattern::Union{String, Regex, Nothing}`: Optional filter pattern
+- `report_failures::Bool=false`: Print summary of failed loads
 
 # Returns
 Vector of `LV4DExperimentData` for all matching experiments.
+
+See also: [`load_sweep_experiments_with_report`](@ref) for detailed failure info.
 """
 function load_sweep_experiments(results_root::String;
-                               pattern::Union{String, Regex, Nothing}=nothing
+                               pattern::Union{String, Regex, Nothing}=nothing,
+                               report_failures::Bool=false
                                )::Vector{LV4DExperimentData}
+    result = load_sweep_experiments_with_report(results_root; pattern=pattern)
+
+    if report_failures && !isempty(result.failed)
+        println("Skipped $(length(result.failed)) experiments that failed to load:")
+        for path in result.failed
+            println("  - $(basename(path)): $(result.errors[path])")
+        end
+    end
+
+    return result.loaded
+end
+
+"""
+    load_sweep_experiments_with_report(results_root::String; pattern=nothing) -> LoadResult
+
+Load multiple experiments with detailed failure reporting.
+
+# Arguments
+- `results_root::String`: Directory containing experiment subdirectories
+- `pattern::Union{String, Regex, Nothing}`: Optional filter pattern
+
+# Returns
+`LoadResult` containing:
+- `loaded`: Successfully loaded experiments
+- `failed`: Paths to failed experiments
+- `errors`: Dict mapping failed paths to error messages
+
+# Example
+```julia
+result = load_sweep_experiments_with_report(results_root)
+println("Loaded: \$(length(result.loaded)), Failed: \$(length(result.failed))")
+if !isempty(result.failed)
+    for (path, err) in result.errors
+        println("  \$(basename(path)): \$err")
+    end
+end
+```
+"""
+function load_sweep_experiments_with_report(results_root::String;
+                                           pattern::Union{String, Regex, Nothing}=nothing
+                                           )::LoadResult
     exp_dirs = find_experiments(results_root; pattern=pattern)
-    experiments = LV4DExperimentData[]
+    loaded = LV4DExperimentData[]
+    failed = String[]
+    errors = Dict{String, String}()
 
     for exp_dir in exp_dirs
         try
             data = load_lv4d_experiment(exp_dir)
-            push!(experiments, data)
+            push!(loaded, data)
         catch e
+            push!(failed, exp_dir)
+            errors[exp_dir] = sprint(showerror, e)
             @debug "Failed to load experiment $(basename(exp_dir)): $e"
         end
     end
 
-    return experiments
+    return LoadResult(loaded, failed, errors)
 end
 
 # ============================================================================

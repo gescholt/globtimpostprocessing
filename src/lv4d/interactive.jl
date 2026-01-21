@@ -141,11 +141,19 @@ function _run_convergence_interactive(results_root::String)
     gn_input = strip(readline())
     gn = isempty(gn_input) ? 8 : parse(Int, gn_input)
 
-    print("Degree value (default 8): ")
-    deg_input = strip(readline())
-    degree = isempty(deg_input) ? 8 : parse(Int, deg_input)
+    print("Degree min (default 4): ")
+    deg_min_input = strip(readline())
+    degree_min = isempty(deg_min_input) ? 4 : parse(Int, deg_min_input)
 
-    analyze_convergence(results_root; gn=gn, degree=degree)
+    print("Degree max (default 12): ")
+    deg_max_input = strip(readline())
+    degree_max = isempty(deg_max_input) ? 12 : parse(Int, deg_max_input)
+
+    print("Export CSV for plotting? (y/n, default n): ")
+    export_input = strip(readline())
+    export_csv = lowercase(export_input) == "y"
+
+    analyze_convergence(results_root; gn=gn, degree_min=degree_min, degree_max=degree_max, export_csv=export_csv)
 end
 
 function _run_gradients_interactive(results_root::String)

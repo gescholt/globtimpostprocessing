@@ -9,6 +9,99 @@ Analyzes results from domain_degree_sweep.sh and identifies optimal configuratio
 # ============================================================================
 
 """
+    analyze_sweep(results_dir::String, filter::ExperimentFilter; kwargs...)
+
+Analyze sweep results using ExperimentFilter for experiment selection.
+
+# Arguments
+- `results_dir::String`: Path to results directory
+- `filter::ExperimentFilter`: Filter specification for experiment selection
+- `verbose::Bool=false`: Whether to show detailed analysis
+- `save_output::Bool=true`: Whether to save CSV summary files
+- `export_csv::Bool=false`: Whether to export data for plotting
+- `top_l2::Union{Int, Nothing}=nothing`: Show top N configurations by lowest L2 error
+
+# Example
+```julia
+# All GN=8 experiments with degree 4-12
+filter = ExperimentFilter(gn=fixed(8), degree=sweep(4, 12))
+analyze_sweep(results_root, filter; verbose=true)
+```
+"""
+function analyze_sweep(results_dir::String, filter::ExperimentFilter;
+                       verbose::Bool=false, save_output::Bool=true,
+                       export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
+    isdir(results_dir) || error("Results directory not found: $results_dir")
+
+    # Use query interface to find matching experiments
+    exp_dirs = query_experiments(results_dir, filter)
+
+    if isempty(exp_dirs)
+        println("No experiments match filter: $(format_filter(filter))")
+        return DataFrame()
+    end
+
+    # Load results
+    all_results = DataFrame[]
+    for exp_dir in exp_dirs
+        result = _load_experiment_results(exp_dir)
+        if result !== nothing
+            push!(all_results, result)
+        end
+    end
+
+    if isempty(all_results)
+        println("No valid results found!")
+        return DataFrame()
+    end
+
+    df = vcat(all_results...)
+
+    # Apply additional DataFrame-level filtering based on filter spec
+    df_sweep = _apply_filter_to_dataframe(df, filter)
+    summary = _aggregate_results(df_sweep)
+
+    # Print compact header
+    _print_filter_based_header(results_dir, df_sweep, filter)
+
+    # Print compact summary table using PrettyTables
+    _print_summary_table_compact(summary)
+
+    # Print metric key
+    _print_metric_key()
+
+    # Print top N by L2 if requested
+    if top_l2 !== nothing
+        _print_top_experiments_by_l2(summary; limit=top_l2)
+    end
+
+    # Save outputs
+    output_dir = nothing
+    if save_output
+        output_dir = _save_sweep_outputs(results_dir, summary, df_sweep)
+        @debug "Saved: $(output_dir)/domain_degree_summary.csv"
+    end
+
+    # Export CSV for plotting
+    if export_csv
+        _export_convergence_csv(results_dir, df_sweep)
+    end
+
+    # Verbose mode: show detailed analysis
+    if verbose
+        println()
+        println("Detailed Analysis:")
+        println()
+        _print_configurations(df)
+        _analyze_distributions(exp_dirs)
+        _print_optimal_configurations(summary)
+        _print_domain_threshold_analysis(summary)
+    end
+
+    return summary
+end
+
+"""
     analyze_sweep(results_dir::String; verbose::Bool=false, save_output::Bool=true,
                   domain_max::Float64=0.0050, degree_min::Int=4, degree_max::Int=10,
                   export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
@@ -348,6 +441,74 @@ function _filter_sweep_results_silent(df::DataFrame;
     end
 
     return df_sweep
+end
+
+"""
+    _apply_filter_to_dataframe(df::DataFrame, filter::ExperimentFilter) -> DataFrame
+
+Apply ExperimentFilter to a DataFrame of results.
+"""
+function _apply_filter_to_dataframe(df::DataFrame, filter::ExperimentFilter)::DataFrame
+    mask = trues(nrow(df))
+
+    # Apply GN filter
+    if filter.gn !== nothing
+        if filter.gn isa FixedValue
+            mask .&= df.GN .== filter.gn.value
+        elseif filter.gn isa SweepRange
+            mask .&= (df.GN .>= filter.gn.min) .& (df.GN .<= filter.gn.max)
+        end
+    end
+
+    # Apply degree filter
+    if filter.degree !== nothing
+        if filter.degree isa FixedValue
+            mask .&= df.degree .== filter.degree.value
+        elseif filter.degree isa SweepRange
+            mask .&= (df.degree .>= filter.degree.min) .& (df.degree .<= filter.degree.max)
+        end
+    end
+
+    # Apply domain filter
+    if filter.domain !== nothing
+        if filter.domain isa FixedValue
+            mask .&= df.domain .== filter.domain.value
+        elseif filter.domain isa SweepRange
+            mask .&= (df.domain .>= filter.domain.min) .& (df.domain .<= filter.domain.max)
+        end
+    end
+
+    # Apply seed filter
+    if filter.seed !== nothing && hasproperty(df, :seed)
+        if filter.seed isa FixedValue
+            mask .&= df.seed .== filter.seed.value
+        elseif filter.seed isa SweepRange
+            mask .&= (df.seed .>= filter.seed.min) .& (df.seed .<= filter.seed.max)
+        end
+    end
+
+    df_filtered = df[mask, :]
+
+    # If no results, return all data
+    if nrow(df_filtered) == 0
+        @debug "No results match filter, returning all data"
+        return df
+    end
+
+    return df_filtered
+end
+
+"""
+    _print_filter_based_header(results_dir, df_sweep, filter)
+
+Print header for filter-based analysis.
+"""
+function _print_filter_based_header(_results_dir::String, df_sweep::DataFrame, filter::ExperimentFilter)
+    println("LV4D Parameter Recovery Analysis")
+    println()
+    println("Filter: $(format_filter(filter))")
+    println("Matched: $(nrow(df_sweep)) experiment-degree combinations")
+    println()
 end
 
 """

@@ -49,6 +49,7 @@ using UnicodePlots
 # Include submodules in dependency order
 include("common.jl")
 include("data_loading.jl")
+include("query.jl")  # Query interface (depends on common.jl and data_loading.jl)
 include("quality.jl")
 include("sweep.jl")
 include("convergence.jl")
@@ -61,8 +62,8 @@ include("interactive.jl")
 export ExperimentParams
 
 # Data loading
-export load_lv4d_experiment, load_sweep_experiments
-export LV4DExperimentData, LV4DSweepData
+export load_lv4d_experiment, load_sweep_experiments, load_sweep_experiments_with_report
+export LV4DExperimentData, LV4DSweepData, LoadResult
 
 # Analysis functions
 export analyze_quality, analyze_sweep
@@ -73,6 +74,12 @@ export analyze_local_minima
 export parse_experiment_name, is_single_experiment
 export find_results_root, find_experiments
 export format_domain, format_scientific, format_percentage, format_age
+
+# Query interface
+export ExperimentFilter, FixedValue, SweepRange
+export fixed, sweep
+export query_experiments, query_and_load, query_to_dataframe
+export summarize_query, matches_experiment, format_filter
 
 # Histogram utilities
 export make_log_bins, print_log_histogram
