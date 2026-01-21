@@ -1,0 +1,369 @@
+#!/usr/bin/env julia
+"""
+Unified LV4D Post-Processing Tool
+
+Consolidates multiple analysis scripts into a single CLI with subcommands.
+
+Usage:
+    analyze_lv4d                          # Interactive mode
+    analyze_lv4d quality [dir]            # Single experiment CP diagnostics
+    analyze_lv4d sweep [dir]              # Aggregate sweep analysis
+    analyze_lv4d convergence [--gn N]     # Log-log convergence rate
+    analyze_lv4d gradients [--tol T]      # Gradient threshold analysis
+    analyze_lv4d minima <csv> <p_true>    # Local minima clustering
+
+Options:
+    -v, --verbose       Show detailed output (histograms, optimal configs)
+    -q, --quiet         Compact output (default)
+    --gn N              Filter by GN value (default: 8)
+    --degree D          Filter by degree (default: 8)
+    --degree-min D      Minimum degree (default: 4)
+    --degree-max D      Maximum degree (default: 10)
+    --domain-max D      Maximum domain size (default: 0.0050)
+    --tolerance T       Gradient tolerance (default: 0.1)
+    --threshold T       Cluster threshold for minima (default: 0.05)
+    --no-save           Don't save output files
+    --export-csv        Export data for plotting
+
+Examples:
+    analyze_lv4d quality /path/to/lv4d_GN8_deg8-8_...
+    analyze_lv4d sweep /path/to/lotka_volterra_4d --domain-max 0.005
+    analyze_lv4d sweep --degree-min 4 --degree-max 10 --export-csv
+    analyze_lv4d convergence --gn 16 --degree-min 4 --degree-max 10
+    analyze_lv4d gradients --tolerance 1e-3
+
+PE-01 Experiment Analysis - January 2026
+"""
+
+# Setup environment for globtimpostprocessing
+# Use realpath to resolve symlinks - @__DIR__ returns symlink location, not target
+const SCRIPT_PATH = realpath(@__FILE__)
+const SCRIPT_DIR = dirname(SCRIPT_PATH)
+const POSTPROC_ROOT = dirname(SCRIPT_DIR)  # scripts/ -> globtimpostprocessing/
+
+# Add package root to LOAD_PATH BEFORE any imports
+pushfirst!(LOAD_PATH, POSTPROC_ROOT)
+
+import Pkg
+Pkg.activate(POSTPROC_ROOT; io=devnull)
+
+using GlobtimPostProcessing
+using GlobtimPostProcessing.LV4DAnalysis
+using JSON
+
+# ============================================================================
+# Argument Parsing
+# ============================================================================
+
+function parse_args()
+    args = ARGS
+
+    # Default values
+    config = Dict{Symbol, Any}(
+        :command => nothing,
+        :path => nothing,
+        :verbose => false,  # Compact output by default; use -v/--verbose for detailed
+        :save_output => true,
+        :gn => 8,
+        :degree => 8,
+        :degree_min => 4,
+        :degree_max => 10,
+        :domain_max => 0.0050,
+        :tolerance => 0.1,
+        :threshold => 0.05,
+        :export_csv => false,
+        :p_true => nothing,
+        :top_l2 => nothing,  # Top N experiments by L2 error
+        :metric => :best_dist_to_true  # Metric for comparison analysis
+    )
+
+    i = 1
+    while i <= length(args)
+        arg = args[i]
+
+        if arg == "-v" || arg == "--verbose"
+            config[:verbose] = true
+        elseif arg == "-q" || arg == "--quiet"
+            config[:verbose] = false
+        elseif arg == "--no-save"
+            config[:save_output] = false
+        elseif arg == "--gn" && i < length(args)
+            i += 1
+            config[:gn] = parse(Int, args[i])
+        elseif arg == "--degree" && i < length(args)
+            i += 1
+            config[:degree] = parse(Int, args[i])
+        elseif arg == "--degree-min" && i < length(args)
+            i += 1
+            config[:degree_min] = parse(Int, args[i])
+        elseif arg == "--degree-max" && i < length(args)
+            i += 1
+            config[:degree_max] = parse(Int, args[i])
+        elseif arg == "--domain-max" && i < length(args)
+            i += 1
+            config[:domain_max] = parse(Float64, args[i])
+        elseif arg == "--export-csv"
+            config[:export_csv] = true
+        elseif arg == "--top-l2" && i < length(args)
+            i += 1
+            config[:top_l2] = parse(Int, args[i])
+        elseif arg == "--tolerance" && i < length(args)
+            i += 1
+            config[:tolerance] = parse(Float64, args[i])
+        elseif arg == "--threshold" && i < length(args)
+            i += 1
+            config[:threshold] = parse(Float64, args[i])
+        elseif arg == "--metric" && i < length(args)
+            i += 1
+            config[:metric] = Symbol(args[i])
+        elseif arg == "--p-true" && i < length(args)
+            i += 1
+            # Parse comma-separated values
+            config[:p_true] = parse.(Float64, split(args[i], ","))
+        elseif arg == "-h" || arg == "--help"
+            print_help()
+            exit(0)
+        elseif startswith(arg, "-")
+            println("Unknown option: $arg")
+            print_help()
+            exit(1)
+        elseif config[:command] === nothing
+            config[:command] = arg
+        elseif config[:path] === nothing
+            config[:path] = arg
+        end
+
+        i += 1
+    end
+
+    return config
+end
+
+const HELP_TEXT = """
+Unified LV4D Post-Processing Tool
+
+Consolidates multiple analysis scripts into a single CLI with subcommands.
+
+Usage:
+    analyze_lv4d                          # Interactive mode
+    analyze_lv4d quality [dir]            # Single experiment CP diagnostics
+    analyze_lv4d sweep [dir]              # Aggregate sweep analysis
+    analyze_lv4d convergence [--gn N]     # Log-log convergence rate
+    analyze_lv4d gradients [--tol T]      # Gradient threshold analysis
+    analyze_lv4d minima <csv> <p_true>    # Local minima clustering
+    analyze_lv4d compare [dir|csv]        # Method comparison analysis
+
+Examples:
+    analyze_lv4d quality /path/to/lv4d_GN8_deg8-8_...
+    analyze_lv4d sweep /path/to/lotka_volterra_4d --domain-max 0.005
+    analyze_lv4d sweep --degree-min 4 --degree-max 10 --export-csv
+    analyze_lv4d convergence --gn 16 --degree-min 4 --degree-max 10
+    analyze_lv4d gradients --tolerance 1e-3
+    analyze_lv4d compare /path/to/lv4d_log_comparison_*/
+"""
+
+function print_help()
+    println(HELP_TEXT)
+    println("Subcommands:")
+    println("  quality     Single experiment critical point diagnostics")
+    println("  sweep       Aggregate domain × degree sweep analysis")
+    println("  convergence Log-log convergence rate computation")
+    println("  gradients   Gradient validation threshold analysis")
+    println("  minima      Local minima clustering from refinement")
+    println("  compare     Method comparison analysis (log vs standard, etc.)")
+    println()
+    println("Options:")
+    println("  -v, --verbose     Show detailed output (histograms, optimal configs)")
+    println("  -q, --quiet       Compact output (default)")
+    println("  --gn N            Filter by GN value (default: 8)")
+    println("  --degree D        Filter by degree (default: 8)")
+    println("  --degree-min D    Minimum degree (default: 4)")
+    println("  --degree-max D    Maximum degree (default: 10)")
+    println("  --domain-max D    Maximum domain size (default: 0.0050)")
+    println("  --tolerance T     Gradient tolerance (default: 0.1)")
+    println("  --threshold T     Cluster threshold (default: 0.05)")
+    println("  --metric M        Comparison metric: best_dist_to_true (default) or l2_error")
+    println("  --top-l2 N        Show top N configurations by lowest L2 error")
+    println("  --no-save         Don't save output files")
+    println("  --export-csv      Export data for plotting")
+    println("  -h, --help        Show this help")
+end
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+function main()
+    config = parse_args()
+
+    # No command = interactive mode
+    if config[:command] === nothing
+        run_interactive()
+        return
+    end
+
+    cmd = lowercase(config[:command])
+
+    if cmd == "quality"
+        run_quality(config)
+    elseif cmd == "sweep"
+        run_sweep(config)
+    elseif cmd == "convergence"
+        run_convergence(config)
+    elseif cmd == "gradients"
+        run_gradients(config)
+    elseif cmd == "minima"
+        run_minima(config)
+    elseif cmd == "compare"
+        run_compare(config)
+    else
+        println("Unknown command: $(config[:command])")
+        print_help()
+        exit(1)
+    end
+end
+
+# ============================================================================
+# Command Implementations
+# ============================================================================
+
+function run_quality(config)
+    path = config[:path]
+    if path === nothing
+        path = select_experiment()
+    end
+
+    if !isdir(path)
+        println("Directory not found: $path")
+        exit(1)
+    end
+
+    analyze_quality(path; verbose=config[:verbose])
+end
+
+function run_sweep(config)
+    path = config[:path]
+    if path === nothing
+        path = find_results_root()
+    end
+
+    if !isdir(path)
+        println("Directory not found: $path")
+        exit(1)
+    end
+
+    analyze_sweep(path;
+        verbose=config[:verbose],
+        save_output=config[:save_output],
+        domain_max=config[:domain_max],
+        degree_min=config[:degree_min],
+        degree_max=config[:degree_max],
+        export_csv=config[:export_csv],
+        top_l2=config[:top_l2]
+    )
+end
+
+function run_convergence(config)
+    path = config[:path]
+    if path === nothing
+        path = find_results_root()
+    end
+
+    analyze_convergence(path;
+        gn=config[:gn],
+        degree_min=config[:degree_min],
+        degree_max=config[:degree_max],
+        export_csv=config[:export_csv]
+    )
+end
+
+function run_gradients(config)
+    path = config[:path]
+    if path === nothing
+        path = find_results_root()
+    end
+
+    analyze_gradient_thresholds(path; tolerance=config[:tolerance])
+end
+
+function run_minima(config)
+    path = config[:path]
+    if path === nothing
+        println("Error: minima command requires a CSV path")
+        println("Usage: analyze_lv4d minima <csv_path> --p-true 0.1,0.2,0.3,0.4")
+        exit(1)
+    end
+
+    if !isfile(path)
+        println("File not found: $path")
+        exit(1)
+    end
+
+    p_true = config[:p_true]
+    if p_true === nothing
+        # Try to infer from experiment directory
+        exp_dir = dirname(path)
+        config_path = joinpath(exp_dir, "experiment_config.json")
+        if isfile(config_path)
+            exp_config = JSON.parsefile(config_path)
+            p_true = Float64.(exp_config["p_true"])
+            println("Using p_true from experiment_config.json")
+        else
+            println("Error: --p-true required (comma-separated values)")
+            println("Example: --p-true 0.197,0.264,0.486,0.586")
+            exit(1)
+        end
+    end
+
+    analyze_local_minima(path, p_true; cluster_threshold=config[:threshold])
+end
+
+function run_compare(config)
+    path = config[:path]
+    if path === nothing
+        # Interactive selection of comparison experiments
+        # Search in multiple potential locations
+        # find_results_root() = ~/GlobalOptim/globtim_results/lotka_volterra_4d
+        # We need ~/GlobalOptim to find globtim/local_results/
+        global_optim_root = dirname(dirname(find_results_root()))  # ~/GlobalOptim
+        results_roots = [
+            find_results_root(),  # globtim_results/lotka_volterra_4d
+            joinpath(global_optim_root, "local_results", "lotka_volterra_4d"),  # local_results/
+            joinpath(global_optim_root, "globtim", "local_results", "lotka_volterra_4d"),  # globtim/local_results/
+        ]
+
+        experiments = String[]
+        for root in results_roots
+            isdir(root) || continue
+            append!(experiments, find_comparison_experiments(root))
+        end
+
+        sort!(experiments, by=mtime, rev=true)
+        experiments = experiments[1:min(15, length(experiments))]
+
+        isempty(experiments) && error("No comparison experiments found")
+
+        # Display menu
+        println("\nSelect comparison experiment:")
+        for (i, exp) in enumerate(experiments)
+            name = basename(exp)
+            age = time() - mtime(exp)
+            age_str = format_age(age)
+            println("  $i) $name ($age_str ago)")
+        end
+
+        print("\nChoice [1-$(length(experiments))]: ")
+        choice_str = readline()
+        choice = tryparse(Int, choice_str)
+        (choice === nothing || choice < 1 || choice > length(experiments)) &&
+            error("Invalid selection")
+
+        path = experiments[choice]
+    end
+
+    data = load_comparison_data(path)
+    analyze_comparison(data; metric=config[:metric])
+end
+
+# Run main
+main()

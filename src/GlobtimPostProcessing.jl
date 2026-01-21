@@ -180,6 +180,9 @@ include("refinement/api.jl")              # High-level API
 # Valley walking (positive-dimensional minima tracing)
 include("ValleyWalking.jl")
 
+# LV4D analysis module (unified LV4D post-processing - January 2026)
+include("lv4d/LV4DAnalysis.jl")
+
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
 # To create visualizations, use:
 #     using GlobtimPostProcessing
