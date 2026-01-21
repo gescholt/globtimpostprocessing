@@ -5,32 +5,24 @@ Unified LV4D Post-Processing Tool
 Consolidates multiple analysis scripts into a single CLI with subcommands.
 
 Usage:
-    analyze_lv4d                          # Interactive mode
-    analyze_lv4d quality [dir]            # Single experiment CP diagnostics
-    analyze_lv4d sweep [dir]              # Aggregate sweep analysis
+    analyze_lv4d sweep [dir]              # Aggregate sweep analysis (most common)
+    analyze_lv4d quality <dir>            # Single experiment CP diagnostics
     analyze_lv4d convergence [--gn N]     # Log-log convergence rate
-    analyze_lv4d gradients [--tol T]      # Gradient threshold analysis
-    analyze_lv4d minima <csv> <p_true>    # Local minima clustering
+    analyze_lv4d compare [dir]            # Method comparison analysis
 
 Options:
-    -v, --verbose       Show detailed output (histograms, optimal configs)
-    -q, --quiet         Compact output (default)
     --gn N              Filter by GN value (default: 8)
-    --degree D          Filter by degree (default: 8)
     --degree-min D      Minimum degree (default: 4)
     --degree-max D      Maximum degree (default: 10)
     --domain-max D      Maximum domain size (default: 0.0050)
-    --tolerance T       Gradient tolerance (default: 0.1)
-    --threshold T       Cluster threshold for minima (default: 0.05)
-    --no-save           Don't save output files
     --export-csv        Export data for plotting
+    --top-l2 N          Show top N configurations by lowest L2 error
 
 Examples:
-    analyze_lv4d quality /path/to/lv4d_GN8_deg8-8_...
-    analyze_lv4d sweep /path/to/lotka_volterra_4d --domain-max 0.005
-    analyze_lv4d sweep --degree-min 4 --degree-max 10 --export-csv
-    analyze_lv4d convergence --gn 16 --degree-min 4 --degree-max 10
-    analyze_lv4d gradients --tolerance 1e-3
+    analyze_lv4d sweep                    # Analyze all sweep results
+    analyze_lv4d sweep --domain-max 0.002 # Filter by domain size
+    analyze_lv4d quality lv4d_GN8_deg8-8_dom0.001_seed42
+    analyze_lv4d convergence --gn 8 --degree-min 4 --degree-max 12
 
 PE-01 Experiment Analysis - January 2026
 """
@@ -58,41 +50,26 @@ using JSON
 function parse_args()
     args = ARGS
 
-    # Default values
+    # Default values - simplified config
     config = Dict{Symbol, Any}(
         :command => nothing,
         :path => nothing,
-        :verbose => false,  # Compact output by default; use -v/--verbose for detailed
-        :save_output => true,
         :gn => 8,
-        :degree => 8,
         :degree_min => 4,
         :degree_max => 10,
         :domain_max => 0.0050,
-        :tolerance => 0.1,
-        :threshold => 0.05,
         :export_csv => false,
-        :p_true => nothing,
-        :top_l2 => nothing,  # Top N experiments by L2 error
-        :metric => :best_dist_to_true  # Metric for comparison analysis
+        :top_l2 => nothing,
+        :metric => :best_dist_to_true
     )
 
     i = 1
     while i <= length(args)
         arg = args[i]
 
-        if arg == "-v" || arg == "--verbose"
-            config[:verbose] = true
-        elseif arg == "-q" || arg == "--quiet"
-            config[:verbose] = false
-        elseif arg == "--no-save"
-            config[:save_output] = false
-        elseif arg == "--gn" && i < length(args)
+        if arg == "--gn" && i < length(args)
             i += 1
             config[:gn] = parse(Int, args[i])
-        elseif arg == "--degree" && i < length(args)
-            i += 1
-            config[:degree] = parse(Int, args[i])
         elseif arg == "--degree-min" && i < length(args)
             i += 1
             config[:degree_min] = parse(Int, args[i])
@@ -107,19 +84,9 @@ function parse_args()
         elseif arg == "--top-l2" && i < length(args)
             i += 1
             config[:top_l2] = parse(Int, args[i])
-        elseif arg == "--tolerance" && i < length(args)
-            i += 1
-            config[:tolerance] = parse(Float64, args[i])
-        elseif arg == "--threshold" && i < length(args)
-            i += 1
-            config[:threshold] = parse(Float64, args[i])
         elseif arg == "--metric" && i < length(args)
             i += 1
             config[:metric] = Symbol(args[i])
-        elseif arg == "--p-true" && i < length(args)
-            i += 1
-            # Parse comma-separated values
-            config[:p_true] = parse.(Float64, split(args[i], ","))
         elseif arg == "-h" || arg == "--help"
             print_help()
             exit(0)
@@ -140,53 +107,41 @@ function parse_args()
 end
 
 const HELP_TEXT = """
-Unified LV4D Post-Processing Tool
+LV4D Post-Processing Tool
 
-Consolidates multiple analysis scripts into a single CLI with subcommands.
+Analyze results from LV4D parameter estimation experiments.
 
-Usage:
-    analyze_lv4d                          # Interactive mode
-    analyze_lv4d quality [dir]            # Single experiment CP diagnostics
-    analyze_lv4d sweep [dir]              # Aggregate sweep analysis
-    analyze_lv4d convergence [--gn N]     # Log-log convergence rate
-    analyze_lv4d gradients [--tol T]      # Gradient threshold analysis
-    analyze_lv4d minima <csv> <p_true>    # Local minima clustering
-    analyze_lv4d compare [dir|csv]        # Method comparison analysis
+NOTE: For faster startup and interactive exploration, use the Julia REPL TUI:
+    julia> using GlobtimPostProcessing.LV4DAnalysis
+    julia> lv4d()   # Arrow-key menu navigation
 
-Examples:
-    analyze_lv4d quality /path/to/lv4d_GN8_deg8-8_...
-    analyze_lv4d sweep /path/to/lotka_volterra_4d --domain-max 0.005
-    analyze_lv4d sweep --degree-min 4 --degree-max 10 --export-csv
-    analyze_lv4d convergence --gn 16 --degree-min 4 --degree-max 10
-    analyze_lv4d gradients --tolerance 1e-3
-    analyze_lv4d compare /path/to/lv4d_log_comparison_*/
+USAGE
+    analyze_lv4d <command> [options]
+
+COMMANDS
+    sweep [dir]         Aggregate sweep analysis (most common)
+    quality <dir>       Single experiment critical point diagnostics
+    convergence         Log-log convergence rate by degree
+    compare [dir]       Method comparison (log vs standard)
+
+EXAMPLES
+    analyze_lv4d sweep                       # Analyze all sweep results
+    analyze_lv4d sweep --domain-max 0.002    # Filter small domains
+    analyze_lv4d quality lv4d_GN8_deg8-8_dom0.001_seed42
+    analyze_lv4d convergence --degree-max 12
+
+OPTIONS
+    --gn N           Filter by GN value (default: 8)
+    --degree-min D   Minimum degree (default: 4)
+    --degree-max D   Maximum degree (default: 10)
+    --domain-max D   Maximum domain size (default: 0.0050)
+    --top-l2 N       Show top N configs by L2 error
+    --export-csv     Export data for plotting
+    -h, --help       Show this help
 """
 
 function print_help()
     println(HELP_TEXT)
-    println("Subcommands:")
-    println("  quality     Single experiment critical point diagnostics")
-    println("  sweep       Aggregate domain × degree sweep analysis")
-    println("  convergence Log-log convergence rate computation")
-    println("  gradients   Gradient validation threshold analysis")
-    println("  minima      Local minima clustering from refinement")
-    println("  compare     Method comparison analysis (log vs standard, etc.)")
-    println()
-    println("Options:")
-    println("  -v, --verbose     Show detailed output (histograms, optimal configs)")
-    println("  -q, --quiet       Compact output (default)")
-    println("  --gn N            Filter by GN value (default: 8)")
-    println("  --degree D        Filter by degree (default: 8)")
-    println("  --degree-min D    Minimum degree (default: 4)")
-    println("  --degree-max D    Maximum degree (default: 10)")
-    println("  --domain-max D    Maximum domain size (default: 0.0050)")
-    println("  --tolerance T     Gradient tolerance (default: 0.1)")
-    println("  --threshold T     Cluster threshold (default: 0.05)")
-    println("  --metric M        Comparison metric: best_dist_to_true (default) or l2_error")
-    println("  --top-l2 N        Show top N configurations by lowest L2 error")
-    println("  --no-save         Don't save output files")
-    println("  --export-csv      Export data for plotting")
-    println("  -h, --help        Show this help")
 end
 
 # ============================================================================
@@ -196,28 +151,25 @@ end
 function main()
     config = parse_args()
 
-    # No command = interactive mode
+    # No command = show help
     if config[:command] === nothing
-        run_interactive()
+        print_help()
         return
     end
 
     cmd = lowercase(config[:command])
 
-    if cmd == "quality"
-        run_quality(config)
-    elseif cmd == "sweep"
+    if cmd == "sweep"
         run_sweep(config)
+    elseif cmd == "quality"
+        run_quality(config)
     elseif cmd == "convergence"
         run_convergence(config)
-    elseif cmd == "gradients"
-        run_gradients(config)
-    elseif cmd == "minima"
-        run_minima(config)
     elseif cmd == "compare"
         run_compare(config)
     else
         println("Unknown command: $(config[:command])")
+        println()
         print_help()
         exit(1)
     end
@@ -230,7 +182,11 @@ end
 function run_quality(config)
     path = config[:path]
     if path === nothing
-        path = select_experiment()
+        println("Error: quality command requires an experiment directory")
+        println()
+        println("Usage: analyze_lv4d quality <experiment_dir>")
+        println("Example: analyze_lv4d quality lv4d_GN8_deg8-8_dom0.001_seed42")
+        exit(1)
     end
 
     if !isdir(path)
@@ -238,7 +194,7 @@ function run_quality(config)
         exit(1)
     end
 
-    analyze_quality(path; verbose=config[:verbose])
+    analyze_quality(path)
 end
 
 function run_sweep(config)
@@ -253,8 +209,6 @@ function run_sweep(config)
     end
 
     analyze_sweep(path;
-        verbose=config[:verbose],
-        save_output=config[:save_output],
         domain_max=config[:domain_max],
         degree_min=config[:degree_min],
         degree_max=config[:degree_max],
@@ -275,47 +229,6 @@ function run_convergence(config)
         degree_max=config[:degree_max],
         export_csv=config[:export_csv]
     )
-end
-
-function run_gradients(config)
-    path = config[:path]
-    if path === nothing
-        path = find_results_root()
-    end
-
-    analyze_gradient_thresholds(path; tolerance=config[:tolerance])
-end
-
-function run_minima(config)
-    path = config[:path]
-    if path === nothing
-        println("Error: minima command requires a CSV path")
-        println("Usage: analyze_lv4d minima <csv_path> --p-true 0.1,0.2,0.3,0.4")
-        exit(1)
-    end
-
-    if !isfile(path)
-        println("File not found: $path")
-        exit(1)
-    end
-
-    p_true = config[:p_true]
-    if p_true === nothing
-        # Try to infer from experiment directory
-        exp_dir = dirname(path)
-        config_path = joinpath(exp_dir, "experiment_config.json")
-        if isfile(config_path)
-            exp_config = JSON.parsefile(config_path)
-            p_true = Float64.(exp_config["p_true"])
-            println("Using p_true from experiment_config.json")
-        else
-            println("Error: --p-true required (comma-separated values)")
-            println("Example: --p-true 0.197,0.264,0.486,0.586")
-            exit(1)
-        end
-    end
-
-    analyze_local_minima(path, p_true; cluster_threshold=config[:threshold])
 end
 
 function run_compare(config)

@@ -57,6 +57,7 @@ include("gradients.jl")
 include("minima.jl")
 include("comparison.jl")
 include("interactive.jl")
+include("tui.jl")
 
 # Re-export key types and functions
 export ExperimentParams
@@ -92,5 +93,8 @@ export make_winner_highlighter, make_loser_highlighter
 
 # Interactive mode
 export run_interactive, select_experiment
+
+# TUI (interactive arrow-key menus)
+export lv4d, analyze_lv4d
 
 end # module LV4DAnalysis
