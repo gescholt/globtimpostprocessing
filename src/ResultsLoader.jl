@@ -5,6 +5,16 @@ Handles loading experiment results from various formats (JSON, CSV, JLD2).
 Automatically discovers and parses globtimcore output structure.
 
 Includes fallback loading for truncated/corrupted JSON files using CSV data.
+
+!!! note "Migration to Unified Pipeline"
+    For new code, prefer using `load_experiment()` from `UnifiedPipeline`:
+    ```julia
+    using GlobtimPostProcessing
+    data = load_experiment(path)  # Auto-detects experiment type
+    ```
+
+    The legacy `load_experiment_results()` returns `ExperimentResult`, while
+    `load_experiment()` returns type-specific data (e.g., `LV4DExperimentData`).
 """
 
 # Include CSV fallback loader
@@ -27,6 +37,10 @@ Automatically detects globtimcore output format and parses:
 
 # Returns
 - `ExperimentResult`: Parsed experiment data with metadata
+
+!!! compat "Migration"
+    For new code, prefer `load_experiment(path)` which provides type-aware
+    loading and returns experiment-type-specific data structures.
 """
 function load_experiment_results(path::String)
     if !ispath(path)

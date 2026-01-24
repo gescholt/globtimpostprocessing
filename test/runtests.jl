@@ -89,4 +89,12 @@ using GlobtimPostProcessing
     @testset "Integration: Real Fixtures" begin
         include("test_integration_real_fixtures.jl")
     end
+
+    # Run Unified Pipeline tests (January 2026)
+    @testset "Unified Pipeline" begin
+        include("test_unified_pipeline.jl")
+    end
+
+    # Aqua.jl quality assurance tests
+    include("test_aqua.jl")
 end

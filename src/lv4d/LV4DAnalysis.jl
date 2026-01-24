@@ -43,6 +43,9 @@ using Dates
 using PrettyTables
 using UnicodePlots
 
+# Import unified pipeline module (must be included before this module)
+using ..UnifiedPipeline
+
 # Import parent module types (but NOT from REPL for terminal menus)
 # We'll handle the interactive menu differently for CLI vs REPL usage
 
@@ -58,16 +61,22 @@ include("minima.jl")
 include("comparison.jl")
 include("interactive.jl")
 include("tui.jl")
+include("coverage.jl")
 
 # Re-export key types and functions
 export ExperimentParams
+
+# Re-export unified pipeline types (for convenience)
+export BaseExperimentData, ExperimentType, LV4DType, LV4D
+export get_base, experiment_id, experiment_type, experiment_path
+export degree_results, critical_points, has_critical_points
 
 # Data loading
 export load_lv4d_experiment, load_sweep_experiments, load_sweep_experiments_with_report
 export LV4DExperimentData, LV4DSweepData, LoadResult
 
 # Analysis functions
-export analyze_quality, analyze_sweep
+export analyze_quality, analyze_sweep, get_quality_summary
 export analyze_convergence, analyze_gradient_thresholds
 export analyze_local_minima
 
@@ -80,7 +89,7 @@ export format_domain, format_scientific, format_percentage, format_age
 export ExperimentFilter, FixedValue, SweepRange
 export fixed, sweep
 export query_experiments, query_and_load, query_to_dataframe
-export summarize_query, matches_experiment, format_filter
+export summarize_query, matches_experiment, format_filter, format_spec
 
 # Histogram utilities
 export make_log_bins, print_log_histogram
@@ -96,5 +105,11 @@ export run_interactive, select_experiment
 
 # TUI (interactive arrow-key menus)
 export lv4d, analyze_lv4d
+
+# Coverage analysis
+export ExperimentKey, CoverageReport
+export analyze_coverage, print_coverage_report
+export get_missing_combinations, generate_gap_filling_configs
+export summarize_coverage
 
 end # module LV4DAnalysis

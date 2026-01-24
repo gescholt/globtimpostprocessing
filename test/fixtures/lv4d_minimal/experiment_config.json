@@ -1,0 +1,11 @@
+{
+    "p_true": [0.2, 0.3, 0.5, 0.6],
+    "p_center": [0.2, 0.3, 0.5, 0.6],
+    "sample_range": 0.1,
+    "GN": 8,
+    "degree_min": 4,
+    "degree_max": 4,
+    "seed": 1,
+    "system_type": "lotka_volterra_4d",
+    "experiment_dir": "lv4d_GN8_deg4_dom0.1_seed1_20260124_120000"
+}

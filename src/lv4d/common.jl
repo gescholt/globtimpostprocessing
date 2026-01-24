@@ -107,6 +107,34 @@ function parse_experiment_name(dirname::String)::Union{ExperimentParams, Nothing
         )
     end
 
+    # Degree range with dom prefix (scientific notation) and seed
+    # Example: lv4d_GN12_deg4-12_dom1.0e-2_seed1_20260122_170020
+    m = match(r"lv4d(?:_subdivision)?_GN(\d+)_deg(\d+)-(\d+)_dom([\d.eE+-]+)_seed(\d+)_", dirname)
+    if m !== nothing
+        return ExperimentParams(
+            parse(Int, m.captures[1]),      # GN
+            parse(Int, m.captures[2]),      # degree_min
+            parse(Int, m.captures[3]),      # degree_max
+            parse(Float64, m.captures[4]),  # domain (scientific notation)
+            parse(Int, m.captures[5]),      # seed
+            occursin("subdivision", dirname)
+        )
+    end
+
+    # Degree range with dom prefix (scientific notation) without seed
+    # Example: lv4d_GN12_deg4-12_dom1.0e-2_20260122_170020
+    m = match(r"lv4d(?:_subdivision)?_GN(\d+)_deg(\d+)-(\d+)_dom([\d.eE+-]+)_", dirname)
+    if m !== nothing
+        return ExperimentParams(
+            parse(Int, m.captures[1]),
+            parse(Int, m.captures[2]),
+            parse(Int, m.captures[3]),
+            parse(Float64, m.captures[4]),
+            nothing,  # seed
+            occursin("subdivision", dirname)
+        )
+    end
+
     # Old format: lv4d[_subdivision]_GN{gn}_deg{min}-{max}_domain{domain}_seed{seed}_{timestamp}
     m = match(r"lv4d(?:_subdivision)?_GN(\d+)_deg(\d+)-(\d+)_domain([\d.]+)_seed(\d+)_", dirname)
     if m !== nothing
@@ -159,10 +187,16 @@ end
     is_single_experiment(path::String) -> Bool
 
 Check if a path is a single LV4D experiment directory (vs parent containing experiments).
+
+Note: This is the LV4D-specific implementation. The unified pipeline dispatches
+to `is_single_experiment(::LV4DType, path)` which calls this function.
 """
 function is_single_experiment(path::String)::Bool
     return startswith(basename(path), "lv4d_") && isfile(joinpath(path, "results_summary.json"))
 end
+
+# Implement unified dispatch for LV4DType
+UnifiedPipeline.is_single_experiment(::LV4DType, path::String) = is_single_experiment(path)
 
 """
     find_results_root() -> String

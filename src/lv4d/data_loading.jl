@@ -4,6 +4,10 @@ Unified data loading for LV4D experiments.
 Provides consistent loading of experiment configs, results, and critical points.
 """
 
+# Import unified pipeline types
+using ..UnifiedPipeline: BaseExperimentData, ExperimentType, LV4DType, LV4D
+using ..UnifiedPipeline: get_base, experiment_id, experiment_type, experiment_path
+
 # ============================================================================
 # Data Structures
 # ============================================================================
@@ -14,25 +18,54 @@ Provides consistent loading of experiment configs, results, and critical points.
 Container for all data from a single LV4D experiment.
 
 # Fields
+- `base::BaseExperimentData`: Common experiment data (id, path, type, config, results)
 - `params::ExperimentParams`: Parsed parameters from directory name
-- `dir::String`: Path to experiment directory
 - `p_true::Vector{Float64}`: True parameter values
 - `p_center::Vector{Float64}`: Domain center
 - `domain_size::Float64`: Domain half-width (sample_range)
 - `dim::Int`: Parameter dimension
-- `degree_results::DataFrame`: Per-degree results from results_summary.json
-- `critical_points::Union{DataFrame, Nothing}`: Combined critical points from all degrees
+
+# Accessors
+Use `get_base(data)` to access the base data, or use forwarding accessors:
+- `experiment_id(data)` - Get experiment ID
+- `experiment_path(data)` - Get experiment path (same as data.base.path)
+- `degree_results(data)` - Get degree results DataFrame
+- `critical_points(data)` - Get critical points DataFrame
+
+# Example
+```julia
+data = load_lv4d_experiment("path/to/lv4d_GN8_...")
+println(experiment_id(data))  # "lv4d_GN8_..."
+println(data.p_true)          # [0.2, 0.3, 0.5, 0.6]
+```
 """
 struct LV4DExperimentData
+    base::BaseExperimentData
     params::ExperimentParams
-    dir::String
     p_true::Vector{Float64}
     p_center::Vector{Float64}
     domain_size::Float64
     dim::Int
-    degree_results::DataFrame
-    critical_points::Union{DataFrame, Nothing}
 end
+
+# Implement get_base protocol
+UnifiedPipeline.get_base(data::LV4DExperimentData) = data.base
+
+# Backward compatibility accessors
+"""Get experiment directory path (backward compatible with data.dir)."""
+Base.getproperty(data::LV4DExperimentData, sym::Symbol) = begin
+    if sym === :dir
+        return data.base.path
+    elseif sym === :degree_results
+        return data.base.degree_results
+    elseif sym === :critical_points
+        return data.base.critical_points
+    else
+        return getfield(data, sym)
+    end
+end
+
+Base.propertynames(::LV4DExperimentData) = (:base, :params, :p_true, :p_center, :domain_size, :dim, :dir, :degree_results, :critical_points)
 
 """
     LV4DSweepData
@@ -172,9 +205,9 @@ Load all data from a single LV4D experiment directory.
 `LV4DExperimentData` containing parsed config, results, and critical points.
 """
 function load_lv4d_experiment(experiment_dir::String)::LV4DExperimentData
-    dirname = basename(experiment_dir)
-    params = parse_experiment_name(dirname)
-    params === nothing && error("Could not parse experiment name: $dirname")
+    dirname_str = basename(experiment_dir)
+    params = parse_experiment_name(dirname_str)
+    params === nothing && error("Could not parse experiment name: $dirname_str")
 
     # Load config
     config = load_experiment_config_json(experiment_dir)
@@ -202,9 +235,19 @@ function load_lv4d_experiment(experiment_dir::String)::LV4DExperimentData
         end
     end
 
+    # Construct BaseExperimentData
+    cp_result = isempty(critical_points) ? nothing : critical_points
+    base = BaseExperimentData(
+        dirname_str,
+        experiment_dir,
+        LV4D,
+        config,
+        degree_results,
+        cp_result
+    )
+
     return LV4DExperimentData(
-        params, experiment_dir, p_true, p_center, domain_size, dim,
-        degree_results, isempty(critical_points) ? nothing : critical_points
+        base, params, p_true, p_center, domain_size, dim
     )
 end
 
@@ -240,7 +283,7 @@ function _parse_results_summary(results::Vector, params::ExperimentParams,
         row = DataFrame(
             domain = params.domain,
             degree = get(r, "degree", 0),
-            seed = something(params.seed, get(config, "seed", 0)),
+            seed = something(params.seed, get(config, "seed", nothing), 0),
             GN = params.GN,
             is_subdivision = params.is_subdivision,
             L2_norm = Float64(l2_norm isa Number ? l2_norm : NaN),
@@ -255,7 +298,7 @@ function _parse_results_summary(results::Vector, params::ExperimentParams,
             hessian_saddle = get(r, "hessian_saddle", 0),
             hessian_degenerate = get(r, "hessian_degenerate", 0),
             computation_time = get(r, "computation_time", NaN),
-            experiment_dir = basename(params.domain > 0 ? config["experiment_dir"] : "")
+            experiment_dir = basename(get(config, "experiment_dir", ""))
         )
         push!(rows, row)
     end

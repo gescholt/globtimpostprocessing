@@ -55,6 +55,17 @@ export generate_report, generate_campaign_report
 export save_report, generate_and_save_report, save_campaign_report
 export ExperimentResult, CampaignResults
 
+# Unified pipeline exports (January 2026)
+# Re-exported from UnifiedPipeline module for convenience
+export postprocess  # Interactive unified TUI
+export load_experiment  # Unified loader with type detection
+export ExperimentType, LV4DType, DeuflhardType, FitzHughNagumoType, UnknownType
+export LV4D, DEUFLHARD, FITZHUGH_NAGUMO, UNKNOWN
+export detect_experiment_type, type_name
+export BaseExperimentData, get_base
+export experiment_id, experiment_path, experiment_type
+export degree_results, critical_points, has_critical_points, available_degrees
+
 # Phase 2: Batch processing exports
 export batch_analyze_campaign, load_campaign_with_progress
 export aggregate_campaign_statistics_with_progress, batch_analyze_campaign_with_progress
@@ -180,8 +191,24 @@ include("refinement/api.jl")              # High-level API
 # Valley walking (positive-dimensional minima tracing)
 include("ValleyWalking.jl")
 
+# Unified pipeline module (type-aware experiment loading - January 2026)
+# MUST be included before LV4DAnalysis which depends on it
+include("unified/UnifiedPipeline.jl")
+
+# Re-export unified pipeline symbols
+using .UnifiedPipeline: postprocess, load_experiment
+using .UnifiedPipeline: ExperimentType, LV4DType, DeuflhardType, FitzHughNagumoType, UnknownType
+using .UnifiedPipeline: LV4D, DEUFLHARD, FITZHUGH_NAGUMO, UNKNOWN
+using .UnifiedPipeline: detect_experiment_type, type_name
+using .UnifiedPipeline: BaseExperimentData, get_base
+using .UnifiedPipeline: experiment_id, experiment_path, experiment_type
+using .UnifiedPipeline: degree_results, critical_points, has_critical_points, available_degrees
+
 # LV4D analysis module (unified LV4D post-processing - January 2026)
 include("lv4d/LV4DAnalysis.jl")
+
+# Pipeline module (experiment discovery and orchestration - GC-08)
+include("pipeline/Pipeline.jl")
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
 # To create visualizations, use:
