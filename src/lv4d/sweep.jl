@@ -16,8 +16,6 @@ Analyze sweep results using ExperimentFilter for experiment selection.
 # Arguments
 - `results_dir::String`: Path to results directory
 - `filter::ExperimentFilter`: Filter specification for experiment selection
-- `verbose::Bool=false`: Whether to show detailed analysis
-- `save_output::Bool=true`: Whether to save CSV summary files
 - `export_csv::Bool=false`: Whether to export data for plotting
 - `top_l2::Union{Int, Nothing}=nothing`: Show top N configurations by lowest L2 error
 
@@ -25,11 +23,10 @@ Analyze sweep results using ExperimentFilter for experiment selection.
 ```julia
 # All GN=8 experiments with degree 4-12
 filter = ExperimentFilter(gn=fixed(8), degree=sweep(4, 12))
-analyze_sweep(results_root, filter; verbose=true)
+analyze_sweep(results_root, filter)
 ```
 """
 function analyze_sweep(results_dir::String, filter::ExperimentFilter;
-                       verbose::Bool=false, save_output::Bool=true,
                        export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
     isdir(results_dir) || error("Results directory not found: $results_dir")
 
@@ -51,7 +48,7 @@ function analyze_sweep(results_dir::String, filter::ExperimentFilter;
     end
 
     if isempty(all_results)
-        println("No valid results found!")
+        @warn "No valid results found!" n_experiments=length(exp_dirs) hint="Check results_summary.json for 'success: false' entries or missing data"
         return DataFrame()
     end
 
@@ -61,57 +58,39 @@ function analyze_sweep(results_dir::String, filter::ExperimentFilter;
     df_sweep = _apply_filter_to_dataframe(df, filter)
     summary = _aggregate_results(df_sweep)
 
-    # Print compact header
-    _print_filter_based_header(results_dir, df_sweep, filter)
+    # --- Section 1: Header ---
+    _print_filter_header(df_sweep, filter)
 
-    # Print compact summary table using PrettyTables
-    _print_summary_table_compact(summary)
+    # --- Section 2: Results Table ---
+    _print_results_table(summary)
 
-    # Print metric key
-    _print_metric_key()
+    # --- Section 3: Interpretation ---
+    _print_interpretation(summary)
 
     # Print top N by L2 if requested
     if top_l2 !== nothing
         _print_top_experiments_by_l2(summary; limit=top_l2)
     end
 
-    # Save outputs
-    output_dir = nothing
-    if save_output
-        output_dir = _save_sweep_outputs(results_dir, summary, df_sweep)
-        @debug "Saved: $(output_dir)/domain_degree_summary.csv"
-    end
+    # Save outputs silently
+    _save_sweep_outputs(results_dir, summary, df_sweep)
 
     # Export CSV for plotting
     if export_csv
         _export_convergence_csv(results_dir, df_sweep)
     end
 
-    # Verbose mode: show detailed analysis
-    if verbose
-        println()
-        println("Detailed Analysis:")
-        println()
-        _print_configurations(df)
-        _analyze_distributions(exp_dirs)
-        _print_optimal_configurations(summary)
-        _print_domain_threshold_analysis(summary)
-    end
-
     return summary
 end
 
 """
-    analyze_sweep(results_dir::String; verbose::Bool=false, save_output::Bool=true,
-                  domain_max::Float64=0.0050, degree_min::Int=4, degree_max::Int=10,
-                  export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
+    analyze_sweep(results_dir::String; domain_max::Float64=0.0050, degree_min::Int=4,
+                  degree_max::Int=10, export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
 
 Analyze domain × degree sweep results.
 
 # Arguments
 - `results_dir::String`: Path to results directory (or single experiment)
-- `verbose::Bool=false`: Whether to show gradient/objective distributions and detailed analysis
-- `save_output::Bool=true`: Whether to save CSV summary files
 - `domain_max::Float64=0.0050`: Maximum domain size to include
 - `degree_min::Int=4`: Minimum polynomial degree to include
 - `degree_max::Int=10`: Maximum polynomial degree to include
@@ -120,10 +99,14 @@ Analyze domain × degree sweep results.
 
 # Returns
 Summary DataFrame with aggregated statistics per (GN, domain, degree).
+
+# Output Structure
+1. LV4D SWEEP ANALYSIS - header with data summary
+2. RESULTS - table with success rate, recovery error, L2 error
+3. INTERPRETATION - human-readable conclusions
 """
-function analyze_sweep(results_dir::String; verbose::Bool=false, save_output::Bool=true,
-                       domain_max::Float64=0.0050, degree_min::Int=4, degree_max::Int=10,
-                       export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
+function analyze_sweep(results_dir::String; domain_max::Float64=0.0050, degree_min::Int=4,
+                       degree_max::Int=10, export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
     isdir(results_dir) || error("Results directory not found: $results_dir")
 
     # Handle single experiment vs sweep directory
@@ -133,7 +116,7 @@ function analyze_sweep(results_dir::String; verbose::Bool=false, save_output::Bo
         exp_dirs = find_experiments(results_dir)
     end
 
-    # Load all results (silent)
+    # Load all results
     all_results = DataFrame[]
     for exp_dir in exp_dirs
         result = _load_experiment_results(exp_dir)
@@ -143,13 +126,13 @@ function analyze_sweep(results_dir::String; verbose::Bool=false, save_output::Bo
     end
 
     if isempty(all_results)
-        println("No valid results found!")
+        @warn "No valid results found!" n_experiments=length(exp_dirs) hint="Check results_summary.json for 'success: false' entries or missing data"
         return DataFrame()
     end
 
     df = vcat(all_results...)
 
-    # Filter and aggregate (silent unless verbose)
+    # Filter and aggregate
     df_sweep = _filter_sweep_results_silent(df;
         domain_max=domain_max,
         degree_min=degree_min,
@@ -157,52 +140,26 @@ function analyze_sweep(results_dir::String; verbose::Bool=false, save_output::Bo
     )
     summary = _aggregate_results(df_sweep)
 
-    # Print compact header
-    _print_compact_header(results_dir, df_sweep, domain_max, degree_min, degree_max)
+    # --- Section 1: Header ---
+    _print_sweep_header(df_sweep, domain_max, degree_min, degree_max)
 
-    # Print compact summary table using PrettyTables
-    _print_summary_table_compact(summary)
+    # --- Section 2: Results Table ---
+    _print_results_table(summary)
 
-    # Print metric key (legend with precise definitions)
-    _print_metric_key()
+    # --- Section 3: Interpretation ---
+    _print_interpretation(summary)
 
     # Print top N by L2 if requested
     if top_l2 !== nothing
         _print_top_experiments_by_l2(summary; limit=top_l2)
     end
 
-    # Save outputs (silent in default mode)
-    output_dir = nothing
-    if save_output
-        output_dir = _save_sweep_outputs(results_dir, summary, df_sweep)
-        @debug "Saved: $(output_dir)/domain_degree_summary.csv"
-    end
+    # Save outputs silently
+    _save_sweep_outputs(results_dir, summary, df_sweep)
 
-    # Export CSV for plotting
+    # Export CSV for plotting if requested
     if export_csv
         _export_convergence_csv(results_dir, df_sweep)
-    end
-
-    # Verbose mode: show detailed analysis
-    if verbose
-        println()
-        println("Detailed Analysis:")
-        println()
-
-        # Show available configurations
-        _print_configurations(df)
-
-        # Filter info
-        _print_filter_info(df_sweep, domain_max, degree_min, degree_max)
-
-        # Analyze gradient and objective distributions
-        _analyze_distributions(exp_dirs)
-
-        # Find and print optimal configurations
-        _print_optimal_configurations(summary)
-
-        # Domain threshold analysis
-        _print_domain_threshold_analysis(summary)
     end
 
     return summary
@@ -289,67 +246,149 @@ function _print_configurations(df::DataFrame)
 end
 
 # ============================================================================
-# Compact Output Functions (Default Mode)
+# Output Functions
 # ============================================================================
 
 """
-    _print_compact_header(results_dir, df_sweep, domain_max, degree_min, degree_max)
+    _print_sweep_header(df_sweep, domain_max, degree_min, degree_max)
 
-Print a compact header explaining the problem and data.
+Print the sweep analysis header with data summary.
 """
-function _print_compact_header(_results_dir::String, df_sweep::DataFrame,
-                               domain_max::Float64, degree_min::Int, degree_max::Int)
-    println("LV4D Parameter Recovery Analysis")
-    println()
+function _print_sweep_header(df_sweep::DataFrame, domain_max::Float64,
+                             degree_min::Int, degree_max::Int)
+    n_experiments = nrow(df_sweep)
+    gn_values = sort(unique(df_sweep.GN))
+    gn_str = length(gn_values) == 1 ? "GN=$(gn_values[1])" : "GN∈{$(join(gn_values, ","))}"
 
-    gn_str = join(sort(unique(df_sweep.GN)), ",")
-    println("Filter: GN∈{$gn_str}, domain≤$domain_max, degree∈[$degree_min,$degree_max]")
+    println("LV4D SWEEP ANALYSIS")
+    println("─" ^ 19)
+    @printf("Data: %d experiments (%s, domain≤%.4f, degree %d-%d)\n",
+            n_experiments, gn_str, domain_max, degree_min, degree_max)
+    println("Goal: Find configurations with recovery error < 5%")
     println()
 end
 
 """
-    _print_summary_table_compact(summary)
+    _print_results_table(summary)
 
-Print a compact summary table using PrettyTables.
+Print results table with "← BEST" annotation on the winning row.
 """
-function _print_summary_table_compact(summary::DataFrame)
+function _print_results_table(summary::DataFrame)
     nrow(summary) == 0 && return
 
+    println("RESULTS")
+
+    # Find best row (highest success rate, then lowest recovery error)
+    best_idx = 1
+    if nrow(summary) > 1
+        # Sort to find best: highest success rate, then lowest recovery error
+        sorted_idx = sortperm(collect(1:nrow(summary)),
+            by = i -> (-summary.success_rate[i], summary.mean_recovery[i]))
+        best_idx = sorted_idx[1]
+    end
+
+    # Check if GN column has only one unique value - if so, hide it
+    show_gn = length(unique(summary.GN)) > 1
+
     # Build display columns
-    gn_col = summary.GN
     domain_col = [@sprintf("%.4f", d) for d in summary.domain]
     deg_col = summary.degree
-    success_col = [@sprintf("%.0f%%", r * 100) for r in summary.success_rate]
-    rec_col = [isnan(r) ? "-" : @sprintf("%.2f%%", r * 100) for r in summary.mean_recovery]
+    success_col = [@sprintf("%3.0f%%", r * 100) for r in summary.success_rate]
+    rec_col = [isnan(r) ? "-" : @sprintf("%.1f%%", r * 100) for r in summary.mean_recovery]
     l2_col = [isnan(l) ? "-" : @sprintf("%.2f", l) for l in summary.mean_L2]
 
-    # Build display DataFrame (no #exp column - implementation detail)
-    display_df = DataFrame(
-        GN = gn_col,
-        Domain = domain_col,
-        Deg = deg_col,
-        Success = success_col,
-        RecErr = rec_col,
-        L2 = l2_col
-    )
+    # Add BEST annotation
+    note_col = fill("", nrow(summary))
+    note_col[best_idx] = "← BEST"
 
-    # Print using PrettyTables with unicode rounded theme
+    if show_gn
+        display_df = DataFrame(
+            GN = summary.GN,
+            Domain = domain_col,
+            Deg = deg_col,
+            Success = success_col,
+            RecErr = rec_col,
+            L2 = l2_col,
+            Note = note_col
+        )
+        headers = ["GN", "Domain", "Deg", "Success", "RecErr", "L2", ""]
+    else
+        display_df = DataFrame(
+            Domain = domain_col,
+            Deg = deg_col,
+            Success = success_col,
+            RecErr = rec_col,
+            L2 = l2_col,
+            Note = note_col
+        )
+        headers = ["Domain", "Deg", "Success", "RecErr", "L2", ""]
+    end
+
     pretty_table(display_df;
-        header = ["GN", "Domain", "Deg", "Success", "RecErr", "L2"],
-        alignment = [:r, :r, :r, :r, :r, :r],
+        header = headers,
+        alignment = show_gn ? [:r, :r, :r, :r, :r, :r, :l] : [:r, :r, :r, :r, :r, :l],
         crop = :none,
         tf = tf_unicode_rounded
     )
 end
 
 """
-    _print_metric_key()
+    _print_interpretation(summary)
 
-Print a compact metric key explaining the columns with precise definitions.
+Print human-readable interpretation of the results.
 """
-function _print_metric_key()
+function _print_interpretation(summary::DataFrame)
+    nrow(summary) == 0 && return
+
     println()
-    println("Legend: Success = recovery<5%, RecErr = ‖p̂-p*‖/‖p*‖×100, L2 = ‖f-wₐ‖_L²")
+    println("INTERPRETATION")
+
+    # Find best configuration
+    best_idx = argmax(summary.success_rate)
+    best = summary[best_idx, :]
+
+    # Best configuration summary
+    @printf("• Best: domain=%.4f, deg=%d → %.0f%% success, %.1f%% error\n",
+            best.domain, best.degree, best.success_rate * 100, best.mean_recovery * 100)
+
+    # Find threshold where success > 80%
+    good_configs = summary[summary.success_rate .>= 0.8, :]
+    if nrow(good_configs) > 0
+        max_good_domain = maximum(good_configs.domain)
+        @printf("• Threshold: domain ≤ %.4f achieves ≥80%% success\n", max_good_domain)
+    else
+        # Find threshold where success > 50%
+        okay_configs = summary[summary.success_rate .>= 0.5, :]
+        if nrow(okay_configs) > 0
+            max_okay_domain = maximum(okay_configs.domain)
+            @printf("• Note: domain ≤ %.4f achieves ≥50%% success (no config reaches 80%%)\n",
+                    max_okay_domain)
+        end
+    end
+
+    # L2 scaling insight (if we have multiple domains)
+    domains = unique(summary.domain)
+    if length(domains) >= 2
+        # Check if L2 scales roughly linearly with domain
+        sorted_dom = sort(domains)
+        if length(sorted_dom) >= 2
+            d1, d2 = sorted_dom[1], sorted_dom[end]
+            l2_1 = mean(summary[summary.domain .== d1, :mean_L2])
+            l2_2 = mean(summary[summary.domain .== d2, :mean_L2])
+            if !isnan(l2_1) && !isnan(l2_2) && l2_1 > 0 && l2_2 > 0
+                ratio = l2_2 / l2_1
+                dom_ratio = d2 / d1
+                if ratio > 1.5 && dom_ratio > 1.5
+                    @printf("• L2 scales with domain (%.1f× larger at domain=%.4f vs %.4f)\n",
+                            ratio, d2, d1)
+                end
+            end
+        end
+    end
+
+    # Column definitions (compact legend)
+    println()
+    println("Columns: Success = %runs with error<5%, RecErr = mean ‖p̂-p*‖/‖p*‖, L2 = ‖f-wₐ‖")
 end
 
 """
@@ -499,15 +538,18 @@ function _apply_filter_to_dataframe(df::DataFrame, filter::ExperimentFilter)::Da
 end
 
 """
-    _print_filter_based_header(results_dir, df_sweep, filter)
+    _print_filter_header(df_sweep, filter)
 
 Print header for filter-based analysis.
 """
-function _print_filter_based_header(_results_dir::String, df_sweep::DataFrame, filter::ExperimentFilter)
-    println("LV4D Parameter Recovery Analysis")
-    println()
+function _print_filter_header(df_sweep::DataFrame, filter::ExperimentFilter)
+    n_experiments = nrow(df_sweep)
+
+    println("LV4D SWEEP ANALYSIS")
+    println("─" ^ 19)
     println("Filter: $(format_filter(filter))")
-    println("Matched: $(nrow(df_sweep)) experiment-degree combinations")
+    @printf("Data: %d experiment-degree combinations\n", n_experiments)
+    println("Goal: Find configurations with recovery error < 5%")
     println()
 end
 

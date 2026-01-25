@@ -95,6 +95,16 @@ using GlobtimPostProcessing
         include("test_unified_pipeline.jl")
     end
 
+    # Run LV4D TUI tests (January 2026 - domain filter fix)
+    @testset "LV4D TUI" begin
+        include("test_lv4d_tui.jl")
+    end
+
+    # Run LV4D Sweep tests (January 2026 - error message improvement)
+    @testset "LV4D Sweep" begin
+        include("test_lv4d_sweep.jl")
+    end
+
     # Aqua.jl quality assurance tests
     include("test_aqua.jl")
 end
