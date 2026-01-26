@@ -26,7 +26,7 @@ using DataFrames
 using JSON3
 
 # Test configuration
-const TEST_CAMPAIGN = "../globtimcore/experiments/lotka_volterra_4d_study/configs_20251006_160051/hpc_results"
+const TEST_CAMPAIGN = "../globtim/experiments/lotka_volterra_4d_study/configs_20251006_160051/hpc_results"
 const TEST_EXPERIMENT = "lotka_volterra_4d_exp1_range0.4_20251006_160126"
 
 @testset "CSV Data Loading Tests" begin

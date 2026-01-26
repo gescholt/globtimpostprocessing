@@ -608,7 +608,7 @@ function discover_campaigns(root_path::String)::Vector{CampaignInfo}
                                  contains(root_basename, "_campaign")
 
             # Skip top-level collection directories
-            is_likely_collection = root_basename in ["globtimcore", "Examples", "hpc_results",
+            is_likely_collection = root_basename in ["globtim", "globtimcore", "Examples", "hpc_results",
                                                      "local", "cluster", "experiments"] ||
                                    contains(root, "/archives/")
 

@@ -48,9 +48,13 @@ function load_dynamical_systems_module(globtim_root::Union{String, Nothing}=noth
         if isnothing(globtim_root)
             # Try to find it by searching upwards from common experiment locations
             possible_paths = [
-                "../globtimcore",  # From globtimpostprocessing directory
-                "../../globtimcore",  # From experiment subdirectory
-                joinpath(homedir(), "GlobalOptim", "globtimcore"),  # Absolute path
+                "../globtim",  # From globtimpostprocessing directory (ACTIVE)
+                "../../globtim",  # From experiment subdirectory
+                joinpath(homedir(), "GlobalOptim", "globtim"),  # Absolute path
+                # Backward compatibility (archived name)
+                "../globtimcore",
+                "../../globtimcore",
+                joinpath(homedir(), "GlobalOptim", "globtimcore"),
             ]
 
             for path in possible_paths
@@ -66,9 +70,9 @@ function load_dynamical_systems_module(globtim_root::Union{String, Nothing}=noth
                 Cannot locate Globtim package root.
 
                 Please provide it via:
-                1. Function argument: load_dynamical_systems_module("/path/to/globtimcore")
-                2. Environment variable: ENV["GLOBTIM_ROOT"] = "/path/to/globtimcore"
-                3. Ensure globtimcore is in a standard location relative to this script
+                1. Function argument: load_dynamical_systems_module("/path/to/globtim")
+                2. Environment variable: ENV["GLOBTIM_ROOT"] = "/path/to/globtim"
+                3. Ensure globtim is in a standard location relative to this script
                 """)
         end
 
