@@ -105,6 +105,11 @@ using GlobtimPostProcessing
         include("test_lv4d_sweep.jl")
     end
 
+    # Run Subdivision Tree Analysis tests (January 2026)
+    @testset "Subdivision Tree Analysis" begin
+        include("test_subdivision_analysis.jl")
+    end
+
     # Aqua.jl quality assurance tests
     include("test_aqua.jl")
 end
