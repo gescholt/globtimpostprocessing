@@ -213,7 +213,9 @@ function load_lv4d_experiment(experiment_dir::String)::LV4DExperimentData
     config = load_experiment_config_json(experiment_dir)
     p_true = Float64.(config["p_true"])
     p_center = Float64.(config["p_center"])
-    domain_size = Float64(config["sample_range"])
+    # Handle both config formats: "sample_range" (standard) and "domain_range" (subdivision)
+    domain_size = Float64(get(config, "sample_range", get(config, "domain_range", NaN)))
+    isnan(domain_size) && error("Config missing both 'sample_range' and 'domain_range' keys")
     dim = length(p_true)
 
     # Load results summary and convert to DataFrame

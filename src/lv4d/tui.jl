@@ -69,6 +69,7 @@ const ANALYSIS_TYPES = [
     :quality => "Single experiment diagnostics",
     :convergence => "Log-log convergence rate",
     :compare => "Method comparison (log vs standard)",
+    :subdivision => "Single vs subdivision comparison",
     :coverage => "Coverage analysis & gap detection",
     :pending => "Analyze pending experiments (pipeline)"
 ]
@@ -334,6 +335,8 @@ function _tui_run_analysis(analysis::Symbol, results_root::String)
         return _tui_run_convergence(results_root)
     elseif analysis == :compare
         return _tui_run_comparison(results_root)
+    elseif analysis == :subdivision
+        return _tui_run_subdivision(results_root)
     elseif analysis == :coverage
         return _tui_run_coverage(results_root)
     elseif analysis == :pending
@@ -436,6 +439,68 @@ function _tui_run_comparison(results_root::String)
     data = load_comparison_data(comp_dir)
     analyze_comparison(data)
     return nothing
+end
+
+function _tui_run_subdivision(results_root::String)
+    # Optional: Select GN filter
+    use_gn_filter = _tui_ask_use_filter("Filter by GN?")
+    gn = use_gn_filter ? _tui_select_gn(results_root) : nothing
+
+    # Optional: Select domain filter
+    use_domain_filter = _tui_ask_use_filter("Filter by domain?")
+    domain = use_domain_filter ? _tui_select_domain_value(results_root; gn=gn) : nothing
+
+    # Show selection summary
+    println()
+    println("$(TUI_DIM)────────────────────────────────────$(TUI_RESET)")
+    filter_parts = String[]
+    gn !== nothing && push!(filter_parts, "GN=$(TUI_BOLD)$gn$(TUI_RESET)")
+    domain !== nothing && push!(filter_parts, "domain=$(TUI_BOLD)$(@sprintf("%.4f", domain))$(TUI_RESET)")
+    if isempty(filter_parts)
+        println("$(TUI_GREEN)✓$(TUI_RESET) Comparing all matched experiments")
+    else
+        println("$(TUI_GREEN)✓$(TUI_RESET) Filter: $(join(filter_parts, ", "))")
+    end
+    println("$(TUI_DIM)────────────────────────────────────$(TUI_RESET)")
+    println()
+    println("$(TUI_CYAN)▶ Running subdivision comparison...$(TUI_RESET)")
+
+    df = compare_single_vs_subdivision(results_root; GN=gn, domain=domain)
+    return df
+end
+
+"""
+Ask if user wants to use a filter option.
+"""
+function _tui_ask_use_filter(prompt::String)::Bool
+    options = ["No", "Yes"]
+    menu = RadioMenu(options, pagesize=2)
+    choice = request(prompt, menu)
+    return choice == 2
+end
+
+"""
+Select a single domain value from available experiments.
+"""
+function _tui_select_domain_value(results_root::String; gn::Union{Int, Nothing}=nothing)::Union{Float64, Nothing}
+    domains = _tui_detect_domain_values(results_root; gn=gn)
+
+    if isempty(domains)
+        println("$(TUI_YELLOW)No experiments found with valid domain values.$(TUI_RESET)")
+        return nothing
+    end
+
+    if length(domains) == 1
+        println("$(TUI_DIM)Using domain=$(domains[1]) (only available value)$(TUI_RESET)")
+        return domains[1]
+    end
+
+    options = [@sprintf("%.4f", d) for d in domains]
+    menu = RadioMenu(options, pagesize=min(10, length(options)))
+    choice = request("Select domain value:", menu)
+
+    choice == -1 && return nothing
+    return domains[choice]
 end
 
 function _tui_select_export_csv()::Bool

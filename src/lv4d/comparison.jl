@@ -321,3 +321,400 @@ function _print_ratio_histogram(df::DataFrame, metric_col::Symbol)
                                  title=title_str)
     println(plt)
 end
+
+# ============================================================================
+# Single-Domain vs Subdivision Comparison
+# ============================================================================
+
+"""
+    SubdivisionComparisonKey
+
+Key tuple for matching single-domain and subdivision experiments.
+Experiments are matched by (GN, degree, domain, seed).
+"""
+const SubdivisionComparisonKey = Tuple{Int, Int, Float64, Int}
+
+"""
+    find_matched_subdivision_pairs(experiments::Vector{LV4DExperimentData})
+        -> Dict{SubdivisionComparisonKey, Tuple{LV4DExperimentData, LV4DExperimentData}}
+
+Find matched pairs of single-domain and subdivision experiments.
+
+Returns a Dict mapping (GN, degree, domain, seed) to (single, subdivision) tuples.
+Only includes complete pairs where both methods exist for the same parameters.
+"""
+function find_matched_subdivision_pairs(experiments::Vector{LV4DExperimentData})
+    # Separate by method type
+    single = filter(e -> !e.params.is_subdivision, experiments)
+    subdiv = filter(e -> e.params.is_subdivision, experiments)
+
+    # Build lookup for single-domain experiments by key
+    # Use degree_min as the "degree" key (experiments typically have degree_min == degree_max)
+    single_lookup = Dict{SubdivisionComparisonKey, LV4DExperimentData}()
+    for e in single
+        seed = something(e.params.seed, 0)
+        key = (e.params.GN, e.params.degree_min, e.params.domain, seed)
+        single_lookup[key] = e
+    end
+
+    # Find matching pairs
+    matched = Dict{SubdivisionComparisonKey, Tuple{LV4DExperimentData, LV4DExperimentData}}()
+    for e in subdiv
+        seed = something(e.params.seed, 0)
+        key = (e.params.GN, e.params.degree_min, e.params.domain, seed)
+        if haskey(single_lookup, key)
+            matched[key] = (single_lookup[key], e)
+        end
+    end
+
+    return matched
+end
+
+"""
+    prepare_subdivision_comparison_df(matched::Dict{SubdivisionComparisonKey, Tuple{LV4DExperimentData, LV4DExperimentData}})
+        -> DataFrame
+
+Prepare a comparison DataFrame from matched experiment pairs.
+
+Returns DataFrame with columns:
+- GN, degree, domain, seed: Experiment parameters
+- method: "single" or "subdivision"
+- L2_norm, critical_points, recovery_error: Key metrics
+- gradient_valid_rate, hessian_minima, computation_time: Additional metrics
+"""
+function prepare_subdivision_comparison_df(
+    matched::Dict{SubdivisionComparisonKey, Tuple{LV4DExperimentData, LV4DExperimentData}}
+)
+    rows = DataFrame[]
+
+    for (key, (single_exp, subdiv_exp)) in matched
+        GN, degree, domain, seed = key
+
+        for (method_name, exp) in [("single", single_exp), ("subdivision", subdiv_exp)]
+            # Get degree results for this experiment
+            dr = exp.degree_results
+            if isempty(dr)
+                @debug "Empty degree_results for $(experiment_id(exp))"
+                continue
+            end
+
+            # Filter to the specific degree if multiple exist
+            deg_rows = filter(r -> r.degree == degree, dr)
+            if isempty(deg_rows)
+                # Fall back to all results if no exact degree match
+                deg_rows = dr
+            end
+
+            # Extract metrics with proper handling of missing/NaN values
+            # Use collect to ensure we have concrete vectors
+            l2_vals = collect(skipmissing(deg_rows.L2_norm))
+            cp_vals = collect(skipmissing(deg_rows.critical_points))
+            rec_vals = collect(skipmissing(deg_rows.recovery_error))
+            grad_vals = collect(skipmissing(deg_rows.gradient_valid_rate))
+            min_vals = collect(skipmissing(deg_rows.hessian_minima))
+            time_vals = collect(skipmissing(deg_rows.computation_time))
+
+            # Aggregate metrics across rows (e.g., if multiple orthants)
+            row = DataFrame(
+                GN = GN,
+                degree = degree,
+                domain = domain,
+                seed = seed,
+                method = method_name,
+                L2_norm = isempty(l2_vals) ? NaN : maximum(l2_vals),
+                critical_points = isempty(cp_vals) ? 0 : sum(cp_vals),
+                recovery_error = isempty(rec_vals) ? NaN : minimum(rec_vals),
+                gradient_valid_rate = isempty(grad_vals) ? 0.0 : mean(grad_vals),
+                hessian_minima = isempty(min_vals) ? 0 : sum(min_vals),
+                computation_time = isempty(time_vals) ? NaN : sum(time_vals)
+            )
+            push!(rows, row)
+        end
+    end
+
+    return isempty(rows) ? DataFrame() : vcat(rows...)
+end
+
+"""
+    print_subdivision_comparison(df::DataFrame; io::IO=stdout, show_aggregated::Bool=true)
+
+Print formatted subdivision comparison tables.
+
+Shows:
+1. Per-configuration results with side-by-side metrics
+2. Aggregated results (mean across seeds) if show_aggregated=true
+"""
+function print_subdivision_comparison(df::DataFrame; io::IO=stdout, show_aggregated::Bool=true)
+    if isempty(df)
+        println(io, "No matched pairs to display.")
+        return
+    end
+
+    # Create wide-format comparison table
+    single_df = filter(r -> r.method == "single", df)
+    subdiv_df = filter(r -> r.method == "subdivision", df)
+
+    # Build comparison rows
+    comparison_rows = DataFrame[]
+    for single_row in eachrow(single_df)
+        key = (single_row.GN, single_row.degree, single_row.domain, single_row.seed)
+        subdiv_match = filter(r -> (r.GN, r.degree, r.domain, r.seed) == key, subdiv_df)
+        nrow(subdiv_match) == 1 || continue
+
+        subdiv_row = first(eachrow(subdiv_match))
+        push!(comparison_rows, DataFrame(
+            GN = single_row.GN,
+            degree = single_row.degree,
+            domain = single_row.domain,
+            seed = single_row.seed,
+            single_L2 = single_row.L2_norm,
+            subdiv_L2 = subdiv_row.L2_norm,
+            single_recovery = single_row.recovery_error,
+            subdiv_recovery = subdiv_row.recovery_error,
+            single_cps = single_row.critical_points,
+            subdiv_cps = subdiv_row.critical_points,
+            single_minima = single_row.hessian_minima,
+            subdiv_minima = subdiv_row.hessian_minima
+        ))
+    end
+
+    if isempty(comparison_rows)
+        println(io, "No matched pairs to display.")
+        return
+    end
+
+    wide_df = vcat(comparison_rows...)
+    sort!(wide_df, [:domain, :degree, :seed])
+
+    # Print per-configuration table
+    println(io)
+    println(io, "Per-Configuration Results:")
+    println(io, "-"^80)
+
+    headers = [
+        "Degree", "Domain", "Seed",
+        "Single L2", "Subdiv L2",
+        "Single Rec%", "Subdiv Rec%",
+        "Single CPs", "Subdiv CPs"
+    ]
+
+    # Format for display
+    display_df = DataFrame(
+        degree = wide_df.degree,
+        domain = [@sprintf("%.4f", d) for d in wide_df.domain],
+        seed = wide_df.seed,
+        single_L2 = [@sprintf("%.2e", v) for v in wide_df.single_L2],
+        subdiv_L2 = [@sprintf("%.2e", v) for v in wide_df.subdiv_L2],
+        single_recovery = [isnan(v) ? "-" : @sprintf("%.1f%%", v*100) for v in wide_df.single_recovery],
+        subdiv_recovery = [isnan(v) ? "-" : @sprintf("%.1f%%", v*100) for v in wide_df.subdiv_recovery],
+        single_cps = wide_df.single_cps,
+        subdiv_cps = wide_df.subdiv_cps
+    )
+
+    # Highlight better values (lower L2/recovery is better)
+    function l2_highlight(data, i, j)
+        j in [4, 5] || return false
+        single_val = wide_df.single_L2[i]
+        subdiv_val = wide_df.subdiv_L2[i]
+        if j == 4
+            return single_val < subdiv_val
+        else
+            return subdiv_val < single_val
+        end
+    end
+
+    function recovery_highlight(data, i, j)
+        j in [6, 7] || return false
+        single_val = wide_df.single_recovery[i]
+        subdiv_val = wide_df.subdiv_recovery[i]
+        (isnan(single_val) || isnan(subdiv_val)) && return false
+        if j == 6
+            return single_val < subdiv_val
+        else
+            return subdiv_val < single_val
+        end
+    end
+
+    hl_better = Highlighter((data, i, j) -> l2_highlight(data, i, j) || recovery_highlight(data, i, j),
+                            bold=true, foreground=:green)
+
+    pretty_table(io, display_df, header=headers, tf=tf_unicode_rounded,
+                 alignment=:r, highlighters=(hl_better,))
+
+    # Aggregated view (mean across seeds)
+    if show_aggregated && length(unique(wide_df.seed)) > 1
+        println(io)
+        println(io, "Aggregated (mean across seeds):")
+        println(io, "-"^60)
+
+        agg_df = combine(groupby(wide_df, [:GN, :degree, :domain]),
+            :single_L2 => mean => :single_L2_mean,
+            :subdiv_L2 => mean => :subdiv_L2_mean,
+            :single_recovery => (x -> mean(filter(!isnan, x))) => :single_rec_mean,
+            :subdiv_recovery => (x -> mean(filter(!isnan, x))) => :subdiv_rec_mean,
+            :single_cps => mean => :single_cps_mean,
+            :subdiv_cps => mean => :subdiv_cps_mean,
+            nrow => :n_seeds
+        )
+        sort!(agg_df, [:domain, :degree])
+
+        agg_display = DataFrame(
+            degree = agg_df.degree,
+            domain = [@sprintf("%.4f", d) for d in agg_df.domain],
+            n = agg_df.n_seeds,
+            single_L2 = [@sprintf("%.2e", v) for v in agg_df.single_L2_mean],
+            subdiv_L2 = [@sprintf("%.2e", v) for v in agg_df.subdiv_L2_mean],
+            single_rec = [isnan(v) ? "-" : @sprintf("%.1f%%", v*100) for v in agg_df.single_rec_mean],
+            subdiv_rec = [isnan(v) ? "-" : @sprintf("%.1f%%", v*100) for v in agg_df.subdiv_rec_mean]
+        )
+
+        agg_headers = ["Degree", "Domain", "Seeds", "Single L2", "Subdiv L2", "Single Rec%", "Subdiv Rec%"]
+        pretty_table(io, agg_display, header=agg_headers, tf=tf_unicode_rounded, alignment=:r)
+    end
+end
+
+"""
+    compare_single_vs_subdivision(
+        results_root::String;
+        GN::Union{Int, Nothing}=nothing,
+        degree::Union{Int, Nothing}=nothing,
+        domain::Union{Float64, Nothing}=nothing,
+        seed::Union{Int, Nothing}=nothing,
+        io::IO=stdout
+    ) -> DataFrame
+
+Compare matched single-domain and subdivision experiments.
+
+Loads all experiments from `results_root`, matches single-domain experiments
+with their subdivision counterparts by (GN, degree, domain, seed), and
+reports side-by-side metrics.
+
+# Arguments
+- `results_root::String`: Directory containing experiment subdirectories
+- `GN::Union{Int, Nothing}`: Filter by grid nodes (optional)
+- `degree::Union{Int, Nothing}`: Filter by polynomial degree (optional)
+- `domain::Union{Float64, Nothing}`: Filter by domain size (optional)
+- `seed::Union{Int, Nothing}`: Filter by random seed (optional)
+- `io::IO`: Output stream for printing (default: stdout)
+
+# Returns
+DataFrame with columns:
+- GN, degree, domain, seed, method: Experiment identifiers
+- L2_norm, critical_points, recovery_error: Key metrics
+- gradient_valid_rate, hessian_minima, computation_time: Additional metrics
+
+# Example
+```julia
+using GlobtimPostProcessing.LV4DAnalysis
+
+# Compare all matched experiments
+df = compare_single_vs_subdivision("/path/to/results")
+
+# Filter to specific GN and domain
+df = compare_single_vs_subdivision("/path/to/results"; GN=12, domain=0.08)
+```
+"""
+function compare_single_vs_subdivision(
+    results_root::String;
+    GN::Union{Int, Nothing}=nothing,
+    degree::Union{Int, Nothing}=nothing,
+    domain::Union{Float64, Nothing}=nothing,
+    seed::Union{Int, Nothing}=nothing,
+    io::IO=stdout
+)::DataFrame
+    println(io)
+    println(io, "="^70)
+    println(io, "SINGLE-DOMAIN VS SUBDIVISION COMPARISON")
+    println(io, "="^70)
+    println(io, "Results: $results_root")
+
+    # Load all experiments
+    experiments = load_sweep_experiments(results_root)
+
+    if isempty(experiments)
+        println(io, "No experiments found in $results_root")
+        return DataFrame()
+    end
+
+    # Apply filters
+    if GN !== nothing
+        experiments = filter(e -> e.params.GN == GN, experiments)
+    end
+    if degree !== nothing
+        experiments = filter(e -> e.params.degree_min == degree, experiments)
+    end
+    if domain !== nothing
+        experiments = filter(e -> isapprox(e.params.domain, domain; rtol=0.01), experiments)
+    end
+    if seed !== nothing
+        experiments = filter(e -> e.params.seed == seed, experiments)
+    end
+
+    n_single = count(e -> !e.params.is_subdivision, experiments)
+    n_subdiv = count(e -> e.params.is_subdivision, experiments)
+    println(io, "Experiments: $n_single single-domain, $n_subdiv subdivision")
+
+    # Find matched pairs
+    matched = find_matched_subdivision_pairs(experiments)
+    println(io, "Matched pairs: $(length(matched))")
+
+    if isempty(matched)
+        println(io, "\nNo matched pairs found. Ensure both single-domain and subdivision")
+        println(io, "experiments exist for the same (GN, degree, domain, seed) combinations.")
+        return DataFrame()
+    end
+
+    # Prepare comparison DataFrame
+    df = prepare_subdivision_comparison_df(matched)
+
+    if isempty(df)
+        println(io, "\nFailed to extract metrics from matched experiments.")
+        return DataFrame()
+    end
+
+    # Print comparison
+    print_subdivision_comparison(df; io=io)
+
+    # Print summary statistics
+    println(io)
+    println(io, "Summary Statistics:")
+    println(io, "-"^40)
+
+    single_metrics = filter(r -> r.method == "single", df)
+    subdiv_metrics = filter(r -> r.method == "subdivision", df)
+
+    if !isempty(single_metrics) && !isempty(subdiv_metrics)
+        # L2 comparison
+        single_l2_med = median(filter(!isnan, single_metrics.L2_norm))
+        subdiv_l2_med = median(filter(!isnan, subdiv_metrics.L2_norm))
+        l2_ratio = subdiv_l2_med / single_l2_med
+        l2_winner = l2_ratio < 1.0 ? "subdivision" : "single"
+        @printf(io, "  L2 median: single=%.2e, subdiv=%.2e (ratio=%.2f, %s better)\n",
+                single_l2_med, subdiv_l2_med, l2_ratio, l2_winner)
+
+        # Recovery comparison
+        single_rec = filter(!isnan, single_metrics.recovery_error)
+        subdiv_rec = filter(!isnan, subdiv_metrics.recovery_error)
+        if !isempty(single_rec) && !isempty(subdiv_rec)
+            single_rec_med = median(single_rec)
+            subdiv_rec_med = median(subdiv_rec)
+            rec_ratio = subdiv_rec_med / single_rec_med
+            rec_winner = rec_ratio < 1.0 ? "subdivision" : "single"
+            @printf(io, "  Recovery median: single=%.1f%%, subdiv=%.1f%% (ratio=%.2f, %s better)\n",
+                    single_rec_med*100, subdiv_rec_med*100, rec_ratio, rec_winner)
+        end
+
+        # Critical points
+        single_cps = sum(single_metrics.critical_points)
+        subdiv_cps = sum(subdiv_metrics.critical_points)
+        @printf(io, "  Total critical points: single=%d, subdiv=%d\n", single_cps, subdiv_cps)
+
+        # Hessian minima
+        single_minima = sum(single_metrics.hessian_minima)
+        subdiv_minima = sum(subdiv_metrics.hessian_minima)
+        @printf(io, "  Total Hessian minima: single=%d, subdiv=%d\n", single_minima, subdiv_minima)
+    end
+
+    println(io)
+    return df
+end

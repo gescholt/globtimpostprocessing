@@ -89,7 +89,7 @@ function parse_experiment_name(dirname::String)::Union{ExperimentParams, Nothing
             degree,                          # degree_max
             parse(Float64, m.captures[3]),  # domain (scientific notation)
             parse(Int, m.captures[4]),      # seed
-            occursin("subdivision", dirname)
+            occursin("subdivision", dirname) || occursin("_subdiv", dirname)
         )
     end
 
@@ -103,7 +103,7 @@ function parse_experiment_name(dirname::String)::Union{ExperimentParams, Nothing
             degree,
             parse(Float64, m.captures[3]),
             nothing,  # seed
-            occursin("subdivision", dirname)
+            occursin("subdivision", dirname) || occursin("_subdiv", dirname)
         )
     end
 
@@ -117,7 +117,7 @@ function parse_experiment_name(dirname::String)::Union{ExperimentParams, Nothing
             parse(Int, m.captures[3]),      # degree_max
             parse(Float64, m.captures[4]),  # domain (scientific notation)
             parse(Int, m.captures[5]),      # seed
-            occursin("subdivision", dirname)
+            occursin("subdivision", dirname) || occursin("_subdiv", dirname)
         )
     end
 
@@ -131,7 +131,7 @@ function parse_experiment_name(dirname::String)::Union{ExperimentParams, Nothing
             parse(Int, m.captures[3]),
             parse(Float64, m.captures[4]),
             nothing,  # seed
-            occursin("subdivision", dirname)
+            occursin("subdivision", dirname) || occursin("_subdiv", dirname)
         )
     end
 
@@ -144,7 +144,7 @@ function parse_experiment_name(dirname::String)::Union{ExperimentParams, Nothing
             parse(Int, m.captures[3]),      # degree_max
             parse(Float64, m.captures[4]),  # domain
             parse(Int, m.captures[5]),      # seed
-            occursin("subdivision", dirname)
+            occursin("subdivision", dirname) || occursin("_subdiv", dirname)
         )
     end
 
@@ -157,7 +157,7 @@ function parse_experiment_name(dirname::String)::Union{ExperimentParams, Nothing
             parse(Int, m.captures[3]),
             parse(Float64, m.captures[4]),
             nothing,  # seed
-            occursin("subdivision", dirname)
+            occursin("subdivision", dirname) || occursin("_subdiv", dirname)
         )
     end
 

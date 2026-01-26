@@ -100,6 +100,11 @@ export find_comparison_experiments
 export ANSI_GREEN, ANSI_RED, ANSI_BOLD, ANSI_RESET
 export make_winner_highlighter, make_loser_highlighter
 
+# Subdivision comparison
+export compare_single_vs_subdivision
+export find_matched_subdivision_pairs, prepare_subdivision_comparison_df
+export print_subdivision_comparison
+
 # Interactive mode
 export run_interactive, select_experiment
 
