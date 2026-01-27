@@ -8,78 +8,219 @@ Displays histograms and statistics for:
 """
 
 # ============================================================================
+# Constants
+# ============================================================================
+
+"""Gradient norm tolerance for considering a point a valid critical point."""
+const GRADIENT_VALIDATION_TOL = 1e-6
+
+# ============================================================================
 # Main Analysis Function
 # ============================================================================
 
 """
-    analyze_quality(data::LV4DExperimentData; verbose::Bool=true)
+    analyze_quality(data::LV4DExperimentData)
 
 Analyze critical point quality for a single experiment.
 
-Displays:
-- Domain membership statistics
-- Histogram of ||x - p*|| distance to true parameters
-- Histogram of ||∇f(x)|| gradient norms
-- Histogram of |f(x) - w_d(x)| evaluation errors
-- Summary table of all critical points
+# Output Structure
+1. Header with experiment info and config
+2. SUMMARY section with key findings
+3. TOP CANDIDATES table (sorted by distance to p_true)
+4. STATUS line indicating success/failure
 
 # Arguments
 - `data::LV4DExperimentData`: Loaded experiment data
-- `verbose::Bool=true`: Whether to show histograms and detailed output
 """
-function analyze_quality(data::LV4DExperimentData; verbose::Bool=true)
-    println("\n" * "="^70)
-    println("Critical Point Quality Analysis")
-    println("="^70)
-    println("Results: $(basename(data.dir))")
+function analyze_quality(data::LV4DExperimentData)
+    # --- Header ---
+    println()
+    println("CRITICAL POINT ANALYSIS: $(basename(data.dir))")
+    println("─" ^ min(70, 26 + length(basename(data.dir))))
+
+    # Extract config from directory name
+    params = parse_experiment_name(basename(data.dir))
+    if params !== nothing
+        if params.degree_min == params.degree_max
+            @printf("Config: GN=%d, degree=%d, domain=%.2e\n", params.GN, params.degree_min, params.domain)
+        else
+            @printf("Config: GN=%d, degrees=%d-%d, domain=%.2e\n", params.GN, params.degree_min, params.degree_max, params.domain)
+        end
+    end
+    @printf("True params: [%s]\n", join([@sprintf("%.3f", p) for p in data.p_true], ", "))
 
     if data.critical_points === nothing || nrow(data.critical_points) == 0
+        println()
         println("No critical points found in this experiment.")
         return
     end
 
     df = data.critical_points
-    println("Total critical points: $(nrow(df))")
-    @printf("True parameters: [%s]\n", join([@sprintf("%.4f", p) for p in data.p_true], ", "))
-    @printf("Domain center:   [%s]\n", join([@sprintf("%.4f", p) for p in data.p_center], ", "))
-    @printf("Domain size:     ±%.4f (bounds = center ± %.4f)\n", data.domain_size, data.domain_size)
 
-    # Domain membership analysis
-    domain_stats = analyze_domain_membership(df, data.p_center, data.domain_size)
-    if domain_stats !== nothing
-        _print_domain_stats(domain_stats)
-    end
+    # --- SUMMARY section ---
+    println()
+    println("SUMMARY")
+    _print_quality_summary(df, data)
 
-    # Degree summary table (when multiple degrees)
-    if length(unique(df.degree)) > 1
-        _print_degree_summary(df)
-    end
+    # --- TOP CANDIDATES table ---
+    println()
+    _print_top_candidates(df, data)
 
-    if verbose
-        # Histogram 1: Distance to true parameters
-        _print_distance_histogram(df)
-
-        # Histogram 2: Gradient norms
-        _print_gradient_histogram(df)
-
-        # Histogram 3: Evaluation errors
-        _print_eval_error_histogram(df)
-    end
-
-    # Summary table
-    _print_summary_table(df, data)
+    # --- STATUS line ---
+    _print_quality_status(df, data)
 
     println()
 end
 
 """
-    analyze_quality(experiment_dir::String; verbose::Bool=true)
+    analyze_quality(experiment_dir::String)
 
 Convenience method that loads experiment and analyzes.
 """
-function analyze_quality(experiment_dir::String; verbose::Bool=true)
+function analyze_quality(experiment_dir::String)
     data = load_lv4d_experiment(experiment_dir)
-    analyze_quality(data; verbose=verbose)
+    analyze_quality(data)
+end
+
+# ============================================================================
+# New Output Functions
+# ============================================================================
+
+"""
+    _print_quality_summary(df, data)
+
+Print the SUMMARY section with key findings.
+"""
+function _print_quality_summary(df::DataFrame, data::LV4DExperimentData)
+    n_total = nrow(df)
+
+    # Count points in domain using shared function
+    membership = analyze_domain_membership(df, data.p_center, data.domain_size)
+    n_in_domain = membership === nothing ? 0 : membership.in_domain
+    n_outside = n_total - n_in_domain
+
+    @printf("• Found: %d critical points (%d in domain, %d outside)\n",
+            n_total, n_in_domain, n_outside)
+
+    # Best recovery error
+    if hasproperty(df, :dist_to_true)
+        valid_dists = filter(!isnan, df.dist_to_true)
+        if !isempty(valid_dists)
+            best_dist = minimum(valid_dists)
+            # Convert to percentage relative error
+            p_true_norm = norm(data.p_true)
+            best_pct = (best_dist / p_true_norm) * 100
+            @printf("• Best recovery: %.1f%% error (distance %.2e)\n", best_pct, best_dist)
+        end
+    end
+
+    # Gradient validation
+    if hasproperty(df, :gradient_norm)
+        valid_grads = filter(!isnan, df.gradient_norm)
+        n_valid = count(g -> g < GRADIENT_VALIDATION_TOL, valid_grads)
+        @printf("• Gradient validation: %d/%d (%.0f%%) have ‖∇f‖ < 1e-6\n",
+                n_valid, length(valid_grads), 100 * n_valid / max(1, length(valid_grads)))
+    end
+end
+
+"""
+    _print_top_candidates(df, data; limit=5)
+
+Print TOP CANDIDATES table sorted by distance to true parameters.
+"""
+function _print_top_candidates(df::DataFrame, data::LV4DExperimentData; limit::Int=5)
+    println("TOP $(limit) CANDIDATES (sorted by distance to p_true)")
+
+    # Need dist_to_true column
+    hasproperty(df, :dist_to_true) || return
+
+    # Sort by distance
+    sorted_df = sort(df, :dist_to_true)
+    top_df = first(sorted_df, min(limit, nrow(sorted_df)))
+
+    # Compute in_domain for each point
+    x_cols = [Symbol("x$i") for i in 1:data.dim]
+    in_domain_col = String[]
+    if all(c -> hasproperty(top_df, c), x_cols)
+        for row in eachrow(top_df)
+            point = [row[c] for c in x_cols]
+            in_bounds = all(abs.(point .- data.p_center) .<= data.domain_size)
+            push!(in_domain_col, in_bounds ? "✓" : "✗")
+        end
+    else
+        in_domain_col = fill("-", nrow(top_df))
+    end
+
+    # Build table columns
+    p_true_norm = norm(data.p_true)
+    dist_pct = [@sprintf("%.1f%%", (d / p_true_norm) * 100) for d in top_df.dist_to_true]
+
+    # Objective value (z column)
+    z_col = hasproperty(top_df, :z) ?
+            [isnan(z) ? "-" : @sprintf("%.3f", z) for z in top_df.z] :
+            fill("-", nrow(top_df))
+
+    # Gradient norm
+    grad_col = hasproperty(top_df, :gradient_norm) ?
+               [isnan(g) ? "-" : @sprintf("%.0e", g) for g in top_df.gradient_norm] :
+               fill("-", nrow(top_df))
+
+    # Annotation for winner
+    note_col = fill("", nrow(top_df))
+    if nrow(top_df) > 0
+        note_col[1] = "← WINNER"
+    end
+
+    display_df = DataFrame(
+        :Rank => 1:nrow(top_df),
+        :Distance => dist_pct,
+        :fval => z_col,
+        :grad => grad_col,
+        :InDomain => in_domain_col,
+        :Note => note_col
+    )
+
+    pretty_table(display_df;
+        header = ["#", "Distance", "f(x)", "‖∇f‖", "In?", ""],
+        alignment = [:r, :r, :r, :r, :c, :l],
+        crop = :none,
+        tf = tf_unicode_rounded
+    )
+end
+
+"""
+    _print_quality_status(df, data)
+
+Print STATUS line indicating success/failure.
+"""
+function _print_quality_status(df::DataFrame, data::LV4DExperimentData)
+    println()
+
+    # Success threshold: 5% relative error
+    SUCCESS_THRESHOLD = 0.05
+
+    if !hasproperty(df, :dist_to_true)
+        println("STATUS: ? - Unable to determine (no distance data)")
+        return
+    end
+
+    valid_dists = filter(!isnan, df.dist_to_true)
+    if isempty(valid_dists)
+        println("STATUS: ? - No valid distance measurements")
+        return
+    end
+
+    best_dist = minimum(valid_dists)
+    p_true_norm = norm(data.p_true)
+    best_rel_error = best_dist / p_true_norm
+
+    if best_rel_error < SUCCESS_THRESHOLD
+        @printf("STATUS: ✓ SUCCESS - Best candidate achieves < 5%% recovery error (%.1f%%)\n",
+                best_rel_error * 100)
+    else
+        @printf("STATUS: ✗ FAILED - Best candidate has %.1f%% error (threshold: 5%%)\n",
+                best_rel_error * 100)
+    end
 end
 
 # ============================================================================
@@ -275,4 +416,100 @@ function _print_summary_table(df::DataFrame, data::LV4DExperimentData)
 
     pretty_table(table_df, header=headers, formatters=(ft,),
                  alignment=:r, crop=:none, tf=tf_unicode_rounded)
+end
+
+# ============================================================================
+# Programmatic Summary (Returns data instead of printing)
+# ============================================================================
+
+"""
+    get_quality_summary(data::LV4DExperimentData) -> NamedTuple
+
+Get a structured summary of experiment quality metrics.
+
+Returns a NamedTuple with:
+- `total_cps`: Total critical points found
+- `in_domain`: Critical points within domain bounds
+- `best_recovery_error`: Minimum relative recovery error (%)
+- `best_recovery_distance`: Minimum absolute distance to p_true
+- `best_point`: Best candidate point coordinates
+- `best_degree`: Degree that found the best point
+- `gradient_valid_count`: Points with ||∇f|| < 1e-6
+- `all_saddles`: True if all points are saddles (no minima)
+- `success`: True if best recovery < 5%
+
+# Example
+```julia
+data = load_lv4d_experiment(exp_path)
+summary = get_quality_summary(data)
+println("Best recovery: \$(summary.best_recovery_error)%")
+```
+"""
+function get_quality_summary(data::LV4DExperimentData)
+    if data.critical_points === nothing || nrow(data.critical_points) == 0
+        return (
+            total_cps = 0,
+            in_domain = 0,
+            best_recovery_error = NaN,
+            best_recovery_distance = NaN,
+            best_point = Float64[],
+            best_degree = 0,
+            gradient_valid_count = 0,
+            all_saddles = true,
+            success = false
+        )
+    end
+
+    df = data.critical_points
+    x_cols = [Symbol("x$i") for i in 1:data.dim]
+
+    # Count in-domain using shared function
+    membership = analyze_domain_membership(df, data.p_center, data.domain_size)
+    n_in_domain = membership === nothing ? 0 : membership.in_domain
+
+    # Best recovery
+    best_dist = NaN
+    best_error = NaN
+    best_point = Float64[]
+    best_degree = 0
+    if hasproperty(df, :dist_to_true)
+        best_idx = argmin(df.dist_to_true)
+        best_dist = df.dist_to_true[best_idx]
+        best_error = (best_dist / norm(data.p_true)) * 100
+        best_degree = df.degree[best_idx]
+        if all(c -> hasproperty(df, c), x_cols)
+            best_point = [df[best_idx, c] for c in x_cols]
+        end
+    end
+
+    # Gradient validation
+    gradient_valid = 0
+    if hasproperty(df, :gradient_norm)
+        gradient_valid = count(g -> !isnan(g) && g < GRADIENT_VALIDATION_TOL, df.gradient_norm)
+    end
+
+    # Classification check
+    all_saddles = sum(skipmissing(data.degree_results.hessian_minima)) == 0
+
+    return (
+        total_cps = nrow(df),
+        in_domain = n_in_domain,
+        best_recovery_error = best_error,
+        best_recovery_distance = best_dist,
+        best_point = best_point,
+        best_degree = best_degree,
+        gradient_valid_count = gradient_valid,
+        all_saddles = all_saddles,
+        success = best_error < 5.0
+    )
+end
+
+"""
+    get_quality_summary(experiment_dir::String) -> NamedTuple
+
+Load experiment and return quality summary.
+"""
+function get_quality_summary(experiment_dir::String)
+    data = load_lv4d_experiment(experiment_dir)
+    return get_quality_summary(data)
 end

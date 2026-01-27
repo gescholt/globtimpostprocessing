@@ -46,6 +46,7 @@ using Optim  # Critical point refinement
 using ForwardDiff  # Gradient computation for validation (algebraic objectives)
 using FiniteDiff   # Numerical gradients for ODE-based objectives
 using PrettyTables  # Rich terminal table formatting
+using JLD2          # Tree serialization
 
 # Core functionality exports
 export load_experiment_results, load_campaign_results
@@ -122,6 +123,24 @@ export ValleyWalkConfig, ValleyTraceResult
 export detect_valley, trace_valley, trace_valleys_from_critical_points
 export walk_newton_projection, walk_predictor_corrector
 
+# Experiment parameter index exports (January 2026)
+export ExperimentParams, ExperimentIndexEntry, ExperimentParameterIndexStore
+export extract_params_from_path, params_hash
+export build_parameter_index, has_experiment_with_params, query_experiments
+export get_experiments_for_params, get_parameter_coverage, ParameterCoverage
+export print_coverage_matrix, print_query_results, list_unique_params
+export get_missing_params
+
+# Experiment parameter index TUI
+export experiments  # Interactive TUI for parameter index
+export select_experiments  # Interactive selection returning ExperimentFilter
+
+# Subdivision tree analysis exports
+export load_subdivision_tree, analyze_subdivision_tree, SubdivisionTreeStats
+export tree_leaves_to_dataframe, tree_depth_summary
+export print_subdivision_tree_report
+export compare_subdivision_trees, print_tree_comparison_table
+
 # Define types first
 """
     ExperimentResult
@@ -190,6 +209,13 @@ include("refinement/api.jl")              # High-level API
 
 # Valley walking (positive-dimensional minima tracing)
 include("ValleyWalking.jl")
+
+# Experiment parameter index (parameter extraction and querying - January 2026)
+include("ExperimentParameterIndex.jl")
+include("ExperimentIndexTUI.jl")
+
+# Subdivision tree analysis (adaptive subdivision postprocessing - January 2026)
+include("SubdivisionTreeAnalysis.jl")
 
 # Unified pipeline module (type-aware experiment loading - January 2026)
 # MUST be included before LV4DAnalysis which depends on it

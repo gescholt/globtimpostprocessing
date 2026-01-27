@@ -131,8 +131,15 @@ function refine_critical_point(
     max_time::Union{Float64,Nothing} = nothing,
     max_iterations::Int = 300
 )
-    # Evaluate at initial point
-    value_raw = objective_func(initial_point)
+    # Determine starting point (clamp if bounds provided)
+    starting_point = if lower_bounds !== nothing && upper_bounds !== nothing
+        clamp.(initial_point, lower_bounds, upper_bounds)
+    else
+        initial_point
+    end
+
+    # Evaluate at starting point
+    value_raw = objective_func(starting_point)
 
     # If initial value is non-finite, skip refinement
     if !isfinite(value_raw)
@@ -172,13 +179,12 @@ function refine_critical_point(
 
         # Choose bounded or unbounded optimization
         result = if lower_bounds !== nothing && upper_bounds !== nothing
-            # Clamp initial point to bounds
-            clamped_point = clamp.(initial_point, lower_bounds, upper_bounds)
+            # Use starting_point (already clamped above)
             Optim.optimize(
                 objective_func,
                 lower_bounds,
                 upper_bounds,
-                clamped_point,
+                starting_point,
                 Optim.Fminbox(method),
                 opt_options
             )
@@ -198,6 +204,12 @@ function refine_critical_point(
 
         # Extract results
         refined_point = Optim.minimizer(result)
+
+        # Ensure result respects bounds (Fminbox + NelderMead may not strictly enforce)
+        if lower_bounds !== nothing && upper_bounds !== nothing
+            refined_point = clamp.(refined_point, lower_bounds, upper_bounds)
+        end
+
         value_refined = Optim.minimum(result)
 
         # Tier 1 Diagnostics: Extract fine-grained convergence info
