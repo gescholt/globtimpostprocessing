@@ -71,6 +71,7 @@ filter = ExperimentFilter(degree=sweep(4, 12))  # Degrees 4-12
 ```
 """
 sweep(min::T, max::T) where T = SweepRange{T}(min, max)
+sweep(r::AbstractRange) = SweepRange(first(r), last(r))
 
 # ============================================================================
 # Main Filter Struct
@@ -194,7 +195,7 @@ filter = ExperimentFilter(gn=fixed(8), domain=sweep(0.01, 0.5))
 exp_dirs = query_experiments(results_root, filter)
 ```
 """
-function query_experiments(results_root::String, filter::ExperimentFilter)::Vector{String}
+function query_experiments(results_root::Union{String, Nothing}, filter::ExperimentFilter)::Vector{String}
     exp_dirs = find_experiments(results_root)
     matching = String[]
 
@@ -229,7 +230,7 @@ if !isempty(skipped)
 end
 ```
 """
-function query_and_load(results_root::String, filter::ExperimentFilter)
+function query_and_load(results_root::Union{String, Nothing}, filter::ExperimentFilter)
     exp_dirs = query_experiments(results_root, filter)
     loaded = LV4DExperimentData[]
     failed = String[]

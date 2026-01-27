@@ -19,7 +19,7 @@ const TUI_RESET = "\e[0m"
 # ============================================================================
 
 """
-    lv4d(; results_root::String=find_results_root()) -> Union{DataFrame, NamedTuple, Nothing}
+    lv4d(; results_root::Union{String, Nothing}=nothing) -> Union{DataFrame, NamedTuple, Nothing}
 
 Interactive LV4D analysis with arrow-key menu navigation.
 
@@ -27,6 +27,9 @@ Launches an interactive TUI in the Julia REPL where you can:
 1. Select analysis type (sweep, quality, convergence, compare)
 2. Configure parameters through cascading menus
 3. Run analysis and get results back as a DataFrame
+
+When `results_root=nothing` (default), searches across all LV4D results directories
+(both `globtim_results/lotka_volterra_4d/` and `globtim/experiments/lv4d_2025/results/`).
 
 # Returns
 - For `sweep`: DataFrame with aggregated statistics
@@ -38,14 +41,17 @@ Launches an interactive TUI in the Julia REPL where you can:
 ```julia
 using GlobtimPostProcessing.LV4DAnalysis
 
-# Launch interactive mode
+# Launch interactive mode (searches all results directories)
 df = lv4d()
+
+# Use specific results root
+df = lv4d(results_root="globtim_results/lotka_volterra_4d")
 
 # Inspect results
 first(df, 5)
 ```
 """
-function lv4d(; results_root::String=find_results_root())
+function lv4d(; results_root::Union{String, Nothing}=nothing)
     println()
     println("$(TUI_BOLD)$(TUI_CYAN)LV4D INTERACTIVE ANALYSIS$(TUI_RESET)")
     println("$(TUI_DIM)─────────────────────────$(TUI_RESET)")
@@ -90,7 +96,7 @@ end
 """
 Detect available GN values from experiment directories.
 """
-function _tui_detect_gn_values(results_root::String)::Vector{Int}
+function _tui_detect_gn_values(results_root::Union{String, Nothing})::Vector{Int}
     experiments = find_experiments(results_root)
     gn_values = Set{Int}()
 
@@ -106,7 +112,7 @@ end
 """
 Detect available degree values from experiment directories.
 """
-function _tui_detect_degree_values(results_root::String; gn::Union{Int, Nothing}=nothing)::Vector{Int}
+function _tui_detect_degree_values(results_root::Union{String, Nothing}; gn::Union{Int, Nothing}=nothing)::Vector{Int}
     experiments = find_experiments(results_root)
     degrees = Set{Int}()
 
@@ -129,7 +135,7 @@ end
 """
 Detect available domain values from experiment directories.
 """
-function _tui_detect_domain_values(results_root::String; gn::Union{Int, Nothing}=nothing)::Vector{Float64}
+function _tui_detect_domain_values(results_root::Union{String, Nothing}; gn::Union{Int, Nothing}=nothing)::Vector{Float64}
     experiments = find_experiments(results_root)
     domains = Set{Float64}()
 
@@ -151,7 +157,7 @@ end
 # Menu Selection Helpers
 # ============================================================================
 
-function _tui_select_gn(results_root::String)::Union{Int, Nothing}
+function _tui_select_gn(results_root::Union{String, Nothing})::Union{Int, Nothing}
     gn_values = _tui_detect_gn_values(results_root)
 
     if isempty(gn_values)
@@ -172,7 +178,7 @@ function _tui_select_gn(results_root::String)::Union{Int, Nothing}
     return gn_values[choice]
 end
 
-function _tui_select_degree_range(results_root::String; gn::Union{Int, Nothing}=nothing)::Union{Tuple{Int, Int}, Nothing}
+function _tui_select_degree_range(results_root::Union{String, Nothing}; gn::Union{Int, Nothing}=nothing)::Union{Tuple{Int, Int}, Nothing}
     degrees = _tui_detect_degree_values(results_root; gn=gn)
 
     if isempty(degrees)
@@ -217,7 +223,7 @@ function _tui_select_degree_range(results_root::String; gn::Union{Int, Nothing}=
     return ranges[choice]
 end
 
-function _tui_select_domain_filter(results_root::String; gn::Union{Int, Nothing}=nothing)::Union{Float64, Nothing}
+function _tui_select_domain_filter(results_root::Union{String, Nothing}; gn::Union{Int, Nothing}=nothing)::Union{Float64, Nothing}
     domains = _tui_detect_domain_values(results_root; gn=gn)
 
     if isempty(domains)
@@ -275,11 +281,12 @@ function _tui_select_domain_filter(results_root::String; gn::Union{Int, Nothing}
     return values[choice]
 end
 
-function _tui_select_experiment(results_root::String)::Union{String, Nothing}
-    experiments = list_recent_experiments(results_root; limit=15)
+function _tui_select_experiment(results_root::Union{String, Nothing})::Union{String, Nothing}
+    experiments = list_recent_experiments(results_root; limit=50)
 
     if isempty(experiments)
-        println("$(TUI_YELLOW)No experiments found in: $results_root$(TUI_RESET)")
+        loc = results_root === nothing ? "any results directory" : results_root
+        println("$(TUI_YELLOW)No experiments found in: $loc$(TUI_RESET)")
         return nothing
     end
 
@@ -298,11 +305,12 @@ function _tui_select_experiment(results_root::String)::Union{String, Nothing}
     return experiments[choice]
 end
 
-function _tui_select_comparison_experiment(results_root::String)::Union{String, Nothing}
-    comparison_dirs = find_comparison_experiments(results_root; limit=10)
+function _tui_select_comparison_experiment(results_root::Union{String, Nothing})::Union{String, Nothing}
+    comparison_dirs = find_comparison_experiments(results_root; limit=50)
 
     if isempty(comparison_dirs)
-        println("$(TUI_YELLOW)No comparison experiments found in: $results_root$(TUI_RESET)")
+        loc = results_root === nothing ? "any results directory" : results_root
+        println("$(TUI_YELLOW)No comparison experiments found in: $loc$(TUI_RESET)")
         return nothing
     end
 
@@ -324,7 +332,7 @@ end
 # Analysis Execution
 # ============================================================================
 
-function _tui_run_analysis(analysis::Symbol, results_root::String)
+function _tui_run_analysis(analysis::Symbol, results_root::Union{String, Nothing})
     println()
 
     if analysis == :sweep
@@ -346,7 +354,7 @@ function _tui_run_analysis(analysis::Symbol, results_root::String)
     end
 end
 
-function _tui_run_sweep(results_root::String)
+function _tui_run_sweep(results_root::Union{String, Nothing})
     # Select GN
     gn = _tui_select_gn(results_root)
     gn === nothing && return nothing
@@ -381,7 +389,7 @@ function _tui_run_sweep(results_root::String)
     return analyze_sweep(results_root, filter)
 end
 
-function _tui_run_quality(results_root::String)
+function _tui_run_quality(results_root::Union{String, Nothing})
     exp_dir = _tui_select_experiment(results_root)
     exp_dir === nothing && return nothing
 
@@ -397,7 +405,7 @@ function _tui_run_quality(results_root::String)
     return nothing
 end
 
-function _tui_run_convergence(results_root::String)
+function _tui_run_convergence(results_root::Union{String, Nothing})
     # Select GN
     gn = _tui_select_gn(results_root)
     gn === nothing && return nothing
@@ -424,7 +432,7 @@ function _tui_run_convergence(results_root::String)
                               degree_max=degree_max, export_csv=export_csv)
 end
 
-function _tui_run_comparison(results_root::String)
+function _tui_run_comparison(results_root::Union{String, Nothing})
     comp_dir = _tui_select_comparison_experiment(results_root)
     comp_dir === nothing && return nothing
 
@@ -441,7 +449,7 @@ function _tui_run_comparison(results_root::String)
     return nothing
 end
 
-function _tui_run_subdivision(results_root::String)
+function _tui_run_subdivision(results_root::Union{String, Nothing})
     # Optional: Select GN filter
     use_gn_filter = _tui_ask_use_filter("Filter by GN?")
     gn = use_gn_filter ? _tui_select_gn(results_root) : nothing
@@ -482,7 +490,7 @@ end
 """
 Select a single domain value from available experiments.
 """
-function _tui_select_domain_value(results_root::String; gn::Union{Int, Nothing}=nothing)::Union{Float64, Nothing}
+function _tui_select_domain_value(results_root::Union{String, Nothing}; gn::Union{Int, Nothing}=nothing)::Union{Float64, Nothing}
     domains = _tui_detect_domain_values(results_root; gn=gn)
 
     if isempty(domains)
@@ -512,7 +520,7 @@ function _tui_select_export_csv()::Bool
     return choice == 2
 end
 
-function _tui_run_pending(results_root::String)
+function _tui_run_pending(results_root::Union{String, Nothing})
     println("$(TUI_CYAN)▶ Loading pipeline registry...$(TUI_RESET)")
 
     # Import Pipeline module
@@ -583,7 +591,7 @@ end
 # Coverage Analysis
 # ============================================================================
 
-function _tui_run_coverage(results_root::String)
+function _tui_run_coverage(results_root::Union{String, Nothing})
     # Step 1: Multi-select GN values
     gn_values = _tui_multi_select_gn(results_root)
     isempty(gn_values) && return nothing
@@ -645,11 +653,11 @@ function _tui_run_coverage(results_root::String)
 end
 
 """
-    _tui_multi_select_gn(results_root::String) -> Vector{Int}
+    _tui_multi_select_gn(results_root::Union{String, Nothing}) -> Vector{Int}
 
 Multi-select GN values from detected values using MultiSelectMenu.
 """
-function _tui_multi_select_gn(results_root::String)::Vector{Int}
+function _tui_multi_select_gn(results_root::Union{String, Nothing})::Vector{Int}
     gn_values = _tui_detect_gn_values(results_root)
 
     if isempty(gn_values)
@@ -675,11 +683,11 @@ function _tui_multi_select_gn(results_root::String)::Vector{Int}
 end
 
 """
-    _tui_multi_select_domains(results_root::String) -> Vector{Float64}
+    _tui_multi_select_domains(results_root::Union{String, Nothing}) -> Vector{Float64}
 
 Multi-select domain values from detected values using MultiSelectMenu.
 """
-function _tui_multi_select_domains(results_root::String)::Vector{Float64}
+function _tui_multi_select_domains(results_root::Union{String, Nothing})::Vector{Float64}
     domains = _tui_detect_domain_values(results_root)
 
     if isempty(domains)
@@ -798,7 +806,7 @@ end
 # ============================================================================
 
 """
-    analyze_lv4d(; results_root::String=find_results_root())
+    analyze_lv4d(; results_root::Union{String, Nothing}=nothing)
 
 Alias for `lv4d()` - Interactive LV4D analysis.
 """

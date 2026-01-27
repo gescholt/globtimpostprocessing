@@ -9,22 +9,22 @@ Computes convergence rate: error ∝ domain^α
 # ============================================================================
 
 """
-    analyze_convergence(results_root::String, filter::ExperimentFilter; export_csv::Bool=false)
+    analyze_convergence(results_root::Union{String, Nothing}, filter::ExperimentFilter; export_csv::Bool=false)
 
 Analyze convergence rate using ExperimentFilter for experiment selection.
 
 # Arguments
-- `results_root::String`: Path to LV4D results directory
+- `results_root::Union{String, Nothing}`: Path to LV4D results directory, or `nothing` to search all
 - `filter::ExperimentFilter`: Filter specification (should specify gn and degree range)
 - `export_csv::Bool=false`: Whether to export data for plotting
 
 # Example
 ```julia
 filter = ExperimentFilter(gn=fixed(8), degree=sweep(4, 12))
-analyze_convergence(results_root, filter; export_csv=true)
+analyze_convergence(nothing, filter; export_csv=true)
 ```
 """
-function analyze_convergence(results_root::String, filter::ExperimentFilter; export_csv::Bool=false)
+function analyze_convergence(results_root::Union{String, Nothing}, filter::ExperimentFilter; export_csv::Bool=false)
     # Extract gn and degree range from filter
     gn = filter.gn isa FixedValue ? filter.gn.value : 8
     degree_min = filter.degree isa SweepRange ? filter.degree.min :
@@ -37,32 +37,35 @@ function analyze_convergence(results_root::String, filter::ExperimentFilter; exp
 end
 
 """
-    analyze_convergence(results_root::String; gn::Int=8, degree_min::Int=4, degree_max::Int=10,
+    analyze_convergence(results_root::Union{String, Nothing}; gn::Int=8, degree_min::Int=4, degree_max::Int=10,
                        export_csv::Bool=false)
 
 Analyze convergence rate from domain sweep experiments.
 
 # Arguments
-- `results_root::String`: Path to LV4D results directory
+- `results_root::Union{String, Nothing}`: Path to LV4D results directory, or `nothing` to search all
 - `gn::Int=8`: Filter experiments by GN value
 - `degree_min::Int=4`: Minimum polynomial degree to include
 - `degree_max::Int=10`: Maximum polynomial degree to include
 - `export_csv::Bool=false`: Whether to export data for plotting
 
-# Output
-Prints summary table and computes log-log convergence rate per degree.
+# Output Structure
+1. Header explaining what we're computing
+2. PER-DEGREE SCALING table with rates and interpretation
+3. CONCLUSION with key finding
 """
-function analyze_convergence(results_root::String; gn::Int=8, degree_min::Int=4, degree_max::Int=10,
+function analyze_convergence(results_root::Union{String, Nothing}; gn::Int=8, degree_min::Int=4, degree_max::Int=10,
                             export_csv::Bool=false)
-    println("="^70)
-    println("LV4D Convergence Analysis (GN=$gn, degrees=$degree_min-$degree_max)")
-    println("="^70)
-    println("Collecting data from: $results_root")
+    # --- Header ---
+    println()
+    println("CONVERGENCE ANALYSIS (GN=$gn, degrees $degree_min-$degree_max)")
+    println("─" ^ 50)
+    println("Metric: recovery_error ∝ domain^α")
     println()
 
     # Collect data for all degrees in range
-    all_data = Dict{Int, Dict{Float64, Vector{Float64}}}()    # degree => domain => [recovery_errors...]
-    all_l2_data = Dict{Int, Dict{Float64, Vector{Float64}}}() # degree => domain => [L2_norms...]
+    all_data = Dict{Int, Dict{Float64, Vector{Float64}}}()
+    all_l2_data = Dict{Int, Dict{Float64, Vector{Float64}}}()
 
     for degree in degree_min:degree_max
         data, l2_data = _collect_convergence_data(results_root; gn=gn, degree=degree)
@@ -73,48 +76,28 @@ function analyze_convergence(results_root::String; gn::Int=8, degree_min::Int=4,
     end
 
     if isempty(all_data)
-        error("No data found matching GN=$gn, degrees ∈ [$degree_min, $degree_max]!")
+        println("No data found matching GN=$gn, degrees ∈ [$degree_min, $degree_max]")
+        return (slopes=Dict{Int,Float64}(), data=all_data, l2_data=all_l2_data)
     end
 
-    println("Found data for degrees: $(sort(collect(keys(all_data))))")
-    println()
-
-    # Print summary per degree
+    # Compute slopes for each degree
     all_slopes = Dict{Int, Float64}()
     for degree in sort(collect(keys(all_data)))
         data = all_data[degree]
-        l2_data = all_l2_data[degree]
-
-        n_domains = length(data)
-        n_experiments = sum(length(v) for v in values(data))
-
-        println("-"^70)
-        println("Degree $degree: $n_domains domains, $n_experiments experiments")
-        println("-"^70)
-
-        _print_convergence_summary(data, l2_data)
-
-        if n_domains >= 2
-            slope, _ = _compute_convergence_rate(data)
+        if length(data) >= 2
+            slope, _ = _compute_convergence_rate_silent(data)
             all_slopes[degree] = slope
         end
-        println()
     end
 
-    # Summary of convergence rates by degree
-    println("="^70)
-    println("CONVERGENCE RATE SUMMARY (recovery_error ∝ domain^α)")
-    println("="^70)
-    println()
-    @printf("  %6s  %10s\n", "Degree", "α (slope)")
-    println("  " * "-"^20)
-    for degree in sort(collect(keys(all_slopes)))
-        @printf("  %6d  %10.2f\n", degree, all_slopes[degree])
-    end
-    println()
+    # --- PER-DEGREE SCALING table ---
+    _print_convergence_table(all_slopes)
 
-    # Export combined data if requested
-    if export_csv
+    # --- CONCLUSION ---
+    _print_convergence_conclusion(all_slopes)
+
+    # Export combined data if requested (only when results_root is specified)
+    if export_csv && results_root !== nothing
         _export_convergence_analysis_csv(results_root, all_data, all_l2_data, gn)
     end
 
@@ -145,7 +128,7 @@ end
 # Helper Functions
 # ============================================================================
 
-function _collect_convergence_data(results_root::String; gn::Int, degree::Int)
+function _collect_convergence_data(results_root::Union{String, Nothing}; gn::Int, degree::Int)
     data = Dict{Float64, Vector{Float64}}()      # domain => [recovery_errors...]
     l2_data = Dict{Float64, Vector{Float64}}()   # domain => [L2_norms...]
 
@@ -153,7 +136,9 @@ function _collect_convergence_data(results_root::String; gn::Int, degree::Int)
     # We parse the degree range and check if our target degree is included
     pattern = Regex("lv4d_GN$(gn)_deg(\\d+)-(\\d+)_domain")
 
-    for dir in readdir(results_root, join=true)
+    # Get all experiment directories
+    exp_dirs = find_experiments(results_root)
+    for dir in exp_dirs
         basename_dir = basename(dir)
 
         m_deg = match(pattern, basename_dir)
@@ -260,6 +245,115 @@ function _compute_convergence_rate(data::Dict{Float64, Vector{Float64}})
     end
 
     return slope, intercept
+end
+
+"""
+    _compute_convergence_rate_silent(data)
+
+Compute convergence rate without printing.
+"""
+function _compute_convergence_rate_silent(data::Dict{Float64, Vector{Float64}})
+    domains = sort(collect(keys(data)))
+
+    mean_domains = Float64[]
+    mean_recovery = Float64[]
+
+    for d in domains
+        push!(mean_domains, d)
+        push!(mean_recovery, mean(data[d]))
+    end
+
+    log_d = log10.(mean_domains)
+    log_r = log10.(mean_recovery)
+
+    n = length(log_d)
+    slope = (n * sum(log_d .* log_r) - sum(log_d) * sum(log_r)) /
+            (n * sum(log_d.^2) - sum(log_d)^2)
+    intercept = (sum(log_r) - slope * sum(log_d)) / n
+
+    return slope, intercept
+end
+
+"""
+    _print_convergence_table(all_slopes)
+
+Print the PER-DEGREE SCALING table with interpretations.
+"""
+function _print_convergence_table(all_slopes::Dict{Int, Float64})
+    println("PER-DEGREE SCALING")
+
+    degrees = sort(collect(keys(all_slopes)))
+
+    # Build table columns
+    deg_col = degrees
+    rate_col = [@sprintf("%.2f", all_slopes[d]) for d in degrees]
+
+    # Interpret rates
+    interp_col = String[]
+    for d in degrees
+        α = all_slopes[d]
+        if α < 0.5
+            push!(interp_col, "Sub-linear (slow)")
+        elseif α < 1.1
+            push!(interp_col, "Linear convergence")
+        elseif α < 1.8
+            push!(interp_col, "Super-linear convergence")
+        else
+            push!(interp_col, "Quadratic convergence")
+        end
+    end
+
+    display_df = DataFrame(
+        Deg = deg_col,
+        "α (rate)" => rate_col,
+        Interpretation = interp_col
+    )
+
+    pretty_table(display_df;
+        header = ["Deg", "α (rate)", "Interpretation"],
+        alignment = [:r, :r, :l],
+        crop = :none,
+        tf = tf_unicode_rounded
+    )
+end
+
+"""
+    _print_convergence_conclusion(all_slopes)
+
+Print the CONCLUSION section.
+"""
+function _print_convergence_conclusion(all_slopes::Dict{Int, Float64})
+    println()
+    println("CONCLUSION")
+
+    if isempty(all_slopes)
+        println("Insufficient data to compute convergence rates.")
+        return
+    end
+
+    # Find best degree
+    best_deg = argmax(d -> all_slopes[d], collect(keys(all_slopes)))
+    best_rate = all_slopes[best_deg]
+
+    if length(all_slopes) > 1
+        degrees = sort(collect(keys(all_slopes)))
+        rates = [all_slopes[d] for d in degrees]
+        if all(diff(rates) .> 0)
+            println("Higher degree improves convergence rate. Degree $best_deg shows α=$(round(best_rate, digits=2))")
+        elseif all(diff(rates) .< 0)
+            println("Lower degree shows better convergence. Best: degree $(degrees[1]) with α=$(round(all_slopes[degrees[1]], digits=2))")
+        else
+            println("Best convergence at degree $best_deg (α=$(round(best_rate, digits=2)))")
+        end
+    else
+        println("Degree $best_deg: α=$(round(best_rate, digits=2))")
+    end
+
+    # Explain what the rate means
+    if best_rate > 1.0
+        factor = 2.0 ^ best_rate
+        @printf("(error halves when domain shrinks by ~%.1f×)\n", factor)
+    end
 end
 
 # ============================================================================

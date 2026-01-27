@@ -92,16 +92,24 @@ function load_comparison_data(path::String)::ComparisonData
 end
 
 """
-    find_comparison_experiments(results_root::String; limit::Int=15) -> Vector{String}
+    find_comparison_experiments(results_root::Union{String, Nothing}; limit::Int=15) -> Vector{String}
 
 Find comparison experiment directories in results root.
+When `results_root` is `nothing`, searches all known results directories.
 """
-function find_comparison_experiments(results_root::String; limit::Int=15)::Vector{String}
-    isdir(results_root) || return String[]
+function find_comparison_experiments(results_root::Union{String, Nothing}; limit::Int=15)::Vector{String}
+    # Get all roots if none specified
+    roots = results_root === nothing ? find_all_results_roots() : [results_root]
 
-    dirs = filter(isdir, readdir(results_root, join=true))
-    comparison_dirs = filter(d -> occursin("log_comparison", basename(d)), dirs)
-    sorted = sort(comparison_dirs, by=mtime, rev=true)
+    all_dirs = String[]
+    for root in roots
+        isdir(root) || continue
+        dirs = filter(isdir, readdir(root, join=true))
+        comparison_dirs = filter(d -> occursin("log_comparison", basename(d)), dirs)
+        append!(all_dirs, comparison_dirs)
+    end
+
+    sorted = sort(all_dirs, by=mtime, rev=true)
     return sorted[1:min(limit, length(sorted))]
 end
 
@@ -615,7 +623,7 @@ df = compare_single_vs_subdivision("/path/to/results"; GN=12, domain=0.08)
 ```
 """
 function compare_single_vs_subdivision(
-    results_root::String;
+    results_root::Union{String, Nothing};
     GN::Union{Int, Nothing}=nothing,
     degree::Union{Int, Nothing}=nothing,
     domain::Union{Float64, Nothing}=nothing,
@@ -626,7 +634,8 @@ function compare_single_vs_subdivision(
     println(io, "="^70)
     println(io, "SINGLE-DOMAIN VS SUBDIVISION COMPARISON")
     println(io, "="^70)
-    println(io, "Results: $results_root")
+    results_str = results_root === nothing ? "(all results directories)" : results_root
+    println(io, "Results: $results_str")
 
     # Load all experiments
     experiments = load_sweep_experiments(results_root)

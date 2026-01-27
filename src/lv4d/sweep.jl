@@ -9,26 +9,29 @@ Analyzes results from domain_degree_sweep.sh and identifies optimal configuratio
 # ============================================================================
 
 """
-    analyze_sweep(results_dir::String, filter::ExperimentFilter; kwargs...)
+    analyze_sweep(results_dir::Union{String, Nothing}, filter::ExperimentFilter; kwargs...)
 
 Analyze sweep results using ExperimentFilter for experiment selection.
 
 # Arguments
-- `results_dir::String`: Path to results directory
+- `results_dir::Union{String, Nothing}`: Path to results directory, or `nothing` to search all
 - `filter::ExperimentFilter`: Filter specification for experiment selection
 - `export_csv::Bool=false`: Whether to export data for plotting
 - `top_l2::Union{Int, Nothing}=nothing`: Show top N configurations by lowest L2 error
 
 # Example
 ```julia
-# All GN=8 experiments with degree 4-12
+# All GN=8 experiments with degree 4-12 (search all results directories)
 filter = ExperimentFilter(gn=fixed(8), degree=sweep(4, 12))
-analyze_sweep(results_root, filter)
+analyze_sweep(nothing, filter)
 ```
 """
-function analyze_sweep(results_dir::String, filter::ExperimentFilter;
+function analyze_sweep(results_dir::Union{String, Nothing}, filter::ExperimentFilter;
                        export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
-    isdir(results_dir) || error("Results directory not found: $results_dir")
+    # Validate directory if specified
+    if results_dir !== nothing
+        isdir(results_dir) || error("Results directory not found: $results_dir")
+    end
 
     # Use query interface to find matching experiments
     exp_dirs = query_experiments(results_dir, filter)
@@ -72,11 +75,13 @@ function analyze_sweep(results_dir::String, filter::ExperimentFilter;
         _print_top_experiments_by_l2(summary; limit=top_l2)
     end
 
-    # Save outputs silently
-    _save_sweep_outputs(results_dir, summary, df_sweep)
+    # Save outputs silently (only when results_dir is specified)
+    if results_dir !== nothing
+        _save_sweep_outputs(results_dir, summary, df_sweep)
+    end
 
-    # Export CSV for plotting
-    if export_csv
+    # Export CSV for plotting (only when results_dir is specified)
+    if export_csv && results_dir !== nothing
         _export_convergence_csv(results_dir, df_sweep)
     end
 
@@ -207,7 +212,7 @@ function _load_experiment_results(exp_dir::String)::Union{DataFrame, Nothing}
             row = DataFrame(
                 domain = params.domain,
                 degree = get(r, "degree", 0),
-                seed = something(params.seed, get(config, "seed", 0)),
+                seed = something(params.seed, get(config, "seed", nothing), 0),
                 GN = params.GN,
                 is_subdivision = params.is_subdivision,
                 L2_norm = Float64(l2_norm isa Number ? l2_norm : NaN),

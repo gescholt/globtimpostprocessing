@@ -49,12 +49,12 @@ end
 # ============================================================================
 
 """
-    analyze_coverage(results_root::String; kwargs...) -> CoverageReport
+    analyze_coverage(results_root::Union{String, Nothing}; kwargs...) -> CoverageReport
 
 Analyze experiment coverage by comparing expected vs actual experiments.
 
 # Arguments
-- `results_root::String`: Path to experiment results directory
+- `results_root::Union{String, Nothing}`: Path to experiment results directory, or `nothing` to search all
 
 # Keyword Arguments
 - `expected_gn::Vector{Int}`: Expected GN values (default: [8, 12, 16])
@@ -67,7 +67,7 @@ Analyze experiment coverage by comparing expected vs actual experiments.
 
 # Example
 ```julia
-report = analyze_coverage("globtim_results/lotka_volterra_4d";
+report = analyze_coverage(nothing;  # Search all results directories
     expected_gn = [8, 12, 16],
     expected_domains = [0.01, 0.05, 0.1],
     expected_degrees = 4:2:12,
@@ -76,7 +76,7 @@ report = analyze_coverage("globtim_results/lotka_volterra_4d";
 print_coverage_report(report)
 ```
 """
-function analyze_coverage(results_root::String;
+function analyze_coverage(results_root::Union{String, Nothing};
                           expected_gn::Vector{Int} = [8, 12, 16],
                           expected_domains::Vector{Float64},
                           expected_degrees::AbstractVector{Int} = 4:2:12,

@@ -343,7 +343,7 @@ Vector of `LV4DExperimentData` for all matching experiments.
 
 See also: [`load_sweep_experiments_with_report`](@ref) for detailed failure info.
 """
-function load_sweep_experiments(results_root::String;
+function load_sweep_experiments(results_root::Union{String, Nothing};
                                pattern::Union{String, Regex, Nothing}=nothing,
                                report_failures::Bool=false
                                )::Vector{LV4DExperimentData}
@@ -360,12 +360,12 @@ function load_sweep_experiments(results_root::String;
 end
 
 """
-    load_sweep_experiments_with_report(results_root::String; pattern=nothing) -> LoadResult
+    load_sweep_experiments_with_report(results_root::Union{String, Nothing}; pattern=nothing) -> LoadResult
 
 Load multiple experiments with detailed failure reporting.
 
 # Arguments
-- `results_root::String`: Directory containing experiment subdirectories
+- `results_root::Union{String, Nothing}`: Directory containing experiment subdirectories, or `nothing` to search all
 - `pattern::Union{String, Regex, Nothing}`: Optional filter pattern
 
 # Returns
@@ -376,7 +376,7 @@ Load multiple experiments with detailed failure reporting.
 
 # Example
 ```julia
-result = load_sweep_experiments_with_report(results_root)
+result = load_sweep_experiments_with_report(nothing)  # Search all
 println("Loaded: \$(length(result.loaded)), Failed: \$(length(result.failed))")
 if !isempty(result.failed)
     for (path, err) in result.errors
@@ -385,7 +385,7 @@ if !isempty(result.failed)
 end
 ```
 """
-function load_sweep_experiments_with_report(results_root::String;
+function load_sweep_experiments_with_report(results_root::Union{String, Nothing};
                                            pattern::Union{String, Regex, Nothing}=nothing
                                            )::LoadResult
     exp_dirs = find_experiments(results_root; pattern=pattern)
