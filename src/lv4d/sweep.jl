@@ -67,9 +67,6 @@ function analyze_sweep(results_dir::Union{String, Nothing}, filter::ExperimentFi
     # --- Section 2: Results Table ---
     _print_results_table(summary)
 
-    # --- Section 3: Interpretation ---
-    _print_interpretation(summary)
-
     # Print top N by L2 if requested
     if top_l2 !== nothing
         _print_top_experiments_by_l2(summary; limit=top_l2)
@@ -150,9 +147,6 @@ function analyze_sweep(results_dir::String; domain_max::Float64=0.0050, degree_m
 
     # --- Section 2: Results Table ---
     _print_results_table(summary)
-
-    # --- Section 3: Interpretation ---
-    _print_interpretation(summary)
 
     # Print top N by L2 if requested
     if top_l2 !== nothing
@@ -295,8 +289,8 @@ function _print_results_table(summary::DataFrame)
     # Check if GN column has only one unique value - if so, hide it
     show_gn = length(unique(summary.GN)) > 1
 
-    # Build display columns
-    domain_col = [@sprintf("%.4f", d) for d in summary.domain]
+    # Build display columns (use format_domain for very small values)
+    domain_col = [format_domain(d) for d in summary.domain]
     deg_col = summary.degree
     success_col = [@sprintf("%3.0f%%", r * 100) for r in summary.success_rate]
     rec_col = [isnan(r) ? "-" : @sprintf("%.1f%%", r * 100) for r in summary.mean_recovery]

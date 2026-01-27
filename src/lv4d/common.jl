@@ -229,31 +229,87 @@ function find_results_root()::String
 end
 
 """
-    find_experiments(results_root::String; pattern::Union{String, Regex, Nothing}=nothing) -> Vector{String}
+    find_all_results_roots() -> Vector{String}
 
-Find experiment directories in the results root, optionally filtered by pattern.
+Find all LV4D results directories (for merged experiment lists).
+
+Searches multiple locations including:
+- GLOBTIM_RESULTS_ROOT environment variable
+- globtim_results/lotka_volterra_4d (main results)
+- globtim/globtim_results/lotka_volterra_4d (local dev results)
 """
-function find_experiments(results_root::String;
-                         pattern::Union{String, Regex, Nothing}=nothing)::Vector{String}
-    isdir(results_root) || return String[]
+function find_all_results_roots()::Vector{String}
+    roots = String[]
 
-    dirs = filter(isdir, readdir(results_root, join=true))
-    dirs = filter(d -> startswith(basename(d), "lv4d_"), dirs)
-
-    if pattern !== nothing
-        regex = pattern isa Regex ? pattern : Regex(pattern)
-        dirs = filter(d -> occursin(regex, basename(d)), dirs)
+    # Check environment variable
+    results_root = get(ENV, "GLOBTIM_RESULTS_ROOT", nothing)
+    if results_root !== nothing && isdir(results_root)
+        lv4d_dir = joinpath(results_root, "lotka_volterra_4d")
+        isdir(lv4d_dir) && push!(roots, lv4d_dir)
     end
 
-    return sort(dirs, by=mtime, rev=true)  # Most recent first
+    # Try relative paths (from package location)
+    possible_roots = [
+        joinpath(dirname(dirname(dirname(@__DIR__))), "globtim_results", "lotka_volterra_4d"),
+        joinpath(dirname(dirname(dirname(@__DIR__))), "globtim", "globtim_results", "lotka_volterra_4d"),
+        expanduser("~/GlobalOptim/globtim_results/lotka_volterra_4d"),
+        expanduser("~/GlobalOptim/globtim/globtim_results/lotka_volterra_4d")
+    ]
+
+    for root in possible_roots
+        if isdir(root) && root ∉ roots
+            push!(roots, root)
+        end
+    end
+
+    return roots
 end
 
 """
-    list_recent_experiments(results_root::String; limit::Int=15) -> Vector{String}
+    find_experiments(results_root::Union{String, Nothing}=nothing; pattern::Union{String, Regex, Nothing}=nothing) -> Vector{String}
+
+Find experiment directories, optionally filtered by pattern.
+
+If `results_root` is not specified, searches all known results directories
+(including globtim_results/ and globtim/globtim_results/) and merges results.
+Duplicate experiment names (e.g., from symlinks) are deduplicated.
+"""
+function find_experiments(results_root::Union{String, Nothing}=nothing;
+                         pattern::Union{String, Regex, Nothing}=nothing)::Vector{String}
+    # Get all roots if none specified
+    roots = results_root === nothing ? find_all_results_roots() : [results_root]
+
+    all_dirs = String[]
+    seen_names = Set{String}()  # Avoid duplicates (symlinks point to same experiment)
+
+    for root in roots
+        isdir(root) || continue
+        for entry in readdir(root, join=true)
+            isdir(entry) || continue
+            startswith(basename(entry), "lv4d_") || continue
+            name = basename(entry)
+            name ∈ seen_names && continue
+            push!(seen_names, name)
+            push!(all_dirs, entry)
+        end
+    end
+
+    if pattern !== nothing
+        regex = pattern isa Regex ? pattern : Regex(pattern)
+        all_dirs = filter(d -> occursin(regex, basename(d)), all_dirs)
+    end
+
+    return sort(all_dirs, by=mtime, rev=true)  # Most recent first
+end
+
+"""
+    list_recent_experiments(results_root::Union{String, Nothing}=nothing; limit::Int=15) -> Vector{String}
 
 List recent experiment directories sorted by modification time.
+
+If `results_root` is not specified, searches all known results directories.
 """
-function list_recent_experiments(results_root::String; limit::Int=15)::Vector{String}
+function list_recent_experiments(results_root::Union{String, Nothing}=nothing; limit::Int=15)::Vector{String}
     experiments = find_experiments(results_root)
     return experiments[1:min(limit, length(experiments))]
 end
@@ -266,9 +322,13 @@ end
     format_domain(d::Real) -> String
 
 Format domain value with appropriate precision for display.
+Uses scientific notation for very small values (< 1e-4).
 """
 function format_domain(d::Real)::String
-    if d < 0.001
+    if d < 1e-4
+        # Use scientific notation for very small domains
+        return @sprintf("%8.0e", d)
+    elseif d < 0.001
         return @sprintf("%9.5f", d)
     elseif d < 0.01
         return @sprintf("%8.4f", d)
