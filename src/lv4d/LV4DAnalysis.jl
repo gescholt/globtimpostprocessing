@@ -13,8 +13,10 @@ Consolidates multiple analysis scripts into a single interface with subcommands:
 # Usage
 
 ```julia
-using GlobtimPostProcessing
 using GlobtimPostProcessing.LV4DAnalysis
+
+# Launch interactive TUI (arrow-key menus)
+lv4d()
 
 # Load and analyze a single experiment
 data = load_lv4d_experiment(experiment_dir)
@@ -23,9 +25,6 @@ analyze_quality(data; verbose=true)
 # Analyze a sweep campaign
 experiments = load_sweep_experiments(results_root)
 analyze_sweep(experiments)
-
-# Interactive mode
-run_interactive()
 ```
 
 Part of the GlobtimPostProcessing package - January 2026

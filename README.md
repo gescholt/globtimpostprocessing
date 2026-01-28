@@ -6,6 +6,15 @@ Local refinement engine for critical points computed by globtimcore. This packag
 
 > **Note**: For visualization/plotting, use the separate `globtimplots` package.
 
+## Contents
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [LV4D Analysis](#lv4d-analysis)
+- [Output Files](#output-files)
+- [Architecture](#architecture)
+- [API Reference](#api-reference)
+- [Development](#development)
+
 ## Features
 
 - **Critical Point Refinement**: Improve numerical accuracy of critical points using local optimization
@@ -121,6 +130,35 @@ stats = compute_statistics(result)
 # Load campaign (multiple experiments)
 campaign = load_campaign_results("path/to/campaign_dir")
 campaign_stats = analyze_campaign(campaign)
+```
+
+## LV4D Analysis
+
+Interactive analysis for Lotka-Volterra 4D parameter estimation experiments.
+
+### TUI Interface
+
+```julia
+using GlobtimPostProcessing.LV4DAnalysis
+
+# Launch interactive TUI with arrow-key menus
+lv4d()
+```
+
+### Programmatic Analysis
+
+```julia
+using GlobtimPostProcessing.LV4DAnalysis
+
+# Load and analyze experiments
+filter = ExperimentFilter(gn=fixed(8), degree=sweep(4, 12))
+analyze_sweep(nothing, filter)
+
+# Coverage analysis
+report = analyze_coverage(nothing;
+    expected_domains=[0.01, 0.05, 0.1],
+    expected_seeds=1:5)
+print_coverage_report(report)
 ```
 
 ## Output Files
