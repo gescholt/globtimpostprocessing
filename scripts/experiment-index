@@ -1,0 +1,391 @@
+#!/usr/bin/env julia
+"""
+Experiment Parameter Index CLI
+
+Track and query which experiments have been run for which parameter combinations.
+
+USAGE
+    experiment-index <command> [options]
+
+COMMANDS
+    scan                Build/refresh the parameter index
+    list-params         List all unique parameter combinations
+    has                 Check if specific parameters have been run
+    find                Find experiments matching criteria
+    coverage            Show parameter coverage matrix (GN × domain)
+    missing             Show missing parameter combinations for a target sweep
+
+EXAMPLES
+    experiment-index scan                    # Build index from globtim_results
+    experiment-index list-params             # Show all parameter combinations
+    experiment-index has --GN=16 --domain=0.08 --deg-range=4:12
+    experiment-index find --GN=16 --domain-range=0.05:0.2
+    experiment-index coverage                # Show GN × domain coverage
+    experiment-index missing --gn=8,12,16 --domains=0.001,0.01,0.08 --degrees=4:12
+
+OPTIONS
+    --results-dir DIR    Results directory (default: auto-detect)
+    --GN N               Filter by exact GN value
+    --domain D           Filter by exact domain value
+    --domain-range D1:D2 Filter by domain range
+    --deg-range D1:D2    Filter by degree range (e.g., 4:12)
+    --seed S             Filter by seed value
+    -h, --help           Show this help
+
+PE-01 Experiment Management - January 2026
+"""
+
+# Setup environment for globtimpostprocessing
+const SCRIPT_PATH = realpath(@__FILE__)
+const SCRIPT_DIR = dirname(SCRIPT_PATH)
+const POSTPROC_ROOT = dirname(SCRIPT_DIR)
+
+pushfirst!(LOAD_PATH, POSTPROC_ROOT)
+
+import Pkg
+Pkg.activate(POSTPROC_ROOT; io=devnull)
+
+using GlobtimPostProcessing
+using Printf
+
+# ============================================================================
+# Argument Parsing
+# ============================================================================
+
+const HELP_TEXT = """
+Experiment Parameter Index CLI
+
+Track and query which experiments have been run for which parameter combinations.
+
+USAGE
+    experiment-index <command> [options]
+
+COMMANDS
+    scan                Build/refresh the parameter index
+    list-params         List all unique parameter combinations
+    has                 Check if specific parameters have been run
+    find                Find experiments matching criteria
+    coverage            Show parameter coverage matrix (GN × domain)
+    missing             Show missing parameter combinations
+
+EXAMPLES
+    experiment-index scan
+    experiment-index list-params
+    experiment-index has --GN=16 --domain=0.08 --deg-range=4:12
+    experiment-index find --GN=16 --domain-range=0.05:0.2
+    experiment-index coverage
+    experiment-index missing --gn=8,12,16 --domains=0.001,0.01,0.08 --degrees=4:12
+
+OPTIONS
+    --results-dir DIR    Results directory (default: globtim_results/lotka_volterra_4d)
+    --GN N               Filter by exact GN value
+    --domain D           Filter by exact domain value
+    --domain-range D1:D2 Filter by domain range (inclusive)
+    --deg-range D1:D2    Filter by degree range (e.g., 4:12)
+    --seed S             Filter by seed value
+    --gn-values N1,N2    Target GN values for 'missing' command
+    --domains D1,D2      Target domains for 'missing' command
+    --degrees D1:D2      Target degree range for 'missing' command
+    -h, --help           Show this help
+"""
+
+function parse_args()
+    args = ARGS
+
+    config = Dict{Symbol, Any}(
+        :command => nothing,
+        :results_dir => nothing,
+        :GN => nothing,
+        :domain => nothing,
+        :domain_range => nothing,
+        :deg_range => nothing,
+        :seed => nothing,
+        :gn_values => nothing,
+        :domains => nothing,
+        :degrees => nothing,
+        :limit => 20
+    )
+
+    i = 1
+    while i <= length(args)
+        arg = args[i]
+
+        if arg == "--results-dir" && i < length(args)
+            i += 1
+            config[:results_dir] = args[i]
+        elseif startswith(arg, "--GN=")
+            config[:GN] = parse(Int, split(arg, "=")[2])
+        elseif arg == "--GN" && i < length(args)
+            i += 1
+            config[:GN] = parse(Int, args[i])
+        elseif startswith(arg, "--domain=")
+            config[:domain] = parse(Float64, split(arg, "=")[2])
+        elseif arg == "--domain" && i < length(args)
+            i += 1
+            config[:domain] = parse(Float64, args[i])
+        elseif startswith(arg, "--domain-range=")
+            parts = split(split(arg, "=")[2], ":")
+            config[:domain_range] = (parse(Float64, parts[1]), parse(Float64, parts[2]))
+        elseif startswith(arg, "--deg-range=")
+            parts = split(split(arg, "=")[2], ":")
+            config[:deg_range] = (parse(Int, parts[1]), parse(Int, parts[2]))
+        elseif startswith(arg, "--seed=")
+            seed_str = split(arg, "=")[2]
+            config[:seed] = seed_str == "random" ? "random" : parse(Int, seed_str)
+        elseif startswith(arg, "--gn-values=") || startswith(arg, "--gn=")
+            parts = split(split(arg, "=")[2], ",")
+            config[:gn_values] = [parse(Int, p) for p in parts]
+        elseif startswith(arg, "--domains=")
+            parts = split(split(arg, "=")[2], ",")
+            config[:domains] = [parse(Float64, p) for p in parts]
+        elseif startswith(arg, "--degrees=")
+            parts = split(split(arg, "=")[2], ":")
+            config[:degrees] = (parse(Int, parts[1]), parse(Int, parts[2]))
+        elseif startswith(arg, "--limit=")
+            config[:limit] = parse(Int, split(arg, "=")[2])
+        elseif arg == "-h" || arg == "--help"
+            println(HELP_TEXT)
+            exit(0)
+        elseif startswith(arg, "-")
+            println("Unknown option: $arg")
+            println()
+            println(HELP_TEXT)
+            exit(1)
+        elseif config[:command] === nothing
+            config[:command] = arg
+        end
+
+        i += 1
+    end
+
+    return config
+end
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+"""
+Find the default results root directory.
+"""
+function find_results_root()
+    # Check environment variable
+    if haskey(ENV, "GLOBTIM_RESULTS_ROOT")
+        return ENV["GLOBTIM_RESULTS_ROOT"]
+    end
+
+    # Search relative to script location
+    candidates = [
+        joinpath(dirname(POSTPROC_ROOT), "globtim_results", "lotka_volterra_4d"),
+        joinpath(dirname(dirname(POSTPROC_ROOT)), "globtim_results", "lotka_volterra_4d"),
+        joinpath(homedir(), "GlobalOptim", "globtim_results", "lotka_volterra_4d"),
+    ]
+
+    for c in candidates
+        if isdir(c)
+            return dirname(c)  # Return results root, not LV4D subdir
+        end
+    end
+
+    error("Could not find results directory. Set GLOBTIM_RESULTS_ROOT or use --results-dir")
+end
+
+# ============================================================================
+# Command Implementations
+# ============================================================================
+
+function cmd_scan(config)
+    results_root = something(config[:results_dir], find_results_root())
+
+    println("Scanning for experiments in: $results_root")
+    println()
+
+    index = build_parameter_index(results_root)
+
+    println("Found $(length(index.entries)) experiments")
+    println("Unique parameter combinations: $(length(index.by_hash))")
+    println()
+
+    coverage = get_parameter_coverage(index)
+    print_coverage_matrix(coverage)
+end
+
+function cmd_list_params(config)
+    results_root = something(config[:results_dir], find_results_root())
+    index = build_parameter_index(results_root)
+
+    params = list_unique_params(index)
+
+    println()
+    println("Unique Parameter Combinations ($(length(params)) total)")
+    println("="^70)
+
+    for p in params
+        domain_str = p.domain >= 0.01 ? @sprintf("%.3f", p.domain) : @sprintf("%.1e", p.domain)
+        println("  GN=$(p.GN)  deg=$(p.deg_min)-$(p.deg_max)  domain=$(domain_str)  ($(p.count) experiments)")
+    end
+end
+
+function cmd_has(config)
+    results_root = something(config[:results_dir], find_results_root())
+    index = build_parameter_index(results_root)
+
+    if config[:GN] === nothing || config[:domain] === nothing || config[:deg_range] === nothing
+        println("Error: --GN, --domain, and --deg-range are required for 'has' command")
+        println()
+        println("Usage: experiment-index has --GN=16 --domain=0.08 --deg-range=4:12")
+        exit(1)
+    end
+
+    deg_min, deg_max = config[:deg_range]
+
+    exists = has_experiment_with_params(index;
+        GN=config[:GN],
+        domain=config[:domain],
+        deg_min=deg_min,
+        deg_max=deg_max
+    )
+
+    if exists
+        # Get the actual experiments
+        experiments = get_experiments_for_params(index;
+            GN=config[:GN],
+            domain=config[:domain],
+            deg_min=deg_min,
+            deg_max=deg_max
+        )
+        println("YES - Found $(length(experiments)) experiment(s) matching:")
+        println("  GN=$(config[:GN]), domain=$(config[:domain]), deg=$(deg_min)-$(deg_max)")
+        println()
+        for exp in experiments
+            println("  - $(exp.name)")
+        end
+    else
+        println("NO - No experiments found matching:")
+        println("  GN=$(config[:GN]), domain=$(config[:domain]), deg=$(deg_min)-$(deg_max)")
+        exit(1)
+    end
+end
+
+function cmd_find(config)
+    results_root = something(config[:results_dir], find_results_root())
+    index = build_parameter_index(results_root)
+
+    # Build query kwargs
+    kwargs = Dict{Symbol, Any}()
+
+    if config[:GN] !== nothing
+        kwargs[:GN] = config[:GN]
+    end
+    if config[:domain] !== nothing
+        kwargs[:domain] = config[:domain]
+    end
+    if config[:domain_range] !== nothing
+        kwargs[:domain_range] = config[:domain_range]
+    end
+    if config[:deg_range] !== nothing
+        kwargs[:deg_min] = config[:deg_range][1]
+        kwargs[:deg_max] = config[:deg_range][2]
+    end
+    if config[:seed] !== nothing
+        kwargs[:seed] = config[:seed]
+    end
+
+    results = query_experiments(index; kwargs...)
+
+    print_query_results(results; limit=config[:limit])
+end
+
+function cmd_coverage(config)
+    results_root = something(config[:results_dir], find_results_root())
+    index = build_parameter_index(results_root)
+
+    coverage = get_parameter_coverage(index)
+    print_coverage_matrix(coverage)
+end
+
+function cmd_missing(config)
+    results_root = something(config[:results_dir], find_results_root())
+    index = build_parameter_index(results_root)
+
+    # Default target values if not specified
+    target_gns = something(config[:gn_values], [8, 12, 16, 20])
+    target_domains = something(config[:domains], [0.001, 0.01, 0.08, 0.15])
+    deg_range = something(config[:degrees], (4, 12))
+
+    # Generate all degree combinations (single degree and full range)
+    target_degrees = [(deg_range[1], deg_range[2])]  # Full range
+    for d in deg_range[1]:deg_range[2]
+        push!(target_degrees, (d, d))  # Single degree
+    end
+
+    missing = get_missing_params(index, target_gns, target_domains, target_degrees)
+
+    println()
+    println("Missing Parameter Combinations")
+    println("="^70)
+    println("Target GNs: $(join(target_gns, ", "))")
+    println("Target domains: $(join([@sprintf("%.3g", d) for d in target_domains], ", "))")
+    println("Target degrees: $(deg_range[1])-$(deg_range[2])")
+    println()
+
+    if isempty(missing)
+        println("All parameter combinations are covered!")
+    else
+        println("Missing $(length(missing)) combinations:")
+        println()
+
+        # Group by GN for readability
+        by_gn = Dict{Int, Vector}()
+        for m in missing
+            if !haskey(by_gn, m.GN)
+                by_gn[m.GN] = []
+            end
+            push!(by_gn[m.GN], m)
+        end
+
+        for gn in sort(collect(keys(by_gn)))
+            println("  GN=$gn:")
+            for m in by_gn[gn]
+                domain_str = m.domain >= 0.01 ? @sprintf("%.3f", m.domain) : @sprintf("%.1e", m.domain)
+                println("    - deg=$(m.deg_min)-$(m.deg_max), domain=$domain_str")
+            end
+        end
+    end
+end
+
+# ============================================================================
+# Main
+# ============================================================================
+
+function main()
+    config = parse_args()
+
+    if config[:command] === nothing
+        println(HELP_TEXT)
+        return
+    end
+
+    cmd = lowercase(config[:command])
+
+    if cmd == "scan"
+        cmd_scan(config)
+    elseif cmd == "list-params"
+        cmd_list_params(config)
+    elseif cmd == "has"
+        cmd_has(config)
+    elseif cmd == "find"
+        cmd_find(config)
+    elseif cmd == "coverage"
+        cmd_coverage(config)
+    elseif cmd == "missing"
+        cmd_missing(config)
+    else
+        println("Unknown command: $(config[:command])")
+        println()
+        println(HELP_TEXT)
+        exit(1)
+    end
+end
+
+main()
