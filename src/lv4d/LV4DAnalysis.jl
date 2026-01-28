@@ -76,7 +76,7 @@ export LV4DExperimentData, LV4DSweepData, LoadResult
 
 # Analysis functions
 export analyze_quality, analyze_sweep, get_quality_summary
-export analyze_convergence, analyze_gradient_thresholds
+export analyze_convergence, ConvergenceResult, analyze_gradient_thresholds
 export analyze_local_minima
 
 # Utilities

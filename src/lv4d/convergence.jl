@@ -5,6 +5,38 @@ Computes convergence rate: error ∝ domain^α
 """
 
 # ============================================================================
+# Result Type
+# ============================================================================
+
+"""
+Result of convergence analysis with concise REPL display.
+
+Fields:
+- `slopes`: Dict mapping degree → convergence rate α
+- `data`: Dict mapping degree → Dict(domain → Vector of recovery errors)
+- `l2_data`: Dict mapping degree → Dict(domain → Vector of L2 norms)
+"""
+struct ConvergenceResult
+    slopes::Dict{Int, Float64}
+    data::Dict{Int, Dict{Float64, Vector{Float64}}}
+    l2_data::Dict{Int, Dict{Float64, Vector{Float64}}}
+end
+
+function Base.show(io::IO, r::ConvergenceResult)
+    print(io, "ConvergenceResult(")
+    if isempty(r.slopes)
+        print(io, "no data")
+    else
+        print(io, length(r.slopes), " degrees: ")
+        for (i, (deg, α)) in enumerate(sort(collect(r.slopes)))
+            i > 1 && print(io, ", ")
+            print(io, "deg", deg, "→α=", round(α, digits=2))
+        end
+    end
+    print(io, ")")
+end
+
+# ============================================================================
 # Main Analysis Function
 # ============================================================================
 
@@ -52,7 +84,6 @@ Analyze convergence rate from domain sweep experiments.
 # Output Structure
 1. Header explaining what we're computing
 2. PER-DEGREE SCALING table with rates and interpretation
-3. CONCLUSION with key finding
 """
 function analyze_convergence(results_root::Union{String, Nothing}; gn::Int=8, degree_min::Int=4, degree_max::Int=10,
                             export_csv::Bool=false)
@@ -77,7 +108,7 @@ function analyze_convergence(results_root::Union{String, Nothing}; gn::Int=8, de
 
     if isempty(all_data)
         println("No data found matching GN=$gn, degrees ∈ [$degree_min, $degree_max]")
-        return (slopes=Dict{Int,Float64}(), data=all_data, l2_data=all_l2_data)
+        return ConvergenceResult(Dict{Int,Float64}(), all_data, all_l2_data)
     end
 
     # Compute slopes for each degree
@@ -93,15 +124,12 @@ function analyze_convergence(results_root::Union{String, Nothing}; gn::Int=8, de
     # --- PER-DEGREE SCALING table ---
     _print_convergence_table(all_slopes)
 
-    # --- CONCLUSION ---
-    _print_convergence_conclusion(all_slopes)
-
     # Export combined data if requested (only when results_root is specified)
     if export_csv && results_root !== nothing
         _export_convergence_analysis_csv(results_root, all_data, all_l2_data, gn)
     end
 
-    return (slopes=all_slopes, data=all_data, l2_data=all_l2_data)
+    return ConvergenceResult(all_slopes, all_data, all_l2_data)
 end
 
 """
@@ -304,9 +332,9 @@ function _print_convergence_table(all_slopes::Dict{Int, Float64})
     end
 
     display_df = DataFrame(
-        Deg = deg_col,
+        "Deg" => deg_col,
         "α (rate)" => rate_col,
-        Interpretation = interp_col
+        "Interpretation" => interp_col
     )
 
     pretty_table(display_df;
@@ -315,45 +343,6 @@ function _print_convergence_table(all_slopes::Dict{Int, Float64})
         crop = :none,
         tf = tf_unicode_rounded
     )
-end
-
-"""
-    _print_convergence_conclusion(all_slopes)
-
-Print the CONCLUSION section.
-"""
-function _print_convergence_conclusion(all_slopes::Dict{Int, Float64})
-    println()
-    println("CONCLUSION")
-
-    if isempty(all_slopes)
-        println("Insufficient data to compute convergence rates.")
-        return
-    end
-
-    # Find best degree
-    best_deg = argmax(d -> all_slopes[d], collect(keys(all_slopes)))
-    best_rate = all_slopes[best_deg]
-
-    if length(all_slopes) > 1
-        degrees = sort(collect(keys(all_slopes)))
-        rates = [all_slopes[d] for d in degrees]
-        if all(diff(rates) .> 0)
-            println("Higher degree improves convergence rate. Degree $best_deg shows α=$(round(best_rate, digits=2))")
-        elseif all(diff(rates) .< 0)
-            println("Lower degree shows better convergence. Best: degree $(degrees[1]) with α=$(round(all_slopes[degrees[1]], digits=2))")
-        else
-            println("Best convergence at degree $best_deg (α=$(round(best_rate, digits=2)))")
-        end
-    else
-        println("Degree $best_deg: α=$(round(best_rate, digits=2))")
-    end
-
-    # Explain what the rate means
-    if best_rate > 1.0
-        factor = 2.0 ^ best_rate
-        @printf("(error halves when domain shrinks by ~%.1f×)\n", factor)
-    end
 end
 
 # ============================================================================
