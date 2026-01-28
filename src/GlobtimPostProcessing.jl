@@ -124,12 +124,14 @@ export detect_valley, trace_valley, trace_valleys_from_critical_points
 export walk_newton_projection, walk_predictor_corrector
 
 # Experiment parameter index exports (January 2026)
-export ExperimentParams, ExperimentIndexEntry, ExperimentParameterIndexStore
-export extract_params_from_path, params_hash
-export build_parameter_index, has_experiment_with_params, query_experiments
-export get_experiments_for_params, get_parameter_coverage, ParameterCoverage
-export print_coverage_matrix, print_query_results, list_unique_params
-export get_missing_params
+# Note: ExperimentParameterIndex.jl was consolidated into Pipeline.PipelineRegistry.jl
+# These are now re-exported from the Pipeline module
+export ExperimentParams, ExperimentEntry, ParameterCoverage
+export extract_params_from_name, compute_params_hash, params_hash
+export has_experiment_with_params, get_experiments_by_params
+export get_experiments_for_params, get_parameter_coverage
+export print_coverage_matrix, print_query_results
+export get_unique_params, list_unique_params, get_missing_params
 
 # Experiment parameter index TUI
 export experiments  # Interactive TUI for parameter index
@@ -210,7 +212,12 @@ include("refinement/api.jl")              # High-level API
 # Valley walking (positive-dimensional minima tracing)
 include("ValleyWalking.jl")
 
+# Pipeline module (experiment discovery and orchestration - GC-08)
+# MUST be included before ExperimentParameterIndex.jl and ExperimentIndexTUI.jl which depend on it
+include("pipeline/Pipeline.jl")
+
 # Experiment parameter index (parameter extraction and querying - January 2026)
+# Note: Now a thin wrapper that re-exports from Pipeline.PipelineRegistry
 include("ExperimentParameterIndex.jl")
 include("ExperimentIndexTUI.jl")
 
@@ -232,9 +239,6 @@ using .UnifiedPipeline: degree_results, critical_points, has_critical_points, av
 
 # LV4D analysis module (unified LV4D post-processing - January 2026)
 include("lv4d/LV4DAnalysis.jl")
-
-# Pipeline module (experiment discovery and orchestration - GC-08)
-include("pipeline/Pipeline.jl")
 
 # NOTE: Plotting functionality has been moved to GlobtimPlots package
 # To create visualizations, use:
