@@ -58,6 +58,7 @@ include("PipelineOrchestrator.jl")
 
 # Export registry types
 export PipelineRegistry, ExperimentEntry, ExperimentStatus
+export DISCOVERED, ANALYZING, ANALYZED, FAILED  # ExperimentStatus enum values
 export ExperimentParams, ParameterCoverage
 
 # Export registry I/O functions
@@ -65,7 +66,7 @@ export load_pipeline_registry, save_pipeline_registry
 export default_registry_path, default_results_root
 
 # Export registry operations
-export add_experiment!, update_experiment_status!
+export add_experiment!, remove_experiment!, update_experiment_status!
 export get_pending_experiments, get_analyzed_experiments
 export experiment_exists, rebuild_indices!
 

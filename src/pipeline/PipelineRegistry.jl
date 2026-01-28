@@ -683,6 +683,44 @@ function add_experiment!(
 end
 
 """
+    remove_experiment!(registry, path; save=false) -> ExperimentEntry
+
+Remove an experiment from the registry and all indices.
+
+# Arguments
+- `registry`: PipelineRegistry to modify
+- `path`: Full path to experiment directory
+
+# Keyword Arguments
+- `save`: If true, save registry to disk after removal (default: false)
+
+# Returns
+- The removed ExperimentEntry
+
+# Throws
+- `KeyError` if experiment not found
+"""
+function remove_experiment!(
+    registry::PipelineRegistry,
+    path::String;
+    save::Bool=false
+)::ExperimentEntry
+    if !haskey(registry.experiments, path)
+        throw(KeyError("Experiment not found: $path"))
+    end
+
+    entry = registry.experiments[path]
+    _remove_from_indices!(registry, path, entry)
+    delete!(registry.experiments, path)
+
+    if save
+        save_pipeline_registry(registry)
+    end
+
+    return entry
+end
+
+"""
     update_experiment_status!(registry, path, status; analyzed_at=nothing)
 
 Update the status of an experiment in the registry.
