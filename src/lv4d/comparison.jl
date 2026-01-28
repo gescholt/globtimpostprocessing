@@ -562,14 +562,14 @@ function print_subdivision_comparison(df::DataFrame; io::IO=stdout, show_aggrega
             :subdiv_recovery => (x -> mean(filter(!isnan, x))) => :subdiv_rec_mean,
             :single_cps => mean => :single_cps_mean,
             :subdiv_cps => mean => :subdiv_cps_mean,
-            nrow => :n_seeds
+            nrow => :n_experiments
         )
         sort!(agg_df, [:domain, :degree])
 
         agg_display = DataFrame(
             degree = agg_df.degree,
             domain = [@sprintf("%.4f", d) for d in agg_df.domain],
-            n = agg_df.n_seeds,
+            n = agg_df.n_experiments,
             single_L2 = [@sprintf("%.2e", v) for v in agg_df.single_L2_mean],
             subdiv_L2 = [@sprintf("%.2e", v) for v in agg_df.subdiv_L2_mean],
             single_rec = [isnan(v) ? "-" : @sprintf("%.1f%%", v*100) for v in agg_df.single_rec_mean],

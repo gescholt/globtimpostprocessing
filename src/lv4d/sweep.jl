@@ -18,16 +18,21 @@ Analyze sweep results using ExperimentFilter for experiment selection.
 - `filter::ExperimentFilter`: Filter specification for experiment selection
 - `export_csv::Bool=false`: Whether to export data for plotting
 - `top_l2::Union{Int, Nothing}=nothing`: Show top N configurations by lowest L2 error
+- `show_header::Bool=true`: Whether to print the header (filter info, data summary)
 
 # Example
 ```julia
 # All GN=8 experiments with degree 4-12 (search all results directories)
 filter = ExperimentFilter(gn=fixed(8), degree=sweep(4, 12))
 analyze_sweep(nothing, filter)
+
+# Suppress header, only show results table
+analyze_sweep(nothing, filter; show_header=false)
 ```
 """
 function analyze_sweep(results_dir::Union{String, Nothing}, filter::ExperimentFilter;
-                       export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
+                       export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing,
+                       show_header::Bool=true)
     # Validate directory if specified
     if results_dir !== nothing
         isdir(results_dir) || error("Results directory not found: $results_dir")
@@ -62,7 +67,7 @@ function analyze_sweep(results_dir::Union{String, Nothing}, filter::ExperimentFi
     summary = _aggregate_results(df_sweep)
 
     # --- Section 1: Header ---
-    _print_filter_header(df_sweep, filter)
+    show_header && _print_filter_header(df_sweep, filter)
 
     # --- Section 2: Results Table ---
     _print_results_table(summary)
@@ -108,7 +113,8 @@ Summary DataFrame with aggregated statistics per (GN, domain, degree).
 3. INTERPRETATION - human-readable conclusions
 """
 function analyze_sweep(results_dir::String; domain_max::Float64=0.0050, degree_min::Int=4,
-                       degree_max::Int=10, export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing)
+                       degree_max::Int=10, export_csv::Bool=false, top_l2::Union{Int, Nothing}=nothing,
+                       show_header::Bool=true)
     isdir(results_dir) || error("Results directory not found: $results_dir")
 
     # Handle single experiment vs sweep directory
@@ -143,7 +149,7 @@ function analyze_sweep(results_dir::String; domain_max::Float64=0.0050, degree_m
     summary = _aggregate_results(df_sweep)
 
     # --- Section 1: Header ---
-    _print_sweep_header(df_sweep, domain_max, degree_min, degree_max)
+    show_header && _print_sweep_header(df_sweep, domain_max, degree_min, degree_max)
 
     # --- Section 2: Results Table ---
     _print_results_table(summary)
@@ -397,7 +403,7 @@ Print a summary line at the bottom showing key statistics.
 """
 function _print_summary_footer(summary::DataFrame)
     n_configs = nrow(summary)
-    n_experiments = sum(summary.n_seeds)
+    n_experiments = sum(summary.n_experiments)
 
     # Find best L2
     valid_l2 = filter(row -> !isnan(row.mean_L2), summary)
@@ -604,7 +610,7 @@ function _aggregate_results(df::DataFrame)::DataFrame
         :hessian_minima => mean => :mean_minima,
         :critical_points => mean => :mean_crit_pts,
         :computation_time => mean => :mean_time,
-        nrow => :n_seeds
+        nrow => :n_experiments
     )
     sort!(summary, [:GN, :domain, :degree])
     return summary
@@ -635,7 +641,7 @@ function _print_summary_table(summary::DataFrame)
 
         @printf("%4d %s %4d %s %s %s %s %s %4d%s\n",
                 row.GN, format_domain(row.domain), row.degree, l2_str, grad_str,
-                rec_str, success_str, crit_str, row.n_seeds, highlight)
+                rec_str, success_str, crit_str, row.n_experiments, highlight)
     end
     println()
     println("Highlights: *** = excellent (L2<0.1, ∇Valid>50%, Recov<5% in >80%)")
