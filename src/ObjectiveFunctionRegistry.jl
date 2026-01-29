@@ -15,7 +15,7 @@ Design Principles:
 - Type-safe: Validates all inputs before proceeding
 
 Author: GlobTim Team
-Created: October 2025 (Issue #TBD)
+Created: October 2025
 """
 module ObjectiveFunctionRegistry
 
@@ -48,13 +48,9 @@ function load_dynamical_systems_module(globtim_root::Union{String, Nothing}=noth
         if isnothing(globtim_root)
             # Try to find it by searching upwards from common experiment locations
             possible_paths = [
-                "../globtim",  # From globtimpostprocessing directory (ACTIVE)
+                "../globtim",  # From globtimpostprocessing directory
                 "../../globtim",  # From experiment subdirectory
                 joinpath(homedir(), "GlobalOptim", "globtim"),  # Absolute path
-                # Backward compatibility (archived name)
-                "../globtimcore",
-                "../../globtimcore",
-                joinpath(homedir(), "GlobalOptim", "globtimcore"),
             ]
 
             for path in possible_paths
