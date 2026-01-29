@@ -406,11 +406,10 @@ function prepare_subdivision_comparison_df(
                 continue
             end
 
-            # Filter to the specific degree if multiple exist
+            # Filter to the specific degree
             deg_rows = filter(r -> r.degree == degree, dr)
             if isempty(deg_rows)
-                # Fall back to all results if no exact degree match
-                deg_rows = dr
+                error("No results for degree $degree in experiment $(experiment_id(exp)). Available degrees: $(unique(dr.degree))")
             end
 
             # Extract metrics with proper handling of missing/NaN values

@@ -118,8 +118,7 @@ function load_raw_critical_points(
     dim_cols = filter(c -> occursin(r"^(dim|x|p)\d+$", String(c)), names(df))
 
     if isempty(dim_cols)
-        # Fall back to all numeric columns
-        dim_cols = names(df, Real)
+        error("No dimension columns found in CSV. Expected columns matching pattern ^(dim|x|p)\\d+\$ but found: $(names(df))")
     end
 
     # Convert to Vector{Vector{Float64}}

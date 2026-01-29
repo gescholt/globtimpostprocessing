@@ -253,12 +253,8 @@ Check if experiment has ground truth parameters (p_true).
 - `false` otherwise
 """
 function has_ground_truth(experiment_path::String)
-    try
-        config = load_experiment_config(experiment_path)
-        return haskey(config, "p_true") && !isnothing(config["p_true"])
-    catch
-        return false
-    end
+    config = load_experiment_config(experiment_path)
+    return haskey(config, "p_true") && !isnothing(config["p_true"])
 end
 
 # Export functions
