@@ -351,3 +351,91 @@ function print_comparison_table(
         crop = :none)
     println()
 end
+
+"""
+    RefinementDistanceResult
+
+Container for refinement distance metrics.
+
+# Fields
+- `distances::Vector{Float64}`: ||refined[i] - raw[i]|| for each converged point
+- `mean_distance::Float64`: Mean refinement distance
+- `max_distance::Float64`: Maximum refinement distance
+- `best_point_distance::Float64`: Distance for the best refined point
+- `relative_distances::Union{Vector{Float64}, Nothing}`: distances / domain_diameter (if domain_size provided)
+- `mean_relative::Union{Float64, Nothing}`: Mean relative distance
+- `best_point_relative::Union{Float64, Nothing}`: Relative distance for best point
+"""
+struct RefinementDistanceResult
+    distances::Vector{Float64}
+    mean_distance::Float64
+    max_distance::Float64
+    best_point_distance::Float64
+    relative_distances::Union{Vector{Float64}, Nothing}
+    mean_relative::Union{Float64, Nothing}
+    best_point_relative::Union{Float64, Nothing}
+end
+
+"""
+    compute_refinement_distances(result::RefinedExperimentResult; domain_size::Union{Float64, Nothing}=nothing)
+
+Compute spatial distances between raw and refined critical points.
+
+# Arguments
+- `result::RefinedExperimentResult`: Refinement results
+- `domain_size::Union{Float64, Nothing}`: Domain radius for relative distance calculation
+
+# Returns
+- `RefinementDistanceResult`: Distance metrics
+
+# Example
+```julia
+refined = refine_experiment_results(dir, objective, config)
+distances = compute_refinement_distances(refined; domain_size=0.0005)
+println("Best point moved: ", distances.best_point_distance)
+println("Relative to domain: ", distances.best_point_relative * 100, "%")
+```
+"""
+function compute_refinement_distances(
+    result::RefinedExperimentResult;
+    domain_size::Union{Float64, Nothing} = nothing
+)
+    if result.n_converged == 0
+        return RefinementDistanceResult(
+            Float64[], NaN, NaN, NaN, nothing, nothing, nothing
+        )
+    end
+
+    # Compute distances for each converged point
+    distances = Float64[]
+    converged_count = 0
+    for (i, converged) in enumerate(result.convergence_status)
+        if converged
+            converged_count += 1
+            raw_pt = result.raw_points[i]
+            refined_pt = result.refined_points[converged_count]
+            push!(distances, LinearAlgebra.norm(refined_pt - raw_pt))
+        end
+    end
+
+    mean_dist = Statistics.mean(distances)
+    max_dist = maximum(distances)
+    best_dist = distances[result.best_refined_idx]
+
+    # Relative distances (if domain_size provided)
+    if domain_size !== nothing
+        domain_diameter = 2 * domain_size
+        relative = distances ./ domain_diameter
+        mean_rel = mean_dist / domain_diameter
+        best_rel = best_dist / domain_diameter
+    else
+        relative = nothing
+        mean_rel = nothing
+        best_rel = nothing
+    end
+
+    return RefinementDistanceResult(
+        distances, mean_dist, max_dist, best_dist,
+        relative, mean_rel, best_rel
+    )
+end

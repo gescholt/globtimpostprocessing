@@ -101,6 +101,7 @@ export RefinedExperimentResult, RefinementResult
 export load_raw_critical_points, save_refined_results, RawCriticalPointsData
 export refine_critical_point, refine_critical_points_batch
 export print_refinement_summary, print_comparison_table
+export RefinementDistanceResult, compute_refinement_distances
 
 # Gradient validation exports
 export compute_gradient_norms, compute_gradient_norm
@@ -130,6 +131,19 @@ export load_subdivision_tree, analyze_subdivision_tree, SubdivisionTreeStats
 export tree_leaves_to_dataframe, tree_depth_summary
 export print_subdivision_tree_report
 export compare_subdivision_trees, print_tree_comparison_table
+
+# Enhanced analysis exports (moved from globtim - January 2026)
+# Statistical table types
+export StatisticalTable, RobustStatistics, ConditionNumberAnalysis, ValidationResults
+export HessianNormTable, ConditionNumberTable, ComprehensiveStatsTable
+# Statistical computation functions
+export compute_robust_statistics, compute_condition_number_analysis
+export perform_mathematical_validation, compute_type_specific_statistics
+# Table rendering functions
+export render_table, render_console_table, render_comparative_table
+# High-level analysis functions
+export display_statistical_table, export_analysis_tables
+export create_statistical_summary, quick_table_preview
 
 # Define types first
 """
@@ -216,6 +230,10 @@ include("ExperimentIndexTUI.jl")
 
 # Subdivision tree analysis (adaptive subdivision postprocessing - January 2026)
 include("SubdivisionTreeAnalysis.jl")
+
+# Enhanced analysis (moved from globtim - January 2026)
+# Statistical tables, condition number analysis, and mathematical validation
+include("EnhancedAnalysis.jl")
 
 # Unified pipeline module (type-aware experiment loading - January 2026)
 # MUST be included before LV4DAnalysis which depends on it
