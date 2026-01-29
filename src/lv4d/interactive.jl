@@ -61,37 +61,3 @@ function select_experiment(results_root::String=find_results_root(); limit::Int=
     return experiments[choice]
 end
 
-# ============================================================================
-# Deprecated: Interactive Mode
-# ============================================================================
-
-"""
-    run_interactive(; results_root::Union{String, Nothing}=nothing)
-
-DEPRECATED: Interactive mode has been removed from the CLI.
-
-For CLI usage, use subcommands directly:
-    analyze_lv4d sweep
-    analyze_lv4d quality <dir>
-    analyze_lv4d convergence
-
-For Julia REPL, call functions directly:
-    analyze_sweep(results_root)
-    analyze_quality(experiment_dir)
-    analyze_convergence(results_root; gn=8)
-"""
-function run_interactive(; results_root::Union{String, Nothing}=nothing)
-    println()
-    println("NOTE: Interactive mode has been deprecated.")
-    println()
-    println("For CLI usage, use subcommands directly:")
-    println("    analyze_lv4d sweep")
-    println("    analyze_lv4d quality <dir>")
-    println("    analyze_lv4d convergence")
-    println()
-    println("For Julia REPL, call functions directly:")
-    println("    analyze_sweep(\"$(something(results_root, find_results_root()))\")")
-    println("    analyze_quality(select_experiment())")
-    println("    analyze_convergence(gn=8)")
-    println()
-end

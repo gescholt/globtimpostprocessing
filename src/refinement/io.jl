@@ -1,7 +1,7 @@
 """
 Refinement I/O Utilities
 
-Provides functions to load raw critical points from globtimcore output
+Provides functions to load raw critical points from globtim output
 and save refined results to CSV/JSON files.
 
 Created: 2025-11-22 (Architecture cleanup)
@@ -28,13 +28,13 @@ end
 """
     load_raw_critical_points(experiment_dir::String; degree::Union{Int,Nothing}=nothing)
 
-Load raw critical points from globtimcore experiment output directory.
+Load raw critical points from globtim experiment output directory.
 
 Searches for `critical_points_raw_deg_X.csv` (new format) or falls back to
 `critical_points_deg_X.csv` (old format for backward compatibility).
 
 # Arguments
-- `experiment_dir::String`: Path to globtimcore output directory
+- `experiment_dir::String`: Path to globtim output directory
 - `degree::Union{Int,Nothing}`: Specific degree to load (default: highest degree found)
 
 # Returns

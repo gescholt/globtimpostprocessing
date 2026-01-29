@@ -105,7 +105,7 @@ export find_matched_subdivision_pairs, prepare_subdivision_comparison_df
 export print_subdivision_comparison
 
 # Interactive mode
-export run_interactive, select_experiment
+export select_experiment
 
 # TUI (interactive arrow-key menus)
 export lv4d, analyze_lv4d

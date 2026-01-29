@@ -4,7 +4,7 @@ Local refinement engine for critical points computed by globtimcore.
 
 ## Overview
 
-GlobtimPostProcessing.jl **refines critical point candidates** found by [Globtim.jl](https://gescholt.github.io/Globtim.jl/stable/) into verified, high-accuracy critical points.
+GlobtimPostProcessing.jl **refines critical point candidates** found by [Globtim.jl](https://git.mpi-cbg.de/globaloptim/globtimcore) into verified, high-accuracy critical points.
 
 !!! info "Why Refinement is Necessary"
     Polynomial approximation methods find critical point **candidates**, but these have limited numerical accuracy (~1e-3 to 1e-6). Local optimization refines these candidates to machine precision (~1e-12) and validates them by checking ||∇f(x*)|| ≈ 0.
@@ -115,7 +115,7 @@ save_plot(fig, "analysis.png")
 
 ## Related Packages
 
-- [Globtim.jl](https://gescholt.github.io/Globtim.jl/stable/) - Core optimization engine
+- [Globtim.jl](https://git.mpi-cbg.de/globaloptim/globtimcore) - Core optimization engine
 - [GlobtimPlots](https://git.mpi-cbg.de/globaloptim/globtimplots) - Visualization layer
 
 ## License

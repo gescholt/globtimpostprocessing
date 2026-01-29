@@ -2,9 +2,7 @@
     ResultsLoader.jl
 
 Handles loading experiment results from various formats (JSON, CSV, JLD2).
-Automatically discovers and parses globtimcore output structure.
-
-Includes fallback loading for truncated/corrupted JSON files using CSV data.
+Automatically discovers and parses globtim output structure.
 
 !!! note "Migration to Unified Pipeline"
     For new code, prefer using `load_experiment()` from `UnifiedPipeline`:
@@ -17,16 +15,12 @@ Includes fallback loading for truncated/corrupted JSON files using CSV data.
     `load_experiment()` returns type-specific data (e.g., `LV4DExperimentData`).
 """
 
-# Include CSV fallback loader
-include("CSVFallbackLoader.jl")
-using .CSVFallbackLoader: can_use_csv_fallback, load_experiment_from_csv_fallback
-
 """
     load_experiment_results(path::String) -> ExperimentResult
 
 Load experiment results from a file or directory.
 
-Automatically detects globtimcore output format and parses:
+Automatically detects globtim output format and parses:
 - JSON metadata files with `enabled_tracking` labels
 - Critical points DataFrames
 - Performance metrics
@@ -160,12 +154,11 @@ end
 """
     load_from_directory(dir_path::String) -> ExperimentResult
 
-Load experiment result from a directory containing globtimcore outputs.
+Load experiment result from a directory containing globtim outputs.
 
-Tries multiple loading strategies:
+Tries loading strategies:
 1. results_summary.json (primary format)
 2. experiment_result_*.json (alternative format)
-3. CSV fallback (for truncated/missing JSON)
 """
 function load_from_directory(dir_path::String)
     # Look for results_summary.json first (primary format)
@@ -193,19 +186,13 @@ function load_from_directory(dir_path::String)
         return load_from_experiment_result(dir_path, joinpath(dir_path, result_files[1]))
     end
 
-    # Final fallback: Try to load from CSV files if available
-    if can_use_csv_fallback(dir_path)
-        @info "Using CSV fallback loader for $dir_path"
-        return load_from_csv_fallback_wrapper(dir_path)
-    end
-
     error("No recognized result files found in $dir_path")
 end
 
 """
     load_from_results_summary(dir_path::String, results_file::String) -> ExperimentResult
 
-Load from results_summary.json format (primary globtimcore output).
+Load from results_summary.json format (primary globtim output).
 """
 function load_from_results_summary(dir_path::String, results_file::String)
     data = JSON.parsefile(results_file)
@@ -557,25 +544,5 @@ function load_from_file(file_path::String)
         performance_metrics,
         tolerance_validation,
         file_path
-    )
-end
-
-"""
-    load_from_csv_fallback_wrapper(dir_path::String) -> ExperimentResult
-
-Wrapper to convert CSV fallback loader output to ExperimentResult struct.
-"""
-function load_from_csv_fallback_wrapper(dir_path::String)
-    result_nt = load_experiment_from_csv_fallback(dir_path)
-
-    return ExperimentResult(
-        result_nt.experiment_id,
-        result_nt.metadata,
-        result_nt.enabled_tracking,
-        result_nt.tracking_capabilities,
-        result_nt.critical_points,
-        result_nt.performance_metrics,
-        result_nt.tolerance_validation,
-        result_nt.source_path
     )
 end

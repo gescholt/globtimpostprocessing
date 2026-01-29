@@ -24,7 +24,7 @@ Key functions:
 Issues:
 - globaloptim/globtimpostprocessing#9: Modularize and test experiment collection
 - globaloptim/globtimpostprocessing#10: Support hierarchical experiment structure
-- globaloptim/globtimcore#174: Hierarchical experiment output structure
+- globaloptim/globtim#174: Hierarchical experiment output structure
 """
 module ExperimentCollector
 

@@ -1,7 +1,7 @@
 """
 Refinement API
 
-High-level API functions for refining critical points from globtimcore experiments.
+High-level API functions for refining critical points from globtim experiments.
 
 Created: 2025-11-22 (Architecture cleanup)
 """
@@ -11,11 +11,11 @@ Created: 2025-11-22 (Architecture cleanup)
 """
     refine_experiment_results(experiment_dir, objective_func, config=RefinementConfig())
 
-Load raw critical points from globtimcore output directory and refine them
+Load raw critical points from globtim output directory and refine them
 using local optimization on the original objective function.
 
 # Arguments
-- `experiment_dir::String`: Path to globtimcore output (contains `critical_points_raw_deg_*.csv`)
+- `experiment_dir::String`: Path to globtim output (contains `critical_points_raw_deg_*.csv`)
 - `objective_func::Function`: Original objective function `f(p::Vector{Float64}) -> Float64`
 - `config::RefinementConfig`: Refinement configuration (default: gradient-free NelderMead)
 
@@ -186,7 +186,7 @@ This is a convenience wrapper that delegates to `refine_experiment_results()`.
 ```julia
 using Globtim, GlobtimPostProcessing
 
-# Run experiment (globtimcore)
+# Run experiment (globtim)
 raw = Globtim.run_standard_experiment(objective_func, domain_bounds, config)
 
 # Refine (globtimpostprocessing)

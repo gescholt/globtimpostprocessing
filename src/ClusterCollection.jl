@@ -2,7 +2,7 @@
 ClusterCollection Module - Phase 0 Implementation
 
 Provides functionality for collecting experiment results from HPC cluster.
-Moved from globtimcore to globtimpostprocessing as part of Phase 0 reorganization.
+Moved from globtim to globtimpostprocessing as part of Phase 0 reorganization.
 
 See: EXPERIMENT_COLLECTION_ANALYSIS.md Phase 0 implementation
 

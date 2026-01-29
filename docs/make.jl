@@ -4,13 +4,11 @@ using Documenter, GlobtimPostProcessing
 makedocs(
     sitename = "GlobtimPostProcessing.jl Documentation",
     modules = [GlobtimPostProcessing],
-    repo = "github.com/gescholt/GlobtimPostProcessing.jl",
+    repo = "git.mpi-cbg.de/globaloptim/globtimpostprocessing",
     format = Documenter.HTML(
-        repolink = "https://github.com/gescholt/GlobtimPostProcessing.jl",
-        canonical = "https://gescholt.github.io/GlobtimPostProcessing.jl/stable/",
-        edit_link = "main",
+        repolink = "https://git.mpi-cbg.de/globaloptim/globtimpostprocessing",
+        edit_link = "master",
         assets = String[],
-        analytics="G-22HWCKE0JK"
     ),
     pages = [
         "Home" => "index.md",
@@ -28,4 +26,5 @@ makedocs(
     checkdocs = :none
 )
 
-deploydocs(repo = "github.com/gescholt/GlobtimPostProcessing.jl.git")
+# deploydocs not used - GitLab repo
+# deploydocs(repo = "git.mpi-cbg.de/globaloptim/globtimpostprocessing.git")

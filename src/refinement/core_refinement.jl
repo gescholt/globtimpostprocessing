@@ -7,7 +7,7 @@ using Optim.jl to improve numerical accuracy from ~1e-10 to ~1e-16.
 Uses gradient-free optimization (NelderMead) by default for robustness with ODE-based
 objectives and noisy/stiff problems.
 
-Originally from globtimcore/src/CriticalPointRefinement.jl
+Originally from globtim/src/CriticalPointRefinement.jl
 Moved to globtimpostprocessing in 2025-11-22 (Architecture cleanup)
 
 Usage:
