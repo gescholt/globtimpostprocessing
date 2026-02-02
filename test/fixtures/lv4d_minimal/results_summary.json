@@ -1,0 +1,18 @@
+[
+    {
+        "degree": 4,
+        "success": true,
+        "L2_norm": 1.5e-3,
+        "condition_number": 1.2e6,
+        "critical_points": 5,
+        "gradient_valid_rate": 0.8,
+        "gradient_valid_count": 4,
+        "mean_gradient_norm": 1.2e-4,
+        "min_gradient_norm": 3.1e-6,
+        "recovery_error": 0.015,
+        "hessian_minima": 2,
+        "hessian_saddle": 2,
+        "hessian_degenerate": 1,
+        "computation_time": 5.2
+    }
+]

@@ -1,0 +1,59 @@
+# Julia
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+/Manifest.toml
+/.julia/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+/docs/build/
+/docs/site/
+
+# Temporary files
+*.tmp
+*.bak
+
+# Plots and outputs
+*.png
+*.pdf
+*.svg
+!docs/src/assets/*.png
+!docs/src/assets/*.svg
+
+# Data files (optional - uncomment if you don't want to track data)
+# *.csv
+# *.json
+# *.h5
+# *.jld2
+.glab-env
+
+# Claude Code and internal configs (not for public release)
+.claude/
+.claudemem
+.gitlab_config
+.gitlab-ci.yml
+
+# Test scripts in root (should be in test/ or examples/)
+/test_*.jl
+/interactive_*.jl
+
+# Phase documentation (move to docs/)
+PHASE*.md
+
+# Collected experimental data
+collected_experiments_*/
+
+# Experimental data (personal analysis, not package code)
+collected_experiments_*/
+docs/Manifest.toml

@@ -1,0 +1,282 @@
+#!/usr/bin/env julia
+"""
+Unified LV4D Post-Processing Tool
+
+Consolidates multiple analysis scripts into a single CLI with subcommands.
+
+Usage:
+    analyze_lv4d sweep [dir]              # Aggregate sweep analysis (most common)
+    analyze_lv4d quality <dir>            # Single experiment CP diagnostics
+    analyze_lv4d convergence [--gn N]     # Log-log convergence rate
+    analyze_lv4d compare [dir]            # Method comparison analysis
+
+Options:
+    --gn N              Filter by GN value (default: 8)
+    --degree-min D      Minimum degree (default: 4)
+    --degree-max D      Maximum degree (default: 10)
+    --domain-max D      Maximum domain size (default: 0.0050)
+    --export-csv        Export data for plotting
+    --top-l2 N          Show top N configurations by lowest L2 error
+
+Examples:
+    analyze_lv4d sweep                    # Analyze all sweep results
+    analyze_lv4d sweep --domain-max 0.002 # Filter by domain size
+    analyze_lv4d quality lv4d_GN8_deg8-8_dom0.001_seed42
+    analyze_lv4d convergence --gn 8 --degree-min 4 --degree-max 12
+
+PE-01 Experiment Analysis - January 2026
+"""
+
+# Setup environment for globtimpostprocessing
+# Use realpath to resolve symlinks - @__DIR__ returns symlink location, not target
+const SCRIPT_PATH = realpath(@__FILE__)
+const SCRIPT_DIR = dirname(SCRIPT_PATH)
+const POSTPROC_ROOT = dirname(SCRIPT_DIR)  # scripts/ -> globtimpostprocessing/
+
+# Add package root to LOAD_PATH BEFORE any imports
+pushfirst!(LOAD_PATH, POSTPROC_ROOT)
+
+import Pkg
+Pkg.activate(POSTPROC_ROOT; io=devnull)
+
+using GlobtimPostProcessing
+using GlobtimPostProcessing.LV4DAnalysis
+using JSON
+
+# ============================================================================
+# Argument Parsing
+# ============================================================================
+
+function parse_args()
+    args = ARGS
+
+    # Default values - simplified config
+    config = Dict{Symbol, Any}(
+        :command => nothing,
+        :path => nothing,
+        :gn => 8,
+        :degree_min => 4,
+        :degree_max => 10,
+        :domain_max => 0.0050,
+        :export_csv => false,
+        :top_l2 => nothing,
+        :metric => :best_dist_to_true
+    )
+
+    i = 1
+    while i <= length(args)
+        arg = args[i]
+
+        if arg == "--gn" && i < length(args)
+            i += 1
+            config[:gn] = parse(Int, args[i])
+        elseif arg == "--degree-min" && i < length(args)
+            i += 1
+            config[:degree_min] = parse(Int, args[i])
+        elseif arg == "--degree-max" && i < length(args)
+            i += 1
+            config[:degree_max] = parse(Int, args[i])
+        elseif arg == "--domain-max" && i < length(args)
+            i += 1
+            config[:domain_max] = parse(Float64, args[i])
+        elseif arg == "--export-csv"
+            config[:export_csv] = true
+        elseif arg == "--top-l2" && i < length(args)
+            i += 1
+            config[:top_l2] = parse(Int, args[i])
+        elseif arg == "--metric" && i < length(args)
+            i += 1
+            config[:metric] = Symbol(args[i])
+        elseif arg == "-h" || arg == "--help"
+            print_help()
+            exit(0)
+        elseif startswith(arg, "-")
+            println("Unknown option: $arg")
+            print_help()
+            exit(1)
+        elseif config[:command] === nothing
+            config[:command] = arg
+        elseif config[:path] === nothing
+            config[:path] = arg
+        end
+
+        i += 1
+    end
+
+    return config
+end
+
+const HELP_TEXT = """
+LV4D Post-Processing Tool
+
+Analyze results from LV4D parameter estimation experiments.
+
+NOTE: For faster startup and interactive exploration, use the Julia REPL TUI:
+    julia> using GlobtimPostProcessing.LV4DAnalysis
+    julia> lv4d()   # Arrow-key menu navigation
+
+USAGE
+    analyze_lv4d <command> [options]
+
+COMMANDS
+    sweep [dir]         Aggregate sweep analysis (most common)
+    quality <dir>       Single experiment critical point diagnostics
+    convergence         Log-log convergence rate by degree
+    compare [dir]       Method comparison (log vs standard)
+
+EXAMPLES
+    analyze_lv4d sweep                       # Analyze all sweep results
+    analyze_lv4d sweep --domain-max 0.002    # Filter small domains
+    analyze_lv4d quality lv4d_GN8_deg8-8_dom0.001_seed42
+    analyze_lv4d convergence --degree-max 12
+
+OPTIONS
+    --gn N           Filter by GN value (default: 8)
+    --degree-min D   Minimum degree (default: 4)
+    --degree-max D   Maximum degree (default: 10)
+    --domain-max D   Maximum domain size (default: 0.0050)
+    --top-l2 N       Show top N configs by L2 error
+    --export-csv     Export data for plotting
+    -h, --help       Show this help
+"""
+
+function print_help()
+    println(HELP_TEXT)
+end
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+function main()
+    config = parse_args()
+
+    # No command = show help
+    if config[:command] === nothing
+        print_help()
+        return
+    end
+
+    cmd = lowercase(config[:command])
+
+    if cmd == "sweep"
+        run_sweep(config)
+    elseif cmd == "quality"
+        run_quality(config)
+    elseif cmd == "convergence"
+        run_convergence(config)
+    elseif cmd == "compare"
+        run_compare(config)
+    else
+        println("Unknown command: $(config[:command])")
+        println()
+        print_help()
+        exit(1)
+    end
+end
+
+# ============================================================================
+# Command Implementations
+# ============================================================================
+
+function run_quality(config)
+    path = config[:path]
+    if path === nothing
+        println("Error: quality command requires an experiment directory")
+        println()
+        println("Usage: analyze_lv4d quality <experiment_dir>")
+        println("Example: analyze_lv4d quality lv4d_GN8_deg8-8_dom0.001_seed42")
+        exit(1)
+    end
+
+    if !isdir(path)
+        println("Directory not found: $path")
+        exit(1)
+    end
+
+    analyze_quality(path)
+end
+
+function run_sweep(config)
+    path = config[:path]
+    if path === nothing
+        path = find_results_root()
+    end
+
+    if !isdir(path)
+        println("Directory not found: $path")
+        exit(1)
+    end
+
+    analyze_sweep(path;
+        domain_max=config[:domain_max],
+        degree_min=config[:degree_min],
+        degree_max=config[:degree_max],
+        export_csv=config[:export_csv],
+        top_l2=config[:top_l2]
+    )
+end
+
+function run_convergence(config)
+    path = config[:path]
+    if path === nothing
+        path = find_results_root()
+    end
+
+    analyze_convergence(path;
+        gn=config[:gn],
+        degree_min=config[:degree_min],
+        degree_max=config[:degree_max],
+        export_csv=config[:export_csv]
+    )
+end
+
+function run_compare(config)
+    path = config[:path]
+    if path === nothing
+        # Interactive selection of comparison experiments
+        # Search in multiple potential locations
+        # find_results_root() = ~/GlobalOptim/globtim_results/lotka_volterra_4d
+        # We need ~/GlobalOptim to find globtim/local_results/
+        global_optim_root = dirname(dirname(find_results_root()))  # ~/GlobalOptim
+        results_roots = [
+            find_results_root(),  # globtim_results/lotka_volterra_4d
+            joinpath(global_optim_root, "local_results", "lotka_volterra_4d"),  # local_results/
+            joinpath(global_optim_root, "globtim", "local_results", "lotka_volterra_4d"),  # globtim/local_results/
+        ]
+
+        experiments = String[]
+        for root in results_roots
+            isdir(root) || continue
+            append!(experiments, find_comparison_experiments(root))
+        end
+
+        sort!(experiments, by=mtime, rev=true)
+        experiments = experiments[1:min(15, length(experiments))]
+
+        isempty(experiments) && error("No comparison experiments found")
+
+        # Display menu
+        println("\nSelect comparison experiment:")
+        for (i, exp) in enumerate(experiments)
+            name = basename(exp)
+            age = time() - mtime(exp)
+            age_str = format_age(age)
+            println("  $i) $name ($age_str ago)")
+        end
+
+        print("\nChoice [1-$(length(experiments))]: ")
+        choice_str = readline()
+        choice = tryparse(Int, choice_str)
+        (choice === nothing || choice < 1 || choice > length(experiments)) &&
+            error("Invalid selection")
+
+        path = experiments[choice]
+    end
+
+    data = load_comparison_data(path)
+    analyze_comparison(data; metric=config[:metric])
+end
+
+# Run main
+main()

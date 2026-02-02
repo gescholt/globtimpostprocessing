@@ -1,0 +1,26 @@
+{
+    "function": "Deuflhard_4d",
+    "dimension": 4,
+    "total_degrees": 2,
+    "degree_results": [
+        {
+            "construction_time_s": 1.894744873046875,
+            "l2_norm": 64.58087643992107,
+            "degree": 4,
+            "basis": "chebyshev",
+            "critical_points": 81,
+            "solving_time_s": 15.127527952194214
+        },
+        {
+            "construction_time_s": 0.22469496726989746,
+            "l2_norm": 26.328304616409827,
+            "degree": 6,
+            "basis": "chebyshev",
+            "critical_points": 289,
+            "solving_time_s": 2.9293930530548096
+        }
+    ],
+    "schema_version": "2.0.0",
+    "generated_at": "2025-11-24T13:25:11",
+    "generator_script": "globtimcore/test/fixtures/generate_postprocessing_fixtures.jl"
+}

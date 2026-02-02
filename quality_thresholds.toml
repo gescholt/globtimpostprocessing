@@ -1,0 +1,68 @@
+# Quality Thresholds Configuration
+#
+# This file defines configurable thresholds for quality diagnostics in
+# GlobtimPostProcessing (Issue #7, Phase 3).
+#
+# These thresholds replace hardcoded "made up" values with explicit,
+# documented, and adjustable quality criteria.
+
+[l2_norm_thresholds]
+# L2 norm quality thresholds by dimension
+# Lower values indicate better approximation quality
+#
+# These are exponential because higher dimensions naturally have larger errors
+dim_2 = 1.0e-3
+dim_3 = 1.0e-2
+dim_4 = 1.0e-1
+dim_5 = 5.0e-1
+dim_6 = 1.0
+default = 10.0  # Used for dimensions > 6
+
+[parameter_recovery]
+# Parameter recovery thresholds
+#
+# param_distance_threshold: Maximum distance to consider a parameter "recovered"
+#   (as fraction of domain size or absolute distance)
+param_distance_threshold = 0.01
+
+# trajectory_distance_threshold: Maximum trajectory distance for recovery
+trajectory_distance_threshold = 1.0e-3
+
+[convergence]
+# Convergence quality thresholds
+#
+# min_improvement_factor: Minimum improvement ratio between consecutive degrees
+#   L2_new <= L2_old * min_improvement_factor
+#   (1.0 = no improvement, 0.9 = 10% improvement required)
+min_improvement_factor = 0.95
+
+# stagnation_tolerance: Number of consecutive degrees without improvement
+#   before warning about stagnation
+stagnation_tolerance = 3
+
+# absolute_improvement_threshold: Absolute improvement threshold
+#   (ignore stagnation if L2 is already very small)
+absolute_improvement_threshold = 1.0e-6
+
+[objective_distribution]
+# Objective value distribution quality
+#
+# outlier_iqr_multiplier: IQR multiplier for outlier detection
+#   Values beyond Q1 - k*IQR or Q3 + k*IQR are considered outliers
+outlier_iqr_multiplier = 3.0
+
+# max_outlier_fraction: Maximum fraction of outliers before warning
+max_outlier_fraction = 0.1
+
+# min_points_for_distribution_check: Minimum critical points needed
+#   to check distribution quality
+min_points_for_distribution_check = 10
+
+[numerical_stability]
+# Numerical stability thresholds
+#
+# max_condition_number: Maximum acceptable condition number
+max_condition_number = 1.0e12
+
+# warn_condition_number: Condition number threshold for warnings
+warn_condition_number = 1.0e8
