@@ -40,7 +40,7 @@ config = ode_refinement_config()
 refined = refine_critical_point(deuflhard_4d_fixture, initial_point, config)
 ```
 """
-function deuflhard_4d_fixture(p::Vector{Float64})::Float64
+function deuflhard_4d_fixture(p::AbstractVector)
     return deuflhard_2d(p[1:2]) + deuflhard_2d(p[3:4])
 end
 
@@ -59,7 +59,7 @@ f(x, y) = (exp(x² + y²) - 3)² + (x + y - sin(3(x + y)))²
 - Multiple local minima in domain [-1.2, 1.2]²
 - Smooth and differentiable everywhere
 """
-function deuflhard_2d(xx::AbstractVector)::Float64
+function deuflhard_2d(xx::AbstractVector)
     term1 = (exp(xx[1]^2 + xx[2]^2) - 3)^2
     term2 = (xx[1] + xx[2] - sin(3 * (xx[1] + xx[2])))^2
     return term1 + term2

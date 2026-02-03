@@ -185,7 +185,7 @@ struct RefinedExperimentResult
 end
 
 """
-    save_refined_results(experiment_dir::String, result::RefinedExperimentResult, degree::Int, refinement_results::Vector{RefinementResult}; gradient_validation::Union{GradientValidationResult, Nothing}=nothing)
+    save_refined_results(experiment_dir::String, result::RefinedExperimentResult, degree::Int, refinement_results::Vector{RefinementResult}; gradient_validation, raw_gradient_norms)
 
 Save refined critical points and comparison data to experiment directory.
 
@@ -199,7 +199,8 @@ Save refined critical points and comparison data to experiment directory.
 - `result::RefinedExperimentResult`: Refinement results
 - `degree::Int`: Polynomial degree
 - `refinement_results::Vector{RefinementResult}`: Detailed per-point refinement results (for Tier 1 diagnostics)
-- `gradient_validation::Union{GradientValidationResult, Nothing}=nothing`: Optional gradient validation results
+- `gradient_validation::Union{GradientValidationResult, Nothing}=nothing`: Optional refined gradient validation results
+- `raw_gradient_norms::Union{Vector{Float64}, Nothing}=nothing`: Optional ||∇f(x_raw)|| for each raw point
 
 # Examples
 ```julia
@@ -207,7 +208,9 @@ save_refined_results(experiment_dir, result, 12, refinement_results)
 
 # With gradient validation
 gradient_result = validate_critical_points(refined_points, objective_func)
-save_refined_results(experiment_dir, result, 12, refinement_results; gradient_validation=gradient_result)
+raw_norms = compute_gradient_norms(raw_points, objective_func)
+save_refined_results(experiment_dir, result, 12, refinement_results;
+                     gradient_validation=gradient_result, raw_gradient_norms=raw_norms)
 ```
 """
 function save_refined_results(
@@ -215,7 +218,8 @@ function save_refined_results(
     result::RefinedExperimentResult,
     degree::Int,
     refinement_results::Vector{RefinementResult};
-    gradient_validation::Union{GradientValidationResult, Nothing} = nothing
+    gradient_validation::Union{GradientValidationResult, Nothing} = nothing,
+    raw_gradient_norms::Union{Vector{Float64}, Nothing} = nothing
 )
     # 1. Save refined critical points CSV
     refined_csv_path = joinpath(experiment_dir, "critical_points_refined_deg_$degree.csv")
@@ -292,7 +296,12 @@ function save_refined_results(
     comparison_df[!, :iter_limit] = [r.iteration_limit_reached for r in refinement_results]
     comparison_df[!, :convergence_reason] = [String(r.convergence_reason) for r in refinement_results]
 
-    # Add gradient validation columns if provided
+    # Add raw gradient norms — ||∇f(x_raw)|| for each raw point
+    if raw_gradient_norms !== nothing
+        comparison_df[!, :raw_gradient_norm] = raw_gradient_norms
+    end
+
+    # Add refined gradient validation columns if provided
     # Gradient validation only covers converged points, so expand to n_raw
     if gradient_validation !== nothing
         gradient_norms = fill(Inf, result.n_raw)
@@ -341,7 +350,34 @@ function save_refined_results(
         "points_timed_out" => result.n_timeout
     )
 
-    # Gradient validation statistics (if provided)
+    # Raw gradient norm statistics — how close are raw critical points to true critical points of f?
+    raw_gradient_stats = if raw_gradient_norms !== nothing
+        finite_norms = filter(isfinite, raw_gradient_norms)
+        if !isempty(finite_norms)
+            sorted = sort(finite_norms)
+            Dict(
+                "n_points" => length(raw_gradient_norms),
+                "n_finite" => length(finite_norms),
+                "min_norm" => minimum(sorted),
+                "median_norm" => sorted[div(length(sorted) + 1, 2)],
+                "mean_norm" => Statistics.mean(sorted),
+                "max_norm" => maximum(sorted)
+            )
+        else
+            Dict(
+                "n_points" => length(raw_gradient_norms),
+                "n_finite" => 0,
+                "min_norm" => nothing,
+                "median_norm" => nothing,
+                "mean_norm" => nothing,
+                "max_norm" => nothing
+            )
+        end
+    else
+        nothing
+    end
+
+    # Refined gradient validation statistics (if provided)
     gradient_stats = if gradient_validation !== nothing
         Dict(
             "n_valid" => gradient_validation.n_valid,
@@ -373,6 +409,7 @@ function save_refined_results(
         "call_counts" => call_counts,
         "timing" => timing,
         # Gradient validation
+        "raw_gradient_validation" => raw_gradient_stats,
         "gradient_validation" => gradient_stats,
         "config" => Dict(
             "method" => string(typeof(result.refinement_config.method)),

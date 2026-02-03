@@ -523,4 +523,181 @@ using Optim  # Need Optim for type checks
     end
 end
 
-println("✅ Phase 1, Phase 2 Tier 1, and Phase 3 Box-Constrained refinement tests passed!")
+using LinearAlgebra
+using Statistics
+using CSV
+using DataFrames
+
+# Load the Deuflhard 4D fixture objective
+fixtures_dir = joinpath(@__DIR__, "fixtures")
+include(joinpath(fixtures_dir, "test_functions.jl"))
+
+@testset "Raw Critical Point Gradient Validation" begin
+    @testset "compute_gradient_norms on simple functions" begin
+        # Quadratic: f(x) = (x1-1)^2 + (x2-2)^2
+        # True critical point: [1, 2], gradient = 0 there
+        f_quad(x) = (x[1] - 1.0)^2 + (x[2] - 2.0)^2
+
+        # Exact critical point should have ~zero gradient norm
+        norms = compute_gradient_norms([[1.0, 2.0]], f_quad)
+        @test length(norms) == 1
+        @test norms[1] < 1e-12
+
+        # Points away from critical point should have nonzero gradient
+        norms = compute_gradient_norms([[1.0, 2.0], [1.1, 2.1], [0.0, 0.0]], f_quad)
+        @test norms[1] < 1e-12
+        @test norms[2] > 0.1
+        @test norms[3] > 1.0
+    end
+
+    @testset "compute_gradient_norms with FiniteDiff" begin
+        f_quad(x) = (x[1] - 1.0)^2 + (x[2] - 2.0)^2
+
+        norms = compute_gradient_norms([[1.0, 2.0]], f_quad; gradient_method=:finitediff)
+        @test length(norms) == 1
+        @test norms[1] < 1e-6  # FiniteDiff less precise than ForwardDiff
+    end
+
+    @testset "Raw gradient norms on Deuflhard 4D fixture (degree 6)" begin
+        # Load raw critical points from fixture CSV
+        csv_path = joinpath(fixtures_dir, "critical_points_raw_deg_6.csv")
+        df = CSV.read(csv_path, DataFrame)
+        @test nrow(df) == 289
+
+        # Extract points as Vector{Vector{Float64}}
+        points = [Vector{Float64}([row.p1, row.p2, row.p3, row.p4]) for row in eachrow(df)]
+        @test length(points) == 289
+
+        # Compute gradient norms of the ORIGINAL objective at raw critical points
+        norms = compute_gradient_norms(points, deuflhard_4d_fixture)
+
+        # All gradient computations should succeed (Deuflhard is smooth)
+        @test all(isfinite, norms)
+
+        # Statistics should be computable
+        @test minimum(norms) >= 0.0
+        @test mean(norms) >= minimum(norms)
+        @test maximum(norms) >= mean(norms)
+
+        # At least some raw critical points should be near true critical points of f
+        # (the polynomial approximation at degree 6 should produce some good approximations)
+        n_small = count(n -> n < 1.0, norms)
+        @test n_small > 0  # At least some points have gradient norm < 1
+
+        # Print statistics for diagnostic visibility
+        sorted_norms = sort(norms)
+        println("Raw ||∇f|| stats (Deuflhard 4D, deg 6, $(length(norms)) points):")
+        println("  min=$(round(sorted_norms[1], sigdigits=3)), " *
+                "median=$(round(sorted_norms[div(length(sorted_norms)+1, 2)], sigdigits=3)), " *
+                "mean=$(round(mean(sorted_norms), sigdigits=3)), " *
+                "max=$(round(sorted_norms[end], sigdigits=3))")
+        println("  < 0.1: $(count(n -> n < 0.1, norms)), " *
+                "< 1.0: $(count(n -> n < 1.0, norms)), " *
+                "< 10.0: $(count(n -> n < 10.0, norms))")
+    end
+
+    @testset "Raw gradient norms on Deuflhard 4D fixture (degree 4)" begin
+        csv_path = joinpath(fixtures_dir, "critical_points_raw_deg_4.csv")
+        df = CSV.read(csv_path, DataFrame)
+        @test nrow(df) == 81
+
+        points = [Vector{Float64}([row.p1, row.p2, row.p3, row.p4]) for row in eachrow(df)]
+
+        norms = compute_gradient_norms(points, deuflhard_4d_fixture)
+        @test all(isfinite, norms)
+
+        # Degree 4 is a coarser approximation, but should still have some reasonable points
+        n_small = count(n -> n < 10.0, norms)
+        @test n_small > 0
+
+        sorted_norms = sort(norms)
+        println("Raw ||∇f|| stats (Deuflhard 4D, deg 4, $(length(norms)) points):")
+        println("  min=$(round(sorted_norms[1], sigdigits=3)), " *
+                "median=$(round(sorted_norms[div(length(sorted_norms)+1, 2)], sigdigits=3)), " *
+                "mean=$(round(mean(sorted_norms), sigdigits=3)), " *
+                "max=$(round(sorted_norms[end], sigdigits=3))")
+        println("  < 0.1: $(count(n -> n < 0.1, norms)), " *
+                "< 1.0: $(count(n -> n < 1.0, norms)), " *
+                "< 10.0: $(count(n -> n < 10.0, norms))")
+    end
+
+    @testset "Degree 6 vs Degree 4: both find near-critical points" begin
+        # Both polynomial degrees should find points near true critical points of f
+        # (minimum gradient norms near machine epsilon)
+        csv4 = CSV.read(joinpath(fixtures_dir, "critical_points_raw_deg_4.csv"), DataFrame)
+        csv6 = CSV.read(joinpath(fixtures_dir, "critical_points_raw_deg_6.csv"), DataFrame)
+
+        pts4 = [Vector{Float64}([r.p1, r.p2, r.p3, r.p4]) for r in eachrow(csv4)]
+        pts6 = [Vector{Float64}([r.p1, r.p2, r.p3, r.p4]) for r in eachrow(csv6)]
+
+        norms4 = compute_gradient_norms(pts4, deuflhard_4d_fixture)
+        norms6 = compute_gradient_norms(pts6, deuflhard_4d_fixture)
+
+        # Both degrees should find at least one point very close to a true critical point
+        # (gradient norm near machine epsilon)
+        @test minimum(norms4) < 1e-10
+        @test minimum(norms6) < 1e-10
+
+        # Degree 6 should have more raw points (higher degree → more critical points of p)
+        @test length(norms6) > length(norms4)
+
+        println("Best raw ||∇f||: deg 4 = $(round(minimum(norms4), sigdigits=3)), " *
+                "deg 6 = $(round(minimum(norms6), sigdigits=3))")
+    end
+
+    @testset "print_refinement_summary with raw gradient norms" begin
+        # Verify the updated print_refinement_summary accepts raw_gradient_norms
+        # Create a minimal RefinedExperimentResult for testing
+        f_quad(x) = sum(x.^2)
+        raw_pts = [[0.1, 0.2], [0.3, 0.4]]
+        config = RefinementConfig()
+
+        result = RefinedExperimentResult(
+            raw_pts,                    # raw_points
+            [[0.01, 0.02]],             # refined_points
+            [f_quad(p) for p in raw_pts], # raw_values
+            [f_quad([0.01, 0.02])],     # refined_values
+            [0.04],                     # improvements
+            [true, false],              # convergence_status
+            [10, 5],                    # iterations
+            2,                          # n_raw
+            1,                          # n_converged
+            1,                          # n_failed
+            0,                          # n_timeout
+            0.04,                       # mean_improvement
+            0.04,                       # max_improvement
+            1,                          # best_raw_idx
+            1,                          # best_refined_idx
+            f_quad(raw_pts[1]),          # best_raw_value
+            f_quad([0.01, 0.02]),        # best_refined_value
+            tempdir(),                  # output_dir
+            6,                          # degree
+            0.1,                        # total_time
+            config                      # refinement_config
+        )
+
+        raw_norms = compute_gradient_norms(raw_pts, f_quad)
+        @test length(raw_norms) == 2
+        @test all(isfinite, raw_norms)
+
+        # Should print without errors
+        pipe = Pipe()
+        redirect_stdout(pipe) do
+            print_refinement_summary(result, nothing, raw_norms)
+        end
+        close(pipe.in)
+        output = read(pipe.out, String)
+        @test occursin("Raw ||∇f||", output)
+
+        # Also test with raw_gradient_norms=nothing (backward compatibility)
+        pipe2 = Pipe()
+        redirect_stdout(pipe2) do
+            print_refinement_summary(result, nothing)
+        end
+        close(pipe2.in)
+        output2 = read(pipe2.out, String)
+        @test !occursin("Raw ||∇f||", output2)
+    end
+end
+
+println("✅ Phase 1, Phase 2 Tier 1, Phase 3 Box-Constrained, and Raw Gradient Validation tests passed!")

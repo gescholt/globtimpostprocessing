@@ -148,7 +148,13 @@ function refine_experiment_results(
         config                   # refinement_config
     )
 
-    # 7. Gradient validation (if we have refined points)
+    # 7a. Raw gradient validation — check ||∇f(x_raw)|| at raw critical points
+    raw_gradient_norms = compute_gradient_norms(
+        raw_data.points, objective_func;
+        gradient_method=config.gradient_method
+    )
+
+    # 7b. Refined gradient validation (if we have refined points)
     gradient_validation = if n_converged > 0
         validate_critical_points(refined_points, objective_func;
                                 tolerance=config.gradient_tolerance,
@@ -159,10 +165,11 @@ function refine_experiment_results(
 
     # 8. Save results (with Tier 1 diagnostics and gradient validation)
     save_refined_results(experiment_dir, result, raw_data.degree, refinement_results;
-                        gradient_validation=gradient_validation)
+                        gradient_validation=gradient_validation,
+                        raw_gradient_norms=raw_gradient_norms)
 
     # 9. Print formatted summary
-    print_refinement_summary(result, gradient_validation)
+    print_refinement_summary(result, gradient_validation, raw_gradient_norms)
 
     return result
 end
@@ -211,13 +218,17 @@ function refine_critical_points(
 end
 
 """
-    print_refinement_summary(result, gradient_validation)
+    print_refinement_summary(result, gradient_validation, raw_gradient_norms)
 
-Print a compact refinement summary (3 lines).
+Print a compact refinement summary.
+
+Reports convergence stats, objective improvement, raw gradient norms (how close
+raw critical points are to actual critical points of f), and refined gradient validation.
 """
 function print_refinement_summary(
     result::RefinedExperimentResult,
-    gradient_validation::Union{GradientValidationResult, Nothing}
+    gradient_validation::Union{GradientValidationResult, Nothing},
+    raw_gradient_norms::Union{Vector{Float64}, Nothing} = nothing
 )
     # Line 1: Convergence
     conv_rate = round(100 * result.n_converged / result.n_raw, digits=1)
@@ -230,25 +241,40 @@ function print_refinement_summary(
                 result.best_raw_value, result.best_refined_value, improvement)
     end
 
-    # Line 3: Gradient validation (if available)
+    # Line 3: Raw gradient norms — how close are raw critical points to true critical points of f?
+    if raw_gradient_norms !== nothing
+        finite_norms = filter(isfinite, raw_gradient_norms)
+        if !isempty(finite_norms)
+            sorted = sort(finite_norms)
+            med = sorted[div(length(sorted) + 1, 2)]
+            @printf("Raw ||∇f||: min=%.2e, median=%.2e, mean=%.2e, max=%.2e (%d/%d finite)\n",
+                    minimum(sorted), med, Statistics.mean(sorted), maximum(sorted),
+                    length(finite_norms), length(raw_gradient_norms))
+        else
+            println("Raw ||∇f||: all gradient computations failed")
+        end
+    end
+
+    # Line 4: Refined gradient validation (if available)
     if gradient_validation !== nothing
         n_total = length(gradient_validation.norms)
         grad_rate = round(100 * gradient_validation.n_valid / n_total, digits=1)
         mean_norm = isnan(gradient_validation.mean_norm) ? 0.0 : gradient_validation.mean_norm
-        @printf("Gradient validation: %d/%d valid (%.1f%%), mean ||∇f||=%.2e\n",
+        @printf("Refined ||∇f||: %d/%d valid (%.1f%%), mean=%.2e\n",
                 gradient_validation.n_valid, n_total, grad_rate, mean_norm)
     end
     println()
 end
 
 """
-    print_comparison_table(result, gradient_validation; n_show=10, sort_by=:refined_value)
+    print_comparison_table(result, gradient_validation; raw_gradient_norms, n_show=10, sort_by=:refined_value)
 
 Print a comparison table of raw vs refined critical points using PrettyTables.
 
 # Arguments
 - `result::RefinedExperimentResult`: Refinement results
-- `gradient_validation::Union{GradientValidationResult, Nothing}`: Optional gradient validation
+- `gradient_validation::Union{GradientValidationResult, Nothing}`: Optional refined gradient validation
+- `raw_gradient_norms::Union{Vector{Float64}, Nothing}`: Optional raw gradient norms ||∇f(x_raw)||
 - `n_show::Int = 10`: Number of points to display (use `Inf` for all)
 - `sort_by::Symbol = :refined_value`: Sort by `:raw_value`, `:refined_value`, `:improvement`, or `:index`
 
@@ -264,6 +290,7 @@ print_comparison_table(result; n_show=Inf, sort_by=:improvement)
 function print_comparison_table(
     result::RefinedExperimentResult,
     gradient_validation::Union{GradientValidationResult, Nothing} = nothing;
+    raw_gradient_norms::Union{Vector{Float64}, Nothing} = nothing,
     n_show::Union{Int, Float64} = 10,
     sort_by::Symbol = :refined_value
 )
@@ -307,45 +334,70 @@ function print_comparison_table(
         @sprintf("%.3e", x)
     end
 
-    # Build data matrix (Idx, Raw Val, Ref Val, Improv, [||∇f||])
-    has_gradients = gradient_validation !== nothing
-    n_cols = has_gradients ? 5 : 4
+    # Determine columns: Idx, Raw Val, ||∇f|| raw, Ref Val, Improv, [||∇f|| ref]
+    has_raw_grads = raw_gradient_norms !== nothing
+    has_ref_grads = gradient_validation !== nothing
+
+    n_cols = 4  # Idx, Raw Val, Ref Val, Improv
+    if has_raw_grads
+        n_cols += 1
+    end
+    if has_ref_grads
+        n_cols += 1
+    end
     data = Matrix{Any}(undef, n_display, n_cols)
 
     for (row, i) in enumerate(indices)
-        data[row, 1] = i  # Index
-        data[row, 2] = format_sci_short(result.raw_values[i])
+        col = 1
+        data[row, col] = i  # Index
+        col += 1
+        data[row, col] = format_sci_short(result.raw_values[i])
+        col += 1
+
+        # Raw gradient norm (one per raw point, always available if provided)
+        if has_raw_grads
+            data[row, col] = format_sci_short(raw_gradient_norms[i])
+            col += 1
+        end
 
         if result.convergence_status[i]
             converged_idx = sum(result.convergence_status[1:i])
-            data[row, 3] = format_sci_short(result.refined_values[converged_idx])
-            data[row, 4] = format_sci_short(result.improvements[converged_idx])
-            if has_gradients
-                data[row, 5] = format_sci_short(gradient_validation.norms[converged_idx])
+            data[row, col] = format_sci_short(result.refined_values[converged_idx])
+            col += 1
+            data[row, col] = format_sci_short(result.improvements[converged_idx])
+            col += 1
+            if has_ref_grads
+                data[row, col] = format_sci_short(gradient_validation.norms[converged_idx])
             end
         else
-            data[row, 3] = "N/A"
-            data[row, 4] = "N/A"
-            if has_gradients
-                data[row, 5] = "N/A"
+            data[row, col] = "N/A"  # Ref Val
+            col += 1
+            data[row, col] = "N/A"  # Improv
+            col += 1
+            if has_ref_grads
+                data[row, col] = "N/A"
             end
         end
     end
 
-    header = has_gradients ?
-        ["Idx", "Raw Val", "Ref Val", "Improv", "||∇f||"] :
-        ["Idx", "Raw Val", "Ref Val", "Improv"]
+    # Build header and alignment dynamically
+    header_vec = ["Idx", "Raw Val"]
+    if has_raw_grads
+        push!(header_vec, "||∇f|| raw")
+    end
+    push!(header_vec, "Ref Val", "Improv")
+    if has_ref_grads
+        push!(header_vec, "||∇f|| ref")
+    end
 
-    alignment = has_gradients ?
-        [:r, :r, :r, :r, :r] :
-        [:r, :r, :r, :r]
+    alignment = fill(:r, n_cols)
 
     println()
     println(cr_bold(cr_cyan("Raw vs Refined (showing $n_display of $(result.n_raw))")))
     println()
 
     pretty_table(data,
-        header = header,
+        header = header_vec,
         alignment = alignment,
         tf = tf_unicode_rounded,
         crop = :none)
