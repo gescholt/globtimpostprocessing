@@ -253,6 +253,10 @@ Check if experiment has ground truth parameters (p_true).
 - `false` otherwise
 """
 function has_ground_truth(experiment_path::String)
+    config_file = joinpath(experiment_path, "experiment_config.json")
+    if !isfile(config_file)
+        return false
+    end
     config = load_experiment_config(experiment_path)
     return haskey(config, "p_true") && !isnothing(config["p_true"])
 end
