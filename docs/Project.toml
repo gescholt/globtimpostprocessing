@@ -3,7 +3,7 @@ Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 GlobtimPostProcessing = "b470b6bb-4443-493e-998d-c7c5e1aa9116"
 
 [sources]
-GlobtimPostProcessing = {path = "/Users/ghscholt/GlobalOptim/globtimpostprocessing"}
+GlobtimPostProcessing = {path = "../"}
 
 [compat]
 Documenter = "1"
