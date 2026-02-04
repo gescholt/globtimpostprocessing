@@ -85,6 +85,11 @@ using GlobtimPostProcessing
         include("test_refinement_phase1.jl")
     end
 
+    # Run Capture Analysis tests (known CP capture rates, no Globtim dependency)
+    @testset "Capture Analysis" begin
+        include("test_capture_analysis.jl")
+    end
+
     # Run Integration tests with Real Fixtures (uses real globtimcore data)
     @testset "Integration: Real Fixtures" begin
         include("test_integration_real_fixtures.jl")
