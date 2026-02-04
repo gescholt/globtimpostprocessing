@@ -9,7 +9,7 @@ Created: 2025-11-22 (Architecture cleanup)
 # Note: Colors are handled via PrettyTables Crayons in print_refinement_summary()
 
 """
-    refine_experiment_results(experiment_dir, objective_func, config=RefinementConfig())
+    refine_experiment_results(experiment_dir, objective_func, config=RefinementConfig(); degree=nothing)
 
 Load raw critical points from globtim output directory and refine them
 using local optimization on the original objective function.
@@ -18,6 +18,9 @@ using local optimization on the original objective function.
 - `experiment_dir::String`: Path to globtim output (contains `critical_points_raw_deg_*.csv`)
 - `objective_func::Function`: Original objective function `f(p::Vector{Float64}) -> Float64`
 - `config::RefinementConfig`: Refinement configuration (default: gradient-free NelderMead)
+
+# Keyword Arguments
+- `degree::Union{Int,Nothing}=nothing`: Specific polynomial degree to load. Defaults to highest degree found.
 
 # Returns
 - `RefinedExperimentResult`: Refined points + comparison with raw points
@@ -31,17 +34,18 @@ using local optimization on the original objective function.
 ```julia
 using GlobtimPostProcessing
 
-# Load and refine with default config
+# Load and refine with default config (highest degree)
 refined = refine_experiment_results(
     "../globtim_results/lv4d_exp_20251122_143022",
     objective_func
 )
 
-# Use ODE-specific config
+# Refine a specific degree
 refined = refine_experiment_results(
     "../globtim_results/lv4d_exp_20251122_143022",
     objective_func,
-    ode_refinement_config()
+    ode_refinement_config();
+    degree=8
 )
 
 # Access results
@@ -55,7 +59,7 @@ println("Best estimate: ", best_params)
 ```
 
 # Notes
-- Automatically finds highest degree CSV if multiple degrees present
+- Automatically finds highest degree CSV if multiple degrees present (unless `degree` specified)
 - Falls back to old filename format (`critical_points_deg_X.csv`) for compatibility
 - Progress messages show refinement status for each point
 - Failed refinements are tracked but excluded from refined_points
@@ -64,10 +68,11 @@ println("Best estimate: ", best_params)
 function refine_experiment_results(
     experiment_dir::String,
     objective_func::Function,
-    config::RefinementConfig = RefinementConfig()
+    config::RefinementConfig = RefinementConfig();
+    degree::Union{Int,Nothing} = nothing
 )
     # 1. Load raw critical points from CSV
-    raw_data = load_raw_critical_points(experiment_dir)
+    raw_data = load_raw_critical_points(experiment_dir; degree=degree)
 
     # 2. Refine using batch processor
     start_time = time()
