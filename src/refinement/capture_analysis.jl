@@ -575,3 +575,421 @@ function build_known_cps_from_2d_product(
 
     return KnownCriticalPoints(points_4d, values_4d, types_4d, lower_bounds, upper_bounds)
 end
+
+"""
+    build_known_cps_from_refinement(
+        objective::Function,
+        raw_points::Vector{Vector{Float64}},
+        lower_bounds::Vector{Float64},
+        upper_bounds::Vector{Float64};
+        gradient_method::Symbol = :finitediff,
+        tol::Float64 = 1e-8,
+        max_iterations::Int = 100,
+        hessian_tol::Float64 = 1e-6,
+        dedup_fraction::Float64 = 0.01,
+    ) -> KnownCriticalPoints
+
+Build a reference set of known critical points by refining raw polynomial critical
+points to true critical points of `f` using Newton's method on `∇f = 0`.
+
+This is the primary method for constructing `KnownCriticalPoints` when analytically
+known critical points are not available (e.g., ODE-based objectives). It finds
+critical points of **all types** (minima, maxima, saddle points), unlike Nelder-Mead
+refinement which only finds minima.
+
+# Workflow
+1. Refine each raw point via Newton's method on `∇f = 0` → `CriticalPointRefinementResult`
+2. Keep only converged results
+3. Deduplicate: points within `dedup_fraction × domain_diameter` are treated as the
+   same critical point; the one with lowest ||∇f|| is kept
+4. Classify each unique point via Hessian eigenvalues
+5. Return `KnownCriticalPoints`
+
+# Arguments
+- `objective::Function`: Objective function f(x) -> Float64
+- `raw_points::Vector{Vector{Float64}}`: Raw polynomial CPs (typically from the highest degree)
+- `lower_bounds::Vector{Float64}`: Domain lower bounds
+- `upper_bounds::Vector{Float64}`: Domain upper bounds
+
+# Keyword Arguments
+- `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff` for ODE compatibility)
+- `tol::Float64`: Newton convergence tolerance on ||∇f(x)|| (default: 1e-8)
+- `max_iterations::Int`: Maximum Newton iterations per point (default: 100)
+- `hessian_tol::Float64`: Eigenvalue tolerance for CP classification (default: 1e-6)
+- `dedup_fraction::Float64`: Fraction of domain diameter for deduplication (default: 0.01 = 1%)
+
+# Returns
+- `KnownCriticalPoints`: Unique critical points with values, types, and domain diameter.
+
+# Example
+```julia
+# For an ODE-based objective (no analytically known CPs)
+raw_cps = degree_results[end].critical_points  # from highest degree
+known = build_known_cps_from_refinement(
+    objective, raw_cps, LB, UB;
+    gradient_method = :finitediff,
+)
+# Now use for capture analysis at every degree
+cr = compute_capture_analysis(known, degree_results[4].critical_points)
+```
+"""
+function build_known_cps_from_refinement(
+    objective::Function,
+    raw_points::Vector{Vector{Float64}},
+    lower_bounds::Vector{Float64},
+    upper_bounds::Vector{Float64};
+    gradient_method::Symbol = :finitediff,
+    tol::Float64 = 1e-8,
+    max_iterations::Int = 100,
+    hessian_tol::Float64 = 1e-6,
+    dedup_fraction::Float64 = 0.01,
+)::KnownCriticalPoints
+    isempty(raw_points) && error("raw_points must be non-empty")
+    length(lower_bounds) == length(upper_bounds) || error(
+        "lower_bounds ($(length(lower_bounds))D) and upper_bounds ($(length(upper_bounds))D) must have same dimension")
+    n = length(lower_bounds)
+    for (i, pt) in enumerate(raw_points)
+        length(pt) == n || error("raw_points[$i] has dimension $(length(pt)), expected $n")
+    end
+    0 < dedup_fraction < 1 || error("dedup_fraction must be in (0, 1), got $dedup_fraction")
+
+    domain_diameter = LinearAlgebra.norm(upper_bounds .- lower_bounds)
+    dedup_tol = dedup_fraction * domain_diameter
+
+    # Step 1: Refine all points via Newton on ∇f = 0
+    refinement_results = refine_to_critical_points(
+        objective, raw_points;
+        gradient_method = gradient_method,
+        tol = tol,
+        max_iterations = max_iterations,
+        lower_bounds = lower_bounds,
+        upper_bounds = upper_bounds,
+        hessian_tol = hessian_tol,
+    )
+
+    # Step 2: Keep only converged results
+    converged = filter(r -> r.converged, refinement_results)
+    isempty(converged) && error(
+        "No raw points converged to critical points. " *
+        "$(length(raw_points)) points were refined with tol=$tol, max_iterations=$max_iterations. " *
+        "Consider relaxing tol or increasing max_iterations.")
+
+    # Step 3: Deduplicate — sort by gradient norm (best first), greedy keep
+    sorted = sort(converged, by = r -> r.gradient_norm)
+
+    unique_results = CriticalPointRefinementResult[]
+    for r in sorted
+        is_duplicate = false
+        for kept in unique_results
+            if LinearAlgebra.norm(r.point .- kept.point) < dedup_tol
+                is_duplicate = true
+                break
+            end
+        end
+        if !is_duplicate
+            push!(unique_results, r)
+        end
+    end
+
+    # Step 4: Build KnownCriticalPoints
+    # Filter out :degenerate — treat as :saddle for capture purposes
+    points = [r.point for r in unique_results]
+    values = [r.objective_value for r in unique_results]
+    types = Symbol[r.cp_type == :degenerate ? :saddle : r.cp_type for r in unique_results]
+
+    return KnownCriticalPoints(points, values, types, lower_bounds, upper_bounds)
+end
+
+# ─── Degree Convergence Summary and Verdict ─────────────────────────────────
+
+"""
+    DegreeConvergenceInfo
+
+Per-degree data for the convergence summary table. Collects polynomial approximation
+quality metrics alongside capture analysis results.
+
+# Fields
+- `degree::Int`: Polynomial degree
+- `l2_error::Float64`: L2 approximation error of the polynomial
+- `n_critical_points::Int`: Number of raw polynomial critical points found
+- `min_gradient_norm::Union{Float64, Nothing}`: Minimum ||∇f|| at raw CPs (nothing if not computed)
+- `best_objective::Union{Float64, Nothing}`: Best objective value (raw or refined)
+"""
+struct DegreeConvergenceInfo
+    degree::Int
+    l2_error::Float64
+    n_critical_points::Int
+    min_gradient_norm::Union{Float64, Nothing}
+    best_objective::Union{Float64, Nothing}
+end
+
+"""
+    print_degree_convergence_summary(
+        degree_capture_results::Vector{Tuple{Int, CaptureResult}},
+        degree_info::Vector{DegreeConvergenceInfo};
+        io::IO = stdout,
+    )
+
+Print a combined convergence summary table showing L2 error, gradient quality,
+capture rates at key tolerances (1%, 5%, 10%), and best objective per degree.
+
+# Arguments
+- `degree_capture_results`: Vector of `(degree, CaptureResult)` tuples.
+- `degree_info`: Vector of `DegreeConvergenceInfo` with per-degree metrics.
+- `io::IO`: Output stream (default: `stdout`).
+
+# Example
+```julia
+info = [DegreeConvergenceInfo(4, 0.1, 50, 1e-3, 0.5),
+        DegreeConvergenceInfo(6, 0.01, 120, 1e-5, 0.3)]
+print_degree_convergence_summary(degree_capture_results, info)
+```
+"""
+function print_degree_convergence_summary(
+    degree_capture_results::Vector{Tuple{Int, CaptureResult}},
+    degree_info::Vector{DegreeConvergenceInfo};
+    io::IO = stdout,
+)
+    isempty(degree_capture_results) && error("degree_capture_results must be non-empty")
+    isempty(degree_info) && error("degree_info must be non-empty")
+
+    # Build lookup maps
+    cr_map = Dict(deg => cr for (deg, cr) in degree_capture_results)
+    info_map = Dict(di.degree => di for di in degree_info)
+    all_degrees = sort(unique([d for (d, _) in degree_capture_results]))
+
+    # Determine tolerance indices for 1%, 5%, 10%
+    ref_cr = degree_capture_results[1][2]
+    tol_fracs = ref_cr.tolerance_fractions
+
+    idx_1pct = findfirst(f -> f ≈ 0.01, tol_fracs)
+    idx_5pct = findfirst(f -> f ≈ 0.05, tol_fracs)
+    idx_10pct = findfirst(f -> f ≈ 0.1, tol_fracs)
+
+    n_rows = length(all_degrees)
+    conv_data = Matrix{Any}(undef, n_rows, 8)
+
+    for (row, deg) in enumerate(all_degrees)
+        di = get(info_map, deg, nothing)
+        cr = get(cr_map, deg, nothing)
+
+        conv_data[row, 1] = deg
+        conv_data[row, 2] = di !== nothing ? @sprintf("%.*e", 2, di.l2_error) : "N/A"
+        conv_data[row, 3] = di !== nothing ? di.n_critical_points : 0
+        conv_data[row, 4] = di !== nothing && di.min_gradient_norm !== nothing ?
+            @sprintf("%.*e", 2, di.min_gradient_norm) : "N/A"
+
+        # Capture rates at 1%, 5%, 10%
+        if cr !== nothing
+            conv_data[row, 5] = idx_1pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_1pct]) : "N/A"
+            conv_data[row, 6] = idx_5pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_5pct]) : "N/A"
+            conv_data[row, 7] = idx_10pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_10pct]) : "N/A"
+        else
+            conv_data[row, 5] = "N/A"
+            conv_data[row, 6] = "N/A"
+            conv_data[row, 7] = "N/A"
+        end
+
+        # Best objective
+        if di !== nothing && di.best_objective !== nothing
+            conv_data[row, 8] = @sprintf("%.*e", 2, di.best_objective)
+        else
+            conv_data[row, 8] = "N/A"
+        end
+    end
+
+    # Highlight best row by capture rate at 5%
+    capture_5pct = Float64[]
+    for deg in all_degrees
+        cr = get(cr_map, deg, nothing)
+        if cr !== nothing && idx_5pct !== nothing
+            push!(capture_5pct, cr.capture_rates[idx_5pct])
+        else
+            push!(capture_5pct, 0.0)
+        end
+    end
+    best_conv_row = argmax(capture_5pct)
+
+    hl_deg = Highlighter((_, i, j) -> j == 1, bold=true, foreground=:cyan)
+    hl_best_conv = Highlighter(
+        (_, i, j) -> i == best_conv_row && (j >= 5 && j <= 7),
+        foreground=:green, bold=true)
+
+    println(io)
+    pretty_table(io, conv_data;
+        header=["Deg", "L2 err", "# CPs", "min ||∇f||",
+                "Cap @1%", "Cap @5%", "Cap @10%", "Best f(x)"],
+        title="Degree Convergence Summary",
+        tf=tf_unicode_rounded,
+        alignment=[:r, :r, :r, :r, :r, :r, :r, :r],
+        header_crayon=PrettyTables.Crayon(bold=true),
+        highlighters=(hl_deg, hl_best_conv),
+    )
+end
+
+"""
+    CaptureVerdict
+
+Result of the capture verdict analysis: which degree achieves the best capture rate,
+with per-type breakdown and trend across degrees.
+
+# Fields
+- `best_degree::Int`: Degree with highest capture rate at reference tolerance
+- `capture_rate::Float64`: Best capture rate (0.0 to 1.0)
+- `n_captured::Int`: Number of known CPs captured at the best degree
+- `n_known::Int`: Total number of known CPs
+- `tolerance_fraction::Float64`: The reference tolerance fraction used
+- `tolerance_absolute::Float64`: The absolute tolerance value
+- `type_breakdown::Vector{@NamedTuple{type::Symbol, captured::Int, total::Int, rate::Float64}}`:
+  Per-type capture counts and rates
+- `degree_trend::Vector{@NamedTuple{degree::Int, rate::Float64}}`:
+  Capture rate at each degree (for trend display)
+- `label::String`: Verdict label ("EXCELLENT", "GOOD", "POOR")
+"""
+struct CaptureVerdict
+    best_degree::Int
+    capture_rate::Float64
+    n_captured::Int
+    n_known::Int
+    tolerance_fraction::Float64
+    tolerance_absolute::Float64
+    type_breakdown::Vector{@NamedTuple{type::Symbol, captured::Int, total::Int, rate::Float64}}
+    degree_trend::Vector{@NamedTuple{degree::Int, rate::Float64}}
+    label::String
+end
+
+"""
+    compute_capture_verdict(
+        degree_capture_results::Vector{Tuple{Int, CaptureResult}};
+        reference_tolerance_fraction::Float64 = 0.05,
+    ) -> CaptureVerdict
+
+Compute the capture verdict: which degree achieves the best capture rate,
+with per-type breakdown and trend across degrees.
+
+# Arguments
+- `degree_capture_results`: Vector of `(degree, CaptureResult)` tuples.
+- `reference_tolerance_fraction`: Which tolerance to use for the verdict (default: 5%).
+
+# Returns
+- `CaptureVerdict`: Structured result with verdict label, best degree, and breakdowns.
+
+# Example
+```julia
+verdict = compute_capture_verdict(degree_capture_results)
+verdict.label       # "EXCELLENT"
+verdict.best_degree # 8
+verdict.capture_rate # 1.0
+```
+"""
+function compute_capture_verdict(
+    degree_capture_results::Vector{Tuple{Int, CaptureResult}};
+    reference_tolerance_fraction::Float64 = 0.05,
+)::CaptureVerdict
+    isempty(degree_capture_results) && error("degree_capture_results must be non-empty")
+
+    ref_cr = degree_capture_results[1][2]
+    tol_fracs = ref_cr.tolerance_fractions
+
+    ref_tol_idx = findfirst(f -> f ≈ reference_tolerance_fraction, tol_fracs)
+    ref_tol_idx !== nothing || error(
+        "reference_tolerance_fraction=$reference_tolerance_fraction not found in " *
+        "tolerance_fractions=$(tol_fracs)")
+
+    # Find best degree by capture rate at reference tolerance
+    best_deg_idx = 1
+    best_capture_rate = 0.0
+    for (i, (_, cr)) in enumerate(degree_capture_results)
+        rate = cr.capture_rates[ref_tol_idx]
+        if rate > best_capture_rate
+            best_capture_rate = rate
+            best_deg_idx = i
+        end
+    end
+
+    best_deg, best_cr = degree_capture_results[best_deg_idx]
+    n_captured = count(best_cr.captured_at[ref_tol_idx])
+    tol_abs = best_cr.tolerance_values[ref_tol_idx]
+
+    # Per-type breakdown at best degree
+    type_breakdown = @NamedTuple{type::Symbol, captured::Int, total::Int, rate::Float64}[]
+    for sym in sort(collect(keys(best_cr.type_capture_rates)))
+        rates = best_cr.type_capture_rates[sym]
+        type_count = best_cr.type_counts[sym]
+        type_captured = round(Int, rates[ref_tol_idx] * type_count)
+        push!(type_breakdown, (type=sym, captured=type_captured, total=type_count,
+                               rate=rates[ref_tol_idx]))
+    end
+
+    # Trend across degrees
+    degree_trend = @NamedTuple{degree::Int, rate::Float64}[]
+    for (deg, cr) in degree_capture_results
+        push!(degree_trend, (degree=deg, rate=cr.capture_rates[ref_tol_idx]))
+    end
+
+    # Verdict label
+    label = best_capture_rate >= 0.80 ? "EXCELLENT" :
+            best_capture_rate >= 0.50 ? "GOOD" : "POOR"
+
+    return CaptureVerdict(
+        best_deg, best_capture_rate, n_captured, best_cr.n_known,
+        reference_tolerance_fraction, tol_abs,
+        type_breakdown, degree_trend, label,
+    )
+end
+
+const _CP_TYPE_DISPLAY = Dict(:min => "Minima", :max => "Maxima", :saddle => "Saddles")
+
+"""
+    print_capture_verdict(
+        verdict::CaptureVerdict;
+        io::IO = stdout,
+    )
+
+Print a colored capture verdict banner with per-type breakdown and degree trend.
+
+# Arguments
+- `verdict::CaptureVerdict`: Computed verdict from `compute_capture_verdict`.
+- `io::IO`: Output stream (default: `stdout`).
+
+# Example
+```julia
+verdict = compute_capture_verdict(degree_capture_results)
+print_capture_verdict(verdict)
+```
+"""
+function print_capture_verdict(
+    verdict::CaptureVerdict;
+    io::IO = stdout,
+)
+    W = 80
+    verdict_col = verdict.capture_rate >= 0.80 ? :green :
+                  verdict.capture_rate >= 0.50 ? :yellow : :red
+
+    printstyled(io, "="^W * "\n"; color=verdict_col, bold=true)
+    printstyled(io, " CAPTURE RESULT [$(verdict.label)]  —  Degree $(verdict.best_degree)\n";
+        color=verdict_col, bold=true)
+    printstyled(io, "="^W * "\n"; color=verdict_col, bold=true)
+
+    tol_pct = @sprintf("%.1f%%", 100 * verdict.tolerance_fraction)
+    printstyled(io,
+        "  Captured: $(verdict.n_captured) / $(verdict.n_known) " *
+        "($(@sprintf("%.1f%%", 100 * verdict.capture_rate)))  " *
+        "at $tol_pct tolerance (abs = $(round(verdict.tolerance_absolute, digits=4)))\n";
+        color=verdict_col, bold=true)
+
+    # Per-type breakdown
+    type_parts = String[]
+    for tb in verdict.type_breakdown
+        type_label = get(_CP_TYPE_DISPLAY, tb.type, string(tb.type))
+        pct = tb.total > 0 ? @sprintf("%.1f%%", 100 * tb.rate) : "N/A"
+        push!(type_parts, "$type_label: $(tb.captured)/$(tb.total) ($pct)")
+    end
+    printstyled(io, "  " * join(type_parts, "  |  ") * "\n"; color=verdict_col)
+
+    # Trend
+    trend_parts = [@sprintf("deg %d: %.1f%%", t.degree, 100 * t.rate) for t in verdict.degree_trend]
+    printstyled(io, "  Trend: " * join(trend_parts, " → ") * "\n"; color=:white)
+
+    printstyled(io, "="^W * "\n"; color=verdict_col, bold=true)
+end

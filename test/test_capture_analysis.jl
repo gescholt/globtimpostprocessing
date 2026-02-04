@@ -683,4 +683,234 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         @test !contains(output, "Per-Type")
     end
 
+    # ─── Newton-Based Critical Point Refinement ──────────────────────────────
+
+    @testset "Newton Refinement Exports" begin
+        @test isdefined(GlobtimPostProcessing, :CriticalPointRefinementResult)
+        @test isdefined(GlobtimPostProcessing, :refine_to_critical_point)
+        @test isdefined(GlobtimPostProcessing, :refine_to_critical_points)
+        @test isdefined(GlobtimPostProcessing, :build_known_cps_from_refinement)
+    end
+
+    @testset "refine_to_critical_point" begin
+        # Simple quadratic: f(x) = x₁² + x₂² → minimum at origin
+        f_quad(x) = x[1]^2 + x[2]^2
+
+        @testset "Finds minimum of quadratic (ForwardDiff)" begin
+            result = refine_to_critical_point(f_quad, [0.5, 0.3]; gradient_method=:forwarddiff)
+            @test result.converged
+            @test result.gradient_norm < 1e-8
+            @test result.cp_type == :min
+            @test norm(result.point) < 1e-6
+            @test all(λ -> λ > 0, result.eigenvalues)
+        end
+
+        @testset "Finds minimum of quadratic (FiniteDiff)" begin
+            result = refine_to_critical_point(f_quad, [0.5, 0.3]; gradient_method=:finitediff)
+            @test result.converged
+            @test result.gradient_norm < 1e-6
+            @test result.cp_type == :min
+            @test norm(result.point) < 1e-4
+        end
+
+        @testset "Finds saddle point" begin
+            # f(x) = x₁² - x₂² → saddle at origin
+            f_saddle(x) = x[1]^2 - x[2]^2
+            result = refine_to_critical_point(f_saddle, [0.1, 0.05]; gradient_method=:forwarddiff)
+            @test result.converged
+            @test result.cp_type == :saddle
+            @test norm(result.point) < 1e-6
+        end
+
+        @testset "Finds maximum" begin
+            # f(x) = -(x₁² + x₂²) → maximum at origin
+            f_max(x) = -(x[1]^2 + x[2]^2)
+            result = refine_to_critical_point(f_max, [0.3, -0.2]; gradient_method=:forwarddiff)
+            @test result.converged
+            @test result.cp_type == :max
+            @test norm(result.point) < 1e-6
+        end
+
+        @testset "Respects box constraints" begin
+            result = refine_to_critical_point(f_quad, [2.0, 2.0];
+                gradient_method=:forwarddiff,
+                lower_bounds=[0.5, 0.5],
+                upper_bounds=[3.0, 3.0],
+            )
+            # The true minimum is at origin but box is [0.5, 3.0]²
+            # Newton should converge but be clamped at lower bound
+            @test all(result.point .>= 0.5 - 1e-10)
+        end
+
+        @testset "Batch version" begin
+            pts = [[0.5, 0.3], [-0.2, 0.4], [0.1, -0.1]]
+            results = refine_to_critical_points(f_quad, pts; gradient_method=:forwarddiff)
+            @test length(results) == 3
+            @test all(r -> r isa CriticalPointRefinementResult, results)
+            @test all(r -> r.converged, results)
+        end
+
+        @testset "Deuflhard 2D — finds various CP types" begin
+            # Start near a known saddle point of Deuflhard: approximately (0.507, -0.918)
+            result = refine_to_critical_point(deuflhard_2d, [0.51, -0.92];
+                gradient_method=:forwarddiff, tol=1e-10)
+            @test result.converged
+            @test result.gradient_norm < 1e-8
+            @test result.cp_type in [:min, :max, :saddle]  # should find the nearby CP
+        end
+    end
+
+    @testset "build_known_cps_from_refinement" begin
+        # Use quadratic with known minimum at origin + saddle function
+        # f(x) = x₁² + x₂² has one CP at origin (min)
+        f_quad(x) = x[1]^2 + x[2]^2
+
+        @testset "Basic: quadratic, multiple starts converge to same CP" begin
+            raw_points = [[0.5, 0.3], [-0.2, 0.4], [0.1, -0.1], [-0.3, -0.2]]
+            lb = [-1.0, -1.0]
+            ub = [1.0, 1.0]
+
+            known = build_known_cps_from_refinement(f_quad, raw_points, lb, ub;
+                gradient_method=:forwarddiff, dedup_fraction=0.01)
+
+            # All 4 starts should converge to the same minimum at origin → 1 unique CP
+            @test length(known.points) == 1
+            @test known.types[1] == :min
+            @test norm(known.points[1]) < 1e-4
+            @test known.domain_diameter ≈ norm(ub .- lb)
+        end
+
+        @testset "Dedup separates distinct CPs" begin
+            # f(x) = (x₁² - 1)² + x₂² → minima at (±1, 0), saddle at (0, 0)
+            f_two_min(x) = (x[1]^2 - 1)^2 + x[2]^2
+
+            raw_points = [
+                [0.8, 0.1],   # should converge to (1, 0) min
+                [-0.9, 0.1],  # should converge to (-1, 0) min
+                [0.05, 0.05], # should converge to (0, 0) saddle
+            ]
+            lb = [-2.0, -2.0]
+            ub = [2.0, 2.0]
+
+            known = build_known_cps_from_refinement(f_two_min, raw_points, lb, ub;
+                gradient_method=:forwarddiff, dedup_fraction=0.01)
+
+            # Should find 3 distinct CPs: two minima and one saddle
+            @test length(known.points) == 3
+            n_min = count(t -> t == :min, known.types)
+            n_saddle = count(t -> t == :saddle, known.types)
+            @test n_min == 2
+            @test n_saddle == 1
+        end
+
+        @testset "Error on empty raw_points" begin
+            @test_throws ErrorException build_known_cps_from_refinement(
+                f_quad, Vector{Float64}[], [-1.0, -1.0], [1.0, 1.0];
+                gradient_method=:forwarddiff)
+        end
+
+        @testset "Error on dimension mismatch" begin
+            @test_throws ErrorException build_known_cps_from_refinement(
+                f_quad, [[0.5, 0.3]], [-1.0], [1.0];  # 1D bounds, 2D points
+                gradient_method=:forwarddiff)
+        end
+    end
+
+    # ─── Degree Convergence Summary and Verdict ──────────────────────────────
+
+    @testset "DegreeConvergenceInfo + print_degree_convergence_summary" begin
+        @testset "Exports" begin
+            @test isdefined(GlobtimPostProcessing, :DegreeConvergenceInfo)
+            @test isdefined(GlobtimPostProcessing, :print_degree_convergence_summary)
+        end
+
+        @testset "Prints without error" begin
+            types = [:min, :saddle]
+            known = KnownCriticalPoints([[0.0, 0.0], [1.0, 1.0]], [0.0, 2.0], types,
+                [-1.0, -1.0], [1.0, 1.0])
+            dd = known.domain_diameter
+            tol_fracs = [0.01, 0.05, 0.1]
+
+            cr4 = compute_capture_analysis(known, [[0.3, 0.3], [1.2, 1.2]]; tolerance_fractions=tol_fracs)
+            cr6 = compute_capture_analysis(known, [[0.01, 0.01], [1.0, 1.0]]; tolerance_fractions=tol_fracs)
+
+            degree_capture = [(4, cr4), (6, cr6)]
+            info = [
+                DegreeConvergenceInfo(4, 0.5, 10, 1e-2, 0.1),
+                DegreeConvergenceInfo(6, 0.01, 25, 1e-5, 0.001),
+            ]
+
+            pipe = Pipe()
+            Base.link_pipe!(pipe; reader_supports_async=true, writer_supports_async=true)
+            print_degree_convergence_summary(degree_capture, info; io=pipe.in)
+            close(pipe.in)
+            output = read(pipe.out, String)
+            @test contains(output, "Degree Convergence Summary")
+            @test contains(output, "Cap @5%")
+        end
+    end
+
+    @testset "CaptureVerdict + compute_capture_verdict + print_capture_verdict" begin
+        @testset "Exports" begin
+            @test isdefined(GlobtimPostProcessing, :CaptureVerdict)
+            @test isdefined(GlobtimPostProcessing, :compute_capture_verdict)
+            @test isdefined(GlobtimPostProcessing, :print_capture_verdict)
+        end
+
+        @testset "Computes correct verdict" begin
+            types = [:min, :min, :saddle]
+            known = KnownCriticalPoints(
+                [[0.0, 0.0], [1.0, 0.0], [0.5, 0.5]],
+                [0.0, 1.0, 0.5], types,
+                [-2.0, -2.0], [2.0, 2.0])
+            dd = known.domain_diameter
+            tol_fracs = [0.01, 0.05, 0.1]
+
+            # At degree 4: capture 1/3 at 5%
+            cr4 = compute_capture_analysis(known, [[0.01, 0.01]]; tolerance_fractions=tol_fracs)
+            # At degree 8: capture 3/3 at 5%
+            cr8 = compute_capture_analysis(known, [[0.0, 0.0], [1.0, 0.0], [0.5, 0.5]];
+                tolerance_fractions=tol_fracs)
+
+            verdict = compute_capture_verdict([(4, cr4), (8, cr8)])
+            @test verdict.best_degree == 8
+            @test verdict.capture_rate ≈ 1.0
+            @test verdict.n_captured == 3
+            @test verdict.n_known == 3
+            @test verdict.label == "EXCELLENT"
+            @test length(verdict.type_breakdown) == 2  # :min and :saddle
+            @test length(verdict.degree_trend) == 2    # deg 4 and 8
+        end
+
+        @testset "Prints without error" begin
+            types = [:min, :saddle]
+            known = KnownCriticalPoints(
+                [[0.0, 0.0], [1.0, 1.0]],
+                [0.0, 2.0], types,
+                [-2.0, -2.0], [2.0, 2.0])
+            tol_fracs = [0.01, 0.05, 0.1]
+            cr = compute_capture_analysis(known, [[0.0, 0.0], [1.0, 1.0]];
+                tolerance_fractions=tol_fracs)
+
+            verdict = compute_capture_verdict([(6, cr)])
+
+            pipe = Pipe()
+            Base.link_pipe!(pipe; reader_supports_async=true, writer_supports_async=true)
+            print_capture_verdict(verdict; io=pipe.in)
+            close(pipe.in)
+            output = read(pipe.out, String)
+            @test contains(output, "CAPTURE RESULT")
+            @test contains(output, "EXCELLENT")
+        end
+
+        @testset "Error on missing tolerance fraction" begin
+            types = [:min]
+            known = KnownCriticalPoints([[0.0, 0.0]], [0.0], types, [-1.0, -1.0], [1.0, 1.0])
+            cr = compute_capture_analysis(known, [[0.0, 0.0]]; tolerance_fractions=[0.01, 0.1])
+
+            # Default reference is 0.05, which is not in [0.01, 0.1]
+            @test_throws ErrorException compute_capture_verdict([(4, cr)])
+        end
+    end
+
 end

@@ -108,11 +108,17 @@ export compute_gradient_norms, compute_gradient_norm
 export validate_critical_points, add_gradient_validation!
 export GradientValidationResult
 
+# Newton-based critical point refinement exports
+export CriticalPointRefinementResult
+export refine_to_critical_point, refine_to_critical_points
+
 # Capture analysis exports
 export KnownCriticalPoints, CaptureResult
 export compute_capture_analysis, missed_critical_points
 export print_capture_summary, print_degree_capture_convergence
-export build_known_cps_from_2d_product
+export build_known_cps_from_2d_product, build_known_cps_from_refinement
+export DegreeConvergenceInfo, print_degree_convergence_summary
+export CaptureVerdict, compute_capture_verdict, print_capture_verdict
 
 # Valley walking exports (positive-dimensional minima tracing)
 export ValleyWalkConfig, ValleyTraceResult
@@ -213,6 +219,7 @@ include("LandscapeFidelity.jl")  # Landscape fidelity: polynomial vs objective b
 include("refinement/core_refinement.jl")  # Core refinement algorithms
 include("refinement/config.jl")           # RefinementConfig struct
 include("refinement/gradient_validation.jl")  # Gradient norm validation (before io.jl - defines GradientValidationResult)
+include("refinement/newton_refinement.jl")      # Newton-based critical point refinement (∇f=0)
 include("refinement/capture_analysis.jl")      # Capture analysis for known critical points
 include("refinement/io.jl")               # Load/save utilities
 include("refinement/api.jl")              # High-level API
