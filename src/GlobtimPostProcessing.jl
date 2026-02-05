@@ -86,13 +86,16 @@ export format_metrics_table, format_compact_summary, format_grouped_metrics
 
 # Display helpers (shared formatting for terminal output)
 export fmt_sci, fmt_time, fmt_pct, print_section, styled_table
+export Highlighter  # re-exported from PrettyTables for demo scripts
 
 # Experiment display (pipeline orchestration + display functions)
 export print_experiment_header, print_poly_summary_table
+export compute_degree_capture_results
 export DegreeAnalysisResult, run_degree_analyses, print_degree_analysis_table
 export build_degree_convergence_info
 export BestEstimate, find_best_estimate, find_best_raw_estimate
 export print_parameter_recovery_table, print_recovery_verdict
+export print_best_minimum, print_error_banner
 
 # Critical point classification exports
 export classify_critical_point, classify_all_critical_points!

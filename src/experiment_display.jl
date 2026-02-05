@@ -8,11 +8,15 @@ supporting the 3-step pipeline: Setup → Run Globtim → Post-Process.
 Functions:
 - `print_experiment_header`: Setup banner + key-value summary table
 - `print_poly_summary_table`: Step 2 results → polynomial approximation summary
+- `compute_degree_capture_results`: Step 3 data — capture analysis per successful degree
 - `run_degree_analyses`: Step 3 orchestration — gradient validation + refinement per degree
 - `print_degree_analysis_table`: Step 3 display — gradient + refinement results
 - `build_degree_convergence_info`: Step 3 data — cross-reference degree/gradient/capture data
 - `find_best_estimate`: Step 3 data — find best minimum across all degrees
 - `print_parameter_recovery_table`: Step 3 display — per-parameter recovery table
+- `print_recovery_verdict`: Step 3 display — parameter recovery verdict banner
+- `print_best_minimum`: Step 3 display — best minimum + colored banner (benchmark experiments)
+- `print_error_banner`: Step 3 display — red error banner for no-results cases
 """
 
 # ─── Setup display ────────────────────────────────────────────────────────────
@@ -111,6 +115,36 @@ function print_poly_summary_table(degree_results; show_timing_breakdown::Bool=fa
                 foreground=:red, bold=true),
         ),
     )
+end
+
+# ─── Step 3 capture analysis ─────────────────────────────────────────────────
+
+"""
+    compute_degree_capture_results(degree_results, known_cps) -> Vector{Tuple{Int, CaptureResult}}
+
+Compute capture analysis for each successful degree. Filters out failed degrees
+and degrees with zero critical points.
+
+# Arguments
+- `degree_results`: Vector of degree result objects (from `run_standard_experiment`)
+- `known_cps::KnownCriticalPoints`: Ground truth critical points
+
+# Returns
+- `Vector{Tuple{Int, CaptureResult}}`: One `(degree, CaptureResult)` per successful degree
+"""
+function compute_degree_capture_results(
+    degree_results,
+    known_cps::KnownCriticalPoints,
+)::Vector{Tuple{Int, CaptureResult}}
+    results = Tuple{Int, CaptureResult}[]
+    for dr in degree_results
+        if dr.status != "success" || dr.n_critical_points == 0
+            continue
+        end
+        cr = compute_capture_analysis(known_cps, dr.critical_points)
+        push!(results, (dr.degree, cr))
+    end
+    return results
 end
 
 # ─── Step 3 orchestration ────────────────────────────────────────────────────
@@ -501,4 +535,59 @@ function print_recovery_verdict(
     end
 
     printstyled(io, "="^80 * "\n"; color=verdict_col, bold=true)
+end
+
+# ─── Step 3 display: best minimum (benchmark experiments) ────────────────────
+
+"""
+    print_best_minimum(best; verdict=nothing, io=stdout)
+
+Print the best minimum found and a closing verdict banner. For use after
+`print_capture_verdict` in benchmark experiments where known critical points exist
+(e.g., Deuflhard, Rosenbrock, Rastrigin).
+
+The banner color is derived from the capture verdict quality:
+- Green: capture rate >= 80%
+- Yellow: capture rate >= 50%
+- Red: otherwise (or no verdict provided)
+
+# Arguments
+- `best::BestEstimate`: Best parameter estimate (from `find_best_estimate`)
+- `verdict::Union{CaptureVerdict, Nothing}`: Optional capture verdict for banner coloring
+- `io::IO`: Output stream (default: stdout)
+"""
+function print_best_minimum(
+    best::BestEstimate;
+    verdict::Union{CaptureVerdict, Nothing} = nothing,
+    io::IO = stdout,
+)
+    verdict_col = if verdict !== nothing
+        verdict.capture_rate >= 0.80 ? :green :
+        verdict.capture_rate >= 0.50 ? :yellow : :red
+    else
+        :white
+    end
+
+    printstyled(io, "  Best minimum: f(x*) = $(fmt_sci(best.value))" *
+        " ($(best.source), deg $(best.degree))" *
+        ",  x* = $(round.(best.point, digits=4))\n"; color=:white)
+    printstyled(io, "="^80 * "\n"; color=verdict_col, bold=true)
+end
+
+# ─── Step 3 display: error banner ────────────────────────────────────────────
+
+"""
+    print_error_banner(message; io=stdout)
+
+Print a red error banner with the given message, matching the verdict banner style.
+Used for no-results cases (e.g., no critical points found, no parameter estimate).
+
+# Arguments
+- `message::String`: Error message to display
+- `io::IO`: Output stream (default: stdout)
+"""
+function print_error_banner(message::String; io::IO=stdout)
+    printstyled(io, "="^80 * "\n"; color=:red, bold=true)
+    printstyled(io, " $message\n"; color=:red, bold=true)
+    printstyled(io, "="^80 * "\n"; color=:red, bold=true)
 end
