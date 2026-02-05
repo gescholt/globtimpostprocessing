@@ -85,7 +85,7 @@ export check_objective_distribution_quality, ObjectiveDistributionResult
 export format_metrics_table, format_compact_summary, format_grouped_metrics
 
 # Display helpers (shared formatting for terminal output)
-export fmt_sci, fmt_time, fmt_pct, print_section
+export fmt_sci, fmt_time, fmt_pct, print_section, styled_table
 
 # Experiment display (pipeline orchestration + display functions)
 export print_experiment_header, print_poly_summary_table

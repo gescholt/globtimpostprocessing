@@ -101,11 +101,9 @@ function print_poly_summary_table(degree_results; show_timing_breakdown::Bool=fa
         [:r, :r, :r, :r, :c, :r]
     end
 
-    pretty_table(io, data;
+    styled_table(io, data;
         header=header,
-        tf=tf_unicode_rounded,
         alignment=alignment,
-        header_crayon=PrettyTables.Crayon(bold=true),
         highlighters=(
             Highlighter((d, i, j) -> j == status_col && d[i, status_col] == "success",
                 foreground=:green, bold=true),
@@ -214,12 +212,10 @@ function print_degree_analysis_table(
     best_ref_row = argmin([ref.n_converged > 0 ? ref.best_refined_value : Inf
                            for (_, _, ref) in degree_analyses])
 
-    pretty_table(io, data;
+    styled_table(io, data;
         header=["Deg", "# CPs", "min ||∇f||", "med ||∇f||", "Converged",
                 "Best raw", "Best ref", "Time"],
-        tf=tf_unicode_rounded,
         alignment=[:r, :r, :r, :r, :r, :r, :r, :r],
-        header_crayon=PrettyTables.Crayon(bold=true),
         highlighters=(
             Highlighter((_, i, j) -> i == best_grad_row && j == 3, foreground=:green, bold=true),
             Highlighter((_, i, j) -> i == best_ref_row && j == 7, foreground=:green, bold=true),
@@ -442,11 +438,9 @@ function print_parameter_recovery_table(
 
     abs_err_col = has_raw ? 5 : 4
 
-    pretty_table(io, data;
+    styled_table(io, data;
         header=header,
-        tf=tf_unicode_rounded,
         alignment=fill(:r, n_cols),
-        header_crayon=PrettyTables.Crayon(bold=true),
         highlighters=(
             Highlighter((_, i, j) -> j == 1 && i <= DIM, bold=true, foreground=:cyan),
             Highlighter((_, i, j) -> i == DIM + 1, bold=true, foreground=:white),
