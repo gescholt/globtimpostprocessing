@@ -180,11 +180,9 @@ function _print_top_candidates(df::DataFrame, data::LV4DExperimentData; limit::I
         :Note => note_col
     )
 
-    pretty_table(display_df;
+    styled_table(display_df;
         header = ["#", "Distance", "f(x)", "‖∇f‖", "In?", ""],
         alignment = [:r, :r, :r, :r, :c, :l],
-        crop = :none,
-        tf = tf_unicode_rounded
     )
 end
 
@@ -269,8 +267,8 @@ function _print_degree_summary(df::DataFrame)
             string(v)
         end
     end
-    pretty_table(summary, header=headers, formatters=(ft,),
-                alignment=:r, crop=:none, tf=tf_unicode_rounded)
+    styled_table(summary; header=headers, formatters=(ft,),
+                alignment=:r)
 end
 
 function _print_distance_histogram(df::DataFrame)
@@ -414,8 +412,8 @@ function _print_summary_table(df::DataFrame, data::LV4DExperimentData)
         end
     end
 
-    pretty_table(table_df, header=headers, formatters=(ft,),
-                 alignment=:r, crop=:none, tf=tf_unicode_rounded)
+    styled_table(table_df; header=headers, formatters=(ft,),
+                 alignment=:r)
 end
 
 # ============================================================================

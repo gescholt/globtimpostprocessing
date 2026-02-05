@@ -337,11 +337,9 @@ function _print_convergence_table(all_slopes::Dict{Int, Float64})
         "Interpretation" => interp_col
     )
 
-    pretty_table(display_df;
+    styled_table(display_df;
         header = ["Deg", "α (rate)", "Interpretation"],
         alignment = [:r, :r, :l],
-        crop = :none,
-        tf = tf_unicode_rounded
     )
 end
 

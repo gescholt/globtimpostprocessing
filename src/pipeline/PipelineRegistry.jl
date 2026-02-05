@@ -1086,10 +1086,9 @@ function print_coverage_matrix(coverage::ParameterCoverage; io::IO=stdout)
     println(io, "Parameter Coverage: GN × Domain")
     println(io, "="^70)
 
-    pretty_table(io, data;
+    styled_table(io, data;
         header=header,
         alignment=:c,
-        crop=:none
     )
 
     println(io)

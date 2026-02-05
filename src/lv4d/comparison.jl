@@ -210,11 +210,10 @@ function _print_overall_summary(df::DataFrame, metric_col::Symbol)
         hl_better = make_winner_highlighter((data, i, j) -> data[i, 1] == winner)
         hl_worse = make_loser_highlighter((data, i, j) -> data[i, 1] != winner)
 
-        pretty_table(summary_df, header=headers, formatters=(ft,), alignment=:r,
-                     tf=tf_unicode_rounded, highlighters=(hl_better, hl_worse))
+        styled_table(summary_df; header=headers, formatters=(ft,), alignment=:r,
+                     highlighters=(hl_better, hl_worse))
     else
-        pretty_table(summary_df, header=headers, formatters=(ft,), alignment=:r,
-                     tf=tf_unicode_rounded)
+        styled_table(summary_df; header=headers, formatters=(ft,), alignment=:r)
     end
 end
 
@@ -284,8 +283,8 @@ function _print_per_domain_summary(df::DataFrame, dom::Float64, metric_col::Symb
                         degree_winners[data[i, 2]] != data[i, 1]
     )
 
-    pretty_table(result_df, header=headers, formatters=(ft,), alignment=:r,
-                 tf=tf_unicode_rounded, highlighters=(hl_winner, hl_loser))
+    styled_table(result_df; header=headers, formatters=(ft,), alignment=:r,
+                 highlighters=(hl_winner, hl_loser))
 end
 
 """
@@ -545,7 +544,7 @@ function print_subdivision_comparison(df::DataFrame; io::IO=stdout, show_aggrega
     hl_better = Highlighter((data, i, j) -> l2_highlight(data, i, j) || recovery_highlight(data, i, j),
                             bold=true, foreground=:green)
 
-    pretty_table(io, display_df, header=headers, tf=tf_unicode_rounded,
+    styled_table(io, display_df; header=headers,
                  alignment=:r, highlighters=(hl_better,))
 
     # Aggregated view (mean across seeds)
@@ -576,7 +575,7 @@ function print_subdivision_comparison(df::DataFrame; io::IO=stdout, show_aggrega
         )
 
         agg_headers = ["Degree", "Domain", "Seeds", "Single L2", "Subdiv L2", "Single Rec%", "Subdiv Rec%"]
-        pretty_table(io, agg_display, header=agg_headers, tf=tf_unicode_rounded, alignment=:r)
+        styled_table(io, agg_display; header=agg_headers, alignment=:r)
     end
 end
 

@@ -700,7 +700,7 @@ function print_sparsification_metrics_table(
     n_degrees = length(unique(sc.degree for sc in comparisons))
     hlines = n_thresh > 0 ? [i * n_thresh for i in 1:(n_degrees - 1)] : Int[]
 
-    styled_table(metrics_data;
+    styled_table(io, metrics_data;
         header=["Deg", "Threshold", "Full #c", "Sparse #c", "Zeroed %",
                 "Full time", "Sparse time", "Speedup", "Thresh"],
         alignment=[:r, :l, :r, :r, :r, :r, :r, :r, :r],
@@ -711,7 +711,6 @@ function print_sparsification_metrics_table(
                 foreground=:green, bold=true),
         ),
         body_hlines=hlines,
-        io=io,
     )
 end
 
@@ -745,7 +744,7 @@ function print_sparsification_capture_table(
     n_degrees = length(unique(sc.degree for sc in comparisons))
     hlines = n_thresh > 0 ? [i * n_thresh for i in 1:(n_degrees - 1)] : Int[]
 
-    styled_table(capture_data;
+    styled_table(io, capture_data;
         header=["Deg", "Threshold", "Full #CPs", "Sparse #CPs", "Full Cap@5%", "Sparse Cap@5%", "Δ Cap"],
         alignment=[:r, :l, :r, :r, :r, :r, :r],
         highlighters=(
@@ -754,7 +753,6 @@ function print_sparsification_capture_table(
             Highlighter((data, i, j) -> j == 7 && startswith(string(data[i, 7]), "-"), foreground=:red, bold=true),
         ),
         body_hlines=hlines,
-        io=io,
     )
 end
 

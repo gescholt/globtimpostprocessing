@@ -405,11 +405,10 @@ function print_comparison_table(
     println(cr_bold(cr_cyan("Raw vs Refined (showing $n_display of $(result.n_raw))")))
     println()
 
-    pretty_table(data,
+    styled_table(data;
         header = header_vec,
         alignment = alignment,
-        tf = tf_unicode_rounded,
-        crop = :none)
+    )
     println()
 end
 

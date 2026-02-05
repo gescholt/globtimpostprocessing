@@ -326,11 +326,10 @@ function print_subdivision_tree_report(tree; io::IO=stdout)
     println(io, "-" ^ 70)
     depth_df = tree_depth_summary(tree)
 
-    pretty_table(io, depth_df,
+    styled_table(io, depth_df;
         header = ["Depth", "Leaves", "Converged", "Mean L2", "Std L2", "Min L2", "Max L2", "Volume"],
         formatters = (ft_printf("%.2e", [4, 5, 6, 7]), ft_printf("%.3f", [8])),
         alignment = [:c, :c, :c, :r, :r, :r, :r, :r],
-        crop = :none
     )
 
     println(io)
@@ -394,11 +393,10 @@ function print_tree_comparison_table(trees::Vector; labels=nothing, io::IO=stdou
     println(io, "SUBDIVISION TREE COMPARISON")
     println(io, "=" ^ 70)
 
-    pretty_table(io, df,
+    styled_table(io, df;
         header = ["Label", "Leaves", "Conv", "Conv%", "Depth", "Mean L2", "Total L2", "Dim"],
         formatters = (ft_printf("%.1f%%", [4]), ft_printf("%.2e", [6, 7])),
         alignment = [:l, :c, :c, :c, :c, :r, :r, :c],
-        crop = :none
     )
 
     nothing

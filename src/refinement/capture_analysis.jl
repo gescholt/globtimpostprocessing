@@ -363,11 +363,10 @@ function print_capture_summary(
     end
 
     println(io)
-    pretty_table(io, overall_data;
+    styled_table(io, overall_data;
         header = ["Tol (frac)", "Tol (abs)", "Captured", "Rate"],
         title = "Capture Analysis ($(result.n_computed) computed vs $(result.n_known) known CPs, domain diam = $(@sprintf("%.4f", result.domain_diameter)))",
         alignment = [:r, :r, :c, :r],
-        crop = :none
     )
 
     # --- Table 2: Per-type capture rates ---
@@ -388,11 +387,10 @@ function print_capture_summary(
         end
 
         println(io)
-        pretty_table(io, type_data;
+        styled_table(io, type_data;
             header = type_header,
             title = "Per-Type Capture Rates",
             alignment = :r,
-            crop = :none
         )
     end
 
@@ -422,11 +420,10 @@ function print_capture_summary(
         n_total_missed = length(missed)
         title_suffix = n_total_missed > max_display ? ", showing first $max_display of $n_total_missed" : ""
         println(io)
-        pretty_table(io, missed_data;
+        styled_table(io, missed_data;
             header = missed_header,
             title = "Missed Critical Points (at tol = $(@sprintf("%.4f", result.tolerance_values[n_tol]))$title_suffix)",
             alignment = :r,
-            crop = :none
         )
     else
         println(io)
@@ -482,11 +479,10 @@ function print_degree_capture_convergence(
     end
 
     println(io)
-    pretty_table(io, data;
+    styled_table(io, data;
         header = header,
         title = "Capture Rate vs Polynomial Degree",
         alignment = :r,
-        crop = :none
     )
 end
 
@@ -840,13 +836,11 @@ function print_degree_convergence_summary(
         foreground=:green, bold=true)
 
     println(io)
-    pretty_table(io, conv_data;
+    styled_table(io, conv_data;
         header=["Deg", "L2 err", "# CPs", "min ||∇f||",
                 "Cap @1%", "Cap @5%", "Cap @10%", "Best f(x)"],
         title="Degree Convergence Summary",
-        tf=tf_unicode_rounded,
         alignment=[:r, :r, :r, :r, :r, :r, :r, :r],
-        header_crayon=PrettyTables.Crayon(bold=true),
         highlighters=(hl_deg, hl_best_conv),
     )
 end
