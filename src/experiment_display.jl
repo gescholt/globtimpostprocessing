@@ -591,3 +591,249 @@ function print_error_banner(message::String; io::IO=stdout)
     printstyled(io, " $message\n"; color=:red, bold=true)
     printstyled(io, "="^80 * "\n"; color=:red, bold=true)
 end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sparsification display functions
+#
+# These take SparsificationDegreeResult (from Globtim) and produce
+# terminal tables/summaries comparing full vs sparsified polynomial variants.
+# The capture analysis itself uses the same compute_capture_analysis pipeline
+# as any other polynomial approximation.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+"""
+    SparsifyCompare
+
+Display-oriented comparison between a full and sparsified polynomial solve.
+One row per (degree, threshold) combination. Built from `SparsificationDegreeResult`
+by `analyze_sparsification`.
+"""
+struct SparsifyCompare
+    degree::Int
+    threshold::Float64
+    threshold_label::String
+    full_n_coeffs::Int
+    full_n_cps::Int
+    full_capture_rate_5pct::Float64
+    full_solve_time::Float64
+    sparse_n_coeffs::Int
+    sparse_n_cps::Int
+    sparse_capture_rate_5pct::Float64
+    sparse_solve_time::Float64
+    sparsity_pct::Float64
+    l2_ratio::Float64
+    speedup::Float64
+end
+
+"""
+    analyze_sparsification(results, known_cps) -> Vector{SparsifyCompare}
+
+Compute capture analysis for all full + sparsified variants and build comparison rows.
+
+This applies the **same `compute_capture_analysis` pipeline** to sparsified critical
+points as to any other polynomial approximation — sparsification only changes
+coefficients, the post-processing is standard.
+
+# Arguments
+- `results`: Vector of `SparsificationDegreeResult` from `run_sparsification_experiment`
+- `known_cps::KnownCriticalPoints`: Known critical points for capture analysis
+
+# Returns
+Vector of `SparsifyCompare`, one per (degree, threshold) combination.
+"""
+function analyze_sparsification(results, known_cps::KnownCriticalPoints)
+    comparisons = SparsifyCompare[]
+
+    for sdr in results
+        # Capture analysis for full polynomial (standard pipeline)
+        full_cr = compute_capture_analysis(known_cps, sdr.full_critical_points)
+        full_cap_5 = capture_rate_at(full_cr, 0.05)
+
+        for variant in sdr.variants
+            # Capture analysis for sparsified polynomial (same standard pipeline)
+            sparse_cr = compute_capture_analysis(known_cps, variant.critical_points)
+            sparse_cap_5 = capture_rate_at(sparse_cr, 0.05)
+
+            speedup = sdr.full_solve_time / max(variant.solve_time, 1e-10)
+
+            push!(comparisons, SparsifyCompare(
+                sdr.degree, variant.threshold, variant.threshold_label,
+                sdr.full_n_coeffs, length(sdr.full_critical_points), full_cap_5, sdr.full_solve_time,
+                variant.n_nonzero_coeffs, length(variant.critical_points), sparse_cap_5, variant.solve_time,
+                variant.sparsity_pct, variant.l2_ratio, speedup,
+            ))
+        end
+    end
+
+    return comparisons
+end
+
+"""
+    print_sparsification_metrics_table(comparisons; io=stdout)
+
+Print Table A: sparsification metrics (degree x threshold).
+Shows coefficient counts, zeroing percentages, solve times, and speedups.
+"""
+function print_sparsification_metrics_table(
+    comparisons::Vector{SparsifyCompare};
+    io::IO = stdout,
+)
+    print_section("Sparsification Metrics (degree x threshold)"; io=io)
+
+    n_comp = length(comparisons)
+    metrics_data = Matrix{Any}(undef, n_comp, 9)
+
+    for (row, sc) in enumerate(comparisons)
+        metrics_data[row, 1] = sc.degree
+        metrics_data[row, 2] = sc.threshold_label
+        metrics_data[row, 3] = sc.full_n_coeffs
+        metrics_data[row, 4] = sc.sparse_n_coeffs
+        metrics_data[row, 5] = @sprintf("%.1f%%", sc.sparsity_pct)
+        metrics_data[row, 6] = fmt_time(sc.full_solve_time)
+        metrics_data[row, 7] = fmt_time(sc.sparse_solve_time)
+        metrics_data[row, 8] = @sprintf("%.1f×", sc.speedup)
+        metrics_data[row, 9] = fmt_sci(sc.threshold)
+    end
+
+    # Degree-boundary hlines
+    n_thresh = _count_thresholds(comparisons)
+    n_degrees = length(unique(sc.degree for sc in comparisons))
+    hlines = n_thresh > 0 ? [i * n_thresh for i in 1:(n_degrees - 1)] : Int[]
+
+    styled_table(metrics_data;
+        header=["Deg", "Threshold", "Full #c", "Sparse #c", "Zeroed %",
+                "Full time", "Sparse time", "Speedup", "Thresh"],
+        alignment=[:r, :l, :r, :r, :r, :r, :r, :r, :r],
+        highlighters=(
+            Highlighter((data, i, j) -> j == 5 && occursin(r"^[5-9]\d|^100", string(data[i, 5])),
+                foreground=:yellow, bold=true),
+            Highlighter((data, i, j) -> j == 8 && (m = match(r"^(\d+\.?\d*)", string(data[i, 8])); m !== nothing && parse(Float64, m[1]) >= 1.5),
+                foreground=:green, bold=true),
+        ),
+        body_hlines=hlines,
+        io=io,
+    )
+end
+
+"""
+    print_sparsification_capture_table(comparisons; io=stdout)
+
+Print Table B: capture comparison at 5% tolerance (full vs sparsified).
+Shows critical point counts and capture rate deltas.
+"""
+function print_sparsification_capture_table(
+    comparisons::Vector{SparsifyCompare};
+    io::IO = stdout,
+)
+    print_section("Capture Comparison: Full vs Sparsified (@ 5% tolerance)"; io=io)
+
+    n_comp = length(comparisons)
+    capture_data = Matrix{Any}(undef, n_comp, 7)
+
+    for (row, sc) in enumerate(comparisons)
+        delta = sc.sparse_capture_rate_5pct - sc.full_capture_rate_5pct
+        capture_data[row, 1] = sc.degree
+        capture_data[row, 2] = sc.threshold_label
+        capture_data[row, 3] = sc.full_n_cps
+        capture_data[row, 4] = sc.sparse_n_cps
+        capture_data[row, 5] = @sprintf("%.1f%%", 100 * sc.full_capture_rate_5pct)
+        capture_data[row, 6] = @sprintf("%.1f%%", 100 * sc.sparse_capture_rate_5pct)
+        capture_data[row, 7] = @sprintf("%+.1f pp", 100 * delta)
+    end
+
+    n_thresh = _count_thresholds(comparisons)
+    n_degrees = length(unique(sc.degree for sc in comparisons))
+    hlines = n_thresh > 0 ? [i * n_thresh for i in 1:(n_degrees - 1)] : Int[]
+
+    styled_table(capture_data;
+        header=["Deg", "Threshold", "Full #CPs", "Sparse #CPs", "Full Cap@5%", "Sparse Cap@5%", "Δ Cap"],
+        alignment=[:r, :l, :r, :r, :r, :r, :r],
+        highlighters=(
+            Highlighter((data, i, j) -> j == 7 && startswith(string(data[i, 7]), "+0.0"), foreground=:white),
+            Highlighter((data, i, j) -> j == 7 && startswith(string(data[i, 7]), "+"), foreground=:green, bold=true),
+            Highlighter((data, i, j) -> j == 7 && startswith(string(data[i, 7]), "-"), foreground=:red, bold=true),
+        ),
+        body_hlines=hlines,
+        io=io,
+    )
+end
+
+"""
+    print_sparsification_summary(comparisons; io=stdout)
+
+Print sparsification summary: best tradeoff (capture drop ≤ 1pp) and max speedup.
+"""
+function print_sparsification_summary(
+    comparisons::Vector{SparsifyCompare};
+    io::IO = stdout,
+)
+    print_section("Sparsification Summary"; io=io)
+
+    good_sparse = filter(sc -> (sc.sparse_capture_rate_5pct >= sc.full_capture_rate_5pct - 0.01), comparisons)
+
+    if !isempty(good_sparse)
+        best_sparse = sort(good_sparse, by=sc -> sc.speedup, rev=true)[1]
+        printstyled(io, "  Best tradeoff (cap drop ≤ 1pp): "; color=:cyan, bold=true)
+        printstyled(io, "degree $(best_sparse.degree), threshold $(best_sparse.threshold_label)\n"; color=:green, bold=true)
+        printstyled(io, "    $(fmt_pct(best_sparse.full_n_coeffs - best_sparse.sparse_n_coeffs, best_sparse.full_n_coeffs)) " *
+                    "coefficients zeroed, " *
+                    "capture: $(@sprintf("%.1f%%", 100 * best_sparse.full_capture_rate_5pct)) -> " *
+                    "$(@sprintf("%.1f%%", 100 * best_sparse.sparse_capture_rate_5pct))\n"; color=:white)
+        printstyled(io, "    Solve time: $(fmt_time(best_sparse.full_solve_time)) -> $(fmt_time(best_sparse.sparse_solve_time)) " *
+                    "($(@sprintf("%.1f×", best_sparse.speedup)) speedup)\n"; color=:white)
+    else
+        printstyled(io, "  No sparsification threshold preserves capture rate within 1pp.\n"; color=:yellow)
+    end
+
+    if !isempty(comparisons)
+        fastest = sort(comparisons, by=sc -> sc.speedup, rev=true)[1]
+        printstyled(io, "  Max speedup: "; color=:cyan, bold=true)
+        printstyled(io, "$(@sprintf("%.1f×", fastest.speedup)) at degree $(fastest.degree), " *
+                    "threshold $(fastest.threshold_label) " *
+                    "(cap: $(@sprintf("%.1f%%", 100 * fastest.full_capture_rate_5pct)) -> " *
+                    "$(@sprintf("%.1f%%", 100 * fastest.sparse_capture_rate_5pct)))\n"; color=:white)
+    end
+end
+
+"""
+    build_sparsification_plot_entries(results, known_cps) -> Vector{NamedTuple}
+
+Convert `SparsificationDegreeResult` data into the NamedTuple format expected
+by `plot_capture_sparsification_combined` from GlobtimPlots.
+
+For each degree, creates one "Full" entry and one entry per sparsified variant,
+applying `compute_capture_analysis` (the same standard pipeline) to each.
+"""
+function build_sparsification_plot_entries(results, known_cps::KnownCriticalPoints)
+    entries = NamedTuple[]
+
+    for sdr in results
+        # Full variant
+        full_cr = compute_capture_analysis(known_cps, sdr.full_critical_points)
+        push!(entries, (
+            degree = sdr.degree, variant_label = "Full", threshold = 0.0,
+            capture_result = full_cr, n_nonzero_coeffs = sdr.full_n_coeffs,
+            l2_ratio = 1.0, solve_time = sdr.full_solve_time,
+        ))
+
+        # Sparsified variants
+        for variant in sdr.variants
+            sparse_cr = compute_capture_analysis(known_cps, variant.critical_points)
+            push!(entries, (
+                degree = sdr.degree, variant_label = variant.threshold_label,
+                threshold = variant.threshold,
+                capture_result = sparse_cr, n_nonzero_coeffs = variant.n_nonzero_coeffs,
+                l2_ratio = variant.l2_ratio, solve_time = variant.solve_time,
+            ))
+        end
+    end
+
+    return entries
+end
+
+# Internal helper: count thresholds per degree
+function _count_thresholds(comparisons::Vector{SparsifyCompare})
+    isempty(comparisons) && return 0
+    first_deg = comparisons[1].degree
+    return count(sc -> sc.degree == first_deg, comparisons)
+end

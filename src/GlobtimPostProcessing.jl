@@ -96,6 +96,9 @@ export build_degree_convergence_info
 export BestEstimate, find_best_estimate, find_best_raw_estimate
 export print_parameter_recovery_table, print_recovery_verdict
 export print_best_minimum, print_error_banner
+export SparsifyCompare, analyze_sparsification
+export print_sparsification_metrics_table, print_sparsification_capture_table
+export print_sparsification_summary, build_sparsification_plot_entries
 
 # Critical point classification exports
 export classify_critical_point, classify_all_critical_points!
@@ -126,7 +129,7 @@ export CriticalPointRefinementResult
 export refine_to_critical_point, refine_to_critical_points
 
 # Capture analysis exports
-export KnownCriticalPoints, CaptureResult
+export KnownCriticalPoints, CaptureResult, capture_rate_at
 export compute_capture_analysis, missed_critical_points
 export print_capture_summary, print_degree_capture_convergence
 export build_known_cps_from_2d_product, build_known_cps_from_refinement

@@ -134,6 +134,30 @@ struct CaptureResult
 end
 
 """
+    capture_rate_at(cr::CaptureResult, fraction::Float64) -> Float64
+
+Look up the capture rate at a specific tolerance fraction.
+
+# Arguments
+- `cr::CaptureResult`: Capture analysis result
+- `fraction::Float64`: Tolerance fraction (e.g., 0.05 for 5% of domain diameter)
+
+# Returns
+- `Float64`: Capture rate at the given tolerance, or `NaN` if that fraction is not present
+
+# Example
+```julia
+result = compute_capture_analysis(known, computed)
+rate = capture_rate_at(result, 0.05)  # capture rate at 5% tolerance
+```
+"""
+function capture_rate_at(cr::CaptureResult, fraction::Float64)::Float64
+    idx = findfirst(f -> f ≈ fraction, cr.tolerance_fractions)
+    idx === nothing && return NaN
+    return cr.capture_rates[idx]
+end
+
+"""
     compute_capture_analysis(known, computed_points; tolerance_fractions) -> CaptureResult
 
 Compute capture analysis: for each known critical point, find the nearest computed point
