@@ -199,10 +199,14 @@ This is a convenience wrapper that delegates to `refine_experiment_results()`.
 using Globtim, GlobtimPostProcessing
 
 # Run experiment (globtim)
-raw = Globtim.run_standard_experiment(objective_func, domain_bounds, config)
+raw = Globtim.run_standard_experiment(
+    objective_function = my_objective, objective_name = "my_problem",
+    problem_params = nothing, domain_bounds = bounds,
+    experiment_config = config, output_dir = "results/my_experiment"
+)
 
 # Refine (globtimpostprocessing)
-refined = refine_critical_points(raw, objective_func, ode_refinement_config())
+refined = refine_critical_points(raw, my_objective, ode_refinement_config())
 ```
 """
 function refine_critical_points(

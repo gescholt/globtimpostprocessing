@@ -384,6 +384,7 @@ function save_refined_results(
             "n_invalid" => gradient_validation.n_invalid,
             "tolerance" => gradient_validation.tolerance,
             "mean_norm" => gradient_validation.mean_norm,
+            "median_norm" => gradient_validation.median_norm,
             "max_norm" => gradient_validation.max_norm,
             "min_norm" => gradient_validation.min_norm,
             "validation_rate" => gradient_validation.n_valid / length(gradient_validation.norms)

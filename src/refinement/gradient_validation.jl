@@ -23,6 +23,7 @@ Result of gradient validation for a set of critical points.
 - `n_invalid::Int`: Number of invalid critical points
 - `tolerance::Float64`: Tolerance used for validation
 - `mean_norm::Float64`: Mean gradient norm across all points
+- `median_norm::Float64`: Median gradient norm across all points
 - `max_norm::Float64`: Maximum gradient norm
 - `min_norm::Float64`: Minimum gradient norm
 """
@@ -33,6 +34,7 @@ struct GradientValidationResult
     n_invalid::Int
     tolerance::Float64
     mean_norm::Float64
+    median_norm::Float64
     max_norm::Float64
     min_norm::Float64
 end
@@ -192,14 +194,16 @@ function validate_critical_points(
     n_valid = sum(valid)
     n_invalid = length(points) - n_valid
 
-    # Compute statistics (excluding Inf values for mean)
+    # Compute statistics (excluding Inf values for mean/median)
     finite_norms = filter(isfinite, norms)
     if isempty(finite_norms)
         mean_norm = Inf
+        median_norm = Inf
         max_norm = Inf
         min_norm = Inf
     else
         mean_norm = Statistics.mean(finite_norms)
+        median_norm = Statistics.median(finite_norms)
         max_norm = maximum(finite_norms)
         min_norm = minimum(finite_norms)
     end
@@ -211,6 +215,7 @@ function validate_critical_points(
         n_invalid,
         tolerance,
         mean_norm,
+        median_norm,
         max_norm,
         min_norm
     )
@@ -322,10 +327,12 @@ function add_gradient_validation!(
     finite_norms = filter(isfinite, norms)
     if isempty(finite_norms)
         mean_norm = Inf
+        median_norm = Inf
         max_norm = Inf
         min_norm = Inf
     else
         mean_norm = Statistics.mean(finite_norms)
+        median_norm = Statistics.median(finite_norms)
         max_norm = maximum(finite_norms)
         min_norm = minimum(finite_norms)
     end
@@ -337,6 +344,7 @@ function add_gradient_validation!(
         n_invalid,
         tolerance,
         mean_norm,
+        median_norm,
         max_norm,
         min_norm
     )

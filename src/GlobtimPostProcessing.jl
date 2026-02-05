@@ -84,6 +84,16 @@ export check_objective_distribution_quality, ObjectiveDistributionResult
 # Table formatting exports (display functions)
 export format_metrics_table, format_compact_summary, format_grouped_metrics
 
+# Display helpers (shared formatting for terminal output)
+export fmt_sci, fmt_time, fmt_pct, print_section
+
+# Experiment display (pipeline orchestration + display functions)
+export print_experiment_header, print_poly_summary_table
+export DegreeAnalysisResult, run_degree_analyses, print_degree_analysis_table
+export build_degree_convergence_info
+export BestEstimate, find_best_estimate, find_best_raw_estimate
+export print_parameter_recovery_table, print_recovery_verdict
+
 # Critical point classification exports
 export classify_critical_point, classify_all_critical_points!
 export count_classifications, find_distinct_local_minima
@@ -203,6 +213,7 @@ struct CampaignResults
 end
 
 # Include submodules (after type definitions)
+include("display_helpers.jl")  # Shared formatting: fmt_sci, fmt_time, fmt_pct, print_section
 include("ResultsLoader.jl")
 include("LabelDispatcher.jl")
 include("StatisticsCompute.jl")
@@ -223,6 +234,9 @@ include("refinement/newton_refinement.jl")      # Newton-based critical point re
 include("refinement/capture_analysis.jl")      # Capture analysis for known critical points
 include("refinement/io.jl")               # Load/save utilities
 include("refinement/api.jl")              # High-level API
+
+# Experiment display (pipeline orchestration + display functions)
+include("experiment_display.jl")
 
 # Valley walking (positive-dimensional minima tracing)
 include("ValleyWalking.jl")
