@@ -42,7 +42,7 @@ end
 
 """
     refine_to_critical_point(
-        objective::Function,
+        objective,
         initial_point::Vector{Float64};
         gradient_method::Symbol = :finitediff,
         tol::Float64 = 1e-8,
@@ -63,7 +63,7 @@ Unlike Nelder-Mead (which only finds minima), this finds critical points of
 **all types**: minima, maxima, and saddle points.
 
 # Arguments
-- `objective::Function`: Objective function f(x) -> Float64
+- `objective`: Callable objective function f(x::Vector{Float64}) -> Float64
 - `initial_point::Vector{Float64}`: Starting point (raw polynomial CP)
 
 # Keyword Arguments
@@ -94,7 +94,7 @@ result.converged  # true/false
 ```
 """
 function refine_to_critical_point(
-    objective::Function,
+    objective,
     initial_point::Vector{Float64};
     gradient_method::Symbol = :finitediff,
     tol::Float64 = 1e-8,
@@ -204,7 +204,7 @@ end
 
 """
     refine_to_critical_points(
-        objective::Function,
+        objective,
         points::Vector{Vector{Float64}};
         kwargs...
     ) -> Vector{CriticalPointRefinementResult}
@@ -212,7 +212,7 @@ end
 Batch version of [`refine_to_critical_point`](@ref). Refines each point independently.
 
 # Arguments
-- `objective::Function`: Objective function
+- `objective`: Callable objective function f(x::Vector{Float64}) -> Float64
 - `points::Vector{Vector{Float64}}`: Raw polynomial critical points
 
 All keyword arguments are forwarded to `refine_to_critical_point`.
@@ -221,7 +221,7 @@ All keyword arguments are forwarded to `refine_to_critical_point`.
 - `Vector{CriticalPointRefinementResult}`: One result per input point.
 """
 function refine_to_critical_points(
-    objective::Function,
+    objective,
     points::Vector{Vector{Float64}};
     kwargs...
 )::Vector{CriticalPointRefinementResult}
