@@ -6,8 +6,7 @@ using Test
 using GlobtimPostProcessing
 using LinearAlgebra
 
-# Include test fixtures for Deuflhard smoke test
-include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
+# Test fixtures (test_functions.jl) are included once in runtests.jl
 
 @testset "Capture Analysis" begin
 
@@ -832,8 +831,8 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
 
             degree_capture = [(4, cr4), (6, cr6)]
             info = [
-                DegreeConvergenceInfo(4, 0.5, 10, 1e-2, 0.1),
-                DegreeConvergenceInfo(6, 0.01, 25, 1e-5, 0.001),
+                DegreeConvergenceInfo(4, 0.5, 0.1, 10, 1e-2, 0.1),
+                DegreeConvergenceInfo(6, 0.01, 0.003, 25, 1e-5, 0.001),
             ]
 
             pipe = Pipe()

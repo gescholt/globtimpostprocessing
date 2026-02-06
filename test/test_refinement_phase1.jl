@@ -522,9 +522,8 @@ using Statistics
 using CSV
 using DataFrames
 
-# Load the Deuflhard 4D fixture objective
+# Test fixtures (test_functions.jl) are included once in runtests.jl
 fixtures_dir = joinpath(@__DIR__, "fixtures")
-include(joinpath(fixtures_dir, "test_functions.jl"))
 
 @testset "Raw Critical Point Gradient Validation" begin
     @testset "compute_gradient_norms on simple functions" begin

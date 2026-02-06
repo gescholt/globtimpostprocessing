@@ -723,6 +723,7 @@ quality metrics alongside capture analysis results.
 struct DegreeConvergenceInfo
     degree::Int
     l2_error::Float64
+    relative_l2_error::Float64  # l2_error / ||f||_L2 (dimensionless)
     n_critical_points::Int
     min_gradient_norm::Union{Float64, Nothing}
     best_objective::Union{Float64, Nothing}
@@ -745,8 +746,8 @@ capture rates at key tolerances (1%, 5%, 10%), and best objective per degree.
 
 # Example
 ```julia
-info = [DegreeConvergenceInfo(4, 0.1, 50, 1e-3, 0.5),
-        DegreeConvergenceInfo(6, 0.01, 120, 1e-5, 0.3)]
+info = [DegreeConvergenceInfo(4, 0.1, 0.05, 50, 1e-3, 0.5),
+        DegreeConvergenceInfo(6, 0.01, 0.003, 120, 1e-5, 0.3)]
 print_degree_convergence_summary(degree_capture_results, info)
 ```
 """
@@ -772,7 +773,7 @@ function print_degree_convergence_summary(
     idx_10pct = findfirst(f -> f ≈ 0.1, tol_fracs)
 
     n_rows = length(all_degrees)
-    conv_data = Matrix{Any}(undef, n_rows, 8)
+    conv_data = Matrix{Any}(undef, n_rows, 9)
 
     for (row, deg) in enumerate(all_degrees)
         di = get(info_map, deg, nothing)
@@ -780,26 +781,28 @@ function print_degree_convergence_summary(
 
         conv_data[row, 1] = deg
         conv_data[row, 2] = di !== nothing ? @sprintf("%.*e", 2, di.l2_error) : "N/A"
-        conv_data[row, 3] = di !== nothing ? di.n_critical_points : 0
-        conv_data[row, 4] = di !== nothing && di.min_gradient_norm !== nothing ?
+        conv_data[row, 3] = di !== nothing && !isnan(di.relative_l2_error) ?
+            @sprintf("%.*e", 2, di.relative_l2_error) : "N/A"
+        conv_data[row, 4] = di !== nothing ? di.n_critical_points : 0
+        conv_data[row, 5] = di !== nothing && di.min_gradient_norm !== nothing ?
             @sprintf("%.*e", 2, di.min_gradient_norm) : "N/A"
 
         # Capture rates at 1%, 5%, 10%
         if cr !== nothing
-            conv_data[row, 5] = idx_1pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_1pct]) : "N/A"
-            conv_data[row, 6] = idx_5pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_5pct]) : "N/A"
-            conv_data[row, 7] = idx_10pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_10pct]) : "N/A"
+            conv_data[row, 6] = idx_1pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_1pct]) : "N/A"
+            conv_data[row, 7] = idx_5pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_5pct]) : "N/A"
+            conv_data[row, 8] = idx_10pct !== nothing ? @sprintf("%.1f%%", 100 * cr.capture_rates[idx_10pct]) : "N/A"
         else
-            conv_data[row, 5] = "N/A"
             conv_data[row, 6] = "N/A"
             conv_data[row, 7] = "N/A"
+            conv_data[row, 8] = "N/A"
         end
 
         # Best objective
         if di !== nothing && di.best_objective !== nothing
-            conv_data[row, 8] = @sprintf("%.*e", 2, di.best_objective)
+            conv_data[row, 9] = @sprintf("%.*e", 2, di.best_objective)
         else
-            conv_data[row, 8] = "N/A"
+            conv_data[row, 9] = "N/A"
         end
     end
 
@@ -817,15 +820,15 @@ function print_degree_convergence_summary(
 
     hl_deg = Highlighter((_, i, j) -> j == 1, bold=true, foreground=:cyan)
     hl_best_conv = Highlighter(
-        (_, i, j) -> i == best_conv_row && (j >= 5 && j <= 7),
+        (_, i, j) -> i == best_conv_row && (j >= 6 && j <= 8),
         foreground=:green, bold=true)
 
     println(io)
     styled_table(io, conv_data;
-        header=["Deg", "L2 err", "# CPs", "min ||∇f||",
+        header=["Deg", "L2 err", "Rel L2", "# CPs", "min ||∇f||",
                 "Cap @1%", "Cap @5%", "Cap @10%", "Best f(x)"],
         title="Degree Convergence Summary",
-        alignment=[:r, :r, :r, :r, :r, :r, :r, :r],
+        alignment=[:r, :r, :r, :r, :r, :r, :r, :r, :r],
         highlighters=(hl_deg, hl_best_conv),
     )
 end

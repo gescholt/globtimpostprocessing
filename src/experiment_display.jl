@@ -61,22 +61,26 @@ end
 
 Print a polynomial approximation summary table from degree results.
 
-Columns: Degree, # CPs, L2 err, Best f(x), Status, [Poly time, HC Solve,] Total.
+Columns: Degree, # CPs, L2 err, Rel L2, Best f(x), Status, [Poly time, HC Solve,] Total.
 When `show_timing_breakdown=true`, includes the Poly time and HC Solve columns
 (requires `polynomial_construction_time` and `critical_point_solving_time` fields).
 
 # Arguments
 - `degree_results`: Vector of degree result objects with fields: `degree`, `n_critical_points`,
-  `l2_approx_error`, `best_objective`, `status`, `total_computation_time`, and optionally
-  `polynomial_construction_time`, `critical_point_solving_time`.
+  `l2_approx_error`, `relative_l2_error`, `best_objective`, `status`, `total_computation_time`,
+  and optionally `polynomial_construction_time`, `critical_point_solving_time`.
 - `show_timing_breakdown::Bool`: Whether to show Poly/HC columns (default: false)
 - `io::IO`: Output stream (default: stdout)
 """
 function print_poly_summary_table(degree_results; show_timing_breakdown::Bool=false, io::IO=stdout)
     print_section("Polynomial Approximation (Globtim)"; io=io)
 
+    # Check if degree_results have relative_l2_error field
+    has_rel_l2 = !isempty(degree_results) && hasproperty(first(degree_results), :relative_l2_error)
+
     n = length(degree_results)
-    n_cols = show_timing_breakdown ? 8 : 6
+    base_cols = has_rel_l2 ? 7 : 6
+    n_cols = show_timing_breakdown ? base_cols + 2 : base_cols
     data = Matrix{Any}(undef, n, n_cols)
 
     for (row, dr) in enumerate(degree_results)
@@ -84,6 +88,10 @@ function print_poly_summary_table(degree_results; show_timing_breakdown::Bool=fa
         data[row, col] = dr.degree; col += 1
         data[row, col] = dr.n_critical_points; col += 1
         data[row, col] = fmt_sci(dr.l2_approx_error); col += 1
+        if has_rel_l2
+            rel = dr.relative_l2_error
+            data[row, col] = isnan(rel) ? "N/A" : fmt_sci(rel); col += 1
+        end
         data[row, col] = dr.best_objective !== nothing ? fmt_sci(dr.best_objective) : "N/A"; col += 1
         data[row, col] = dr.status; col += 1
         if show_timing_breakdown
@@ -93,16 +101,22 @@ function print_poly_summary_table(degree_results; show_timing_breakdown::Bool=fa
         data[row, col] = fmt_time(dr.total_computation_time)
     end
 
-    status_col = 5
+    base_header = has_rel_l2 ?
+        ["Degree", "# CPs", "L2 err", "Rel L2", "Best f(x)", "Status"] :
+        ["Degree", "# CPs", "L2 err", "Best f(x)", "Status"]
+    base_align = has_rel_l2 ?
+        [:r, :r, :r, :r, :r, :c] :
+        [:r, :r, :r, :r, :c]
+    status_col = has_rel_l2 ? 6 : 5
     header = if show_timing_breakdown
-        ["Degree", "# CPs", "L2 err", "Best f(x)", "Status", "Poly time", "HC Solve", "Total"]
+        vcat(base_header, ["Poly time", "HC Solve", "Total"])
     else
-        ["Degree", "# CPs", "L2 err", "Best f(x)", "Status", "Time"]
+        vcat(base_header, ["Time"])
     end
     alignment = if show_timing_breakdown
-        [:r, :r, :r, :r, :c, :r, :r, :r]
+        vcat(base_align, [:r, :r, :r])
     else
-        [:r, :r, :r, :r, :c, :r]
+        vcat(base_align, [:r])
     end
 
     styled_table(io, data;
@@ -299,9 +313,11 @@ function build_degree_convergence_info(
             nothing
         end
 
+        rel_l2 = hasproperty(dr, :relative_l2_error) ? dr.relative_l2_error : NaN
         push!(infos, DegreeConvergenceInfo(
             deg,
             dr.l2_approx_error,
+            rel_l2,
             dr.n_critical_points,
             gv !== nothing ? gv.min_norm : nothing,
             best_obj,
@@ -810,7 +826,7 @@ function build_sparsification_plot_entries(results, known_cps::KnownCriticalPoin
         full_cr = compute_capture_analysis(known_cps, sdr.full_critical_points)
         push!(entries, (
             degree = sdr.degree, variant_label = "Full", threshold = 0.0,
-            capture_result = full_cr, n_nonzero_coeffs = sdr.full_n_coeffs,
+            capture_result = full_cr, n_nonzero_coeffs = sdr.full_n_nonzero_coeffs,
             l2_ratio = 1.0, solve_time = sdr.full_solve_time,
         ))
 
