@@ -25,10 +25,9 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             points = [[0.0, 0.0], [1.0, 1.0]]
             values = [0.0, 2.0]
             types = [:min, :saddle]
-            lb = [-1.0, -1.0]
-            ub = [1.0, 1.0]
+            b = [(-1.0, 1.0), (-1.0, 1.0)]
 
-            known = KnownCriticalPoints(points, values, types, lb, ub)
+            known = KnownCriticalPoints(points, values, types, b)
 
             @test length(known.points) == 2
             @test length(known.values) == 2
@@ -41,21 +40,21 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             # 1D domain [-1, 1]: diameter = 2.0
             known_1d = KnownCriticalPoints(
                 [[0.0]], [0.0], [:min],
-                [-1.0], [1.0]
+                [(-1.0, 1.0)]
             )
             @test known_1d.domain_diameter ≈ 2.0
 
             # 3D domain [0, 1]^3: diameter = sqrt(3)
             known_3d = KnownCriticalPoints(
                 [[0.5, 0.5, 0.5]], [1.0], [:min],
-                [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]
+                [(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)]
             )
             @test known_3d.domain_diameter ≈ sqrt(3)
 
             # Asymmetric domain [-1.2, 1.2]^4: diameter = norm([2.4, 2.4, 2.4, 2.4]) = 2.4*sqrt(4) = 4.8
             known_4d = KnownCriticalPoints(
                 [[0.0, 0.0, 0.0, 0.0]], [0.0], [:min],
-                [-1.2, -1.2, -1.2, -1.2], [1.2, 1.2, 1.2, 1.2]
+                [(-1.2, 1.2), (-1.2, 1.2), (-1.2, 1.2), (-1.2, 1.2)]
             )
             @test known_4d.domain_diameter ≈ 4.8
         end
@@ -63,7 +62,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         @testset "Error on empty points" begin
             @test_throws ErrorException KnownCriticalPoints(
                 Vector{Float64}[], Float64[], Symbol[],
-                [-1.0], [1.0]
+                [(-1.0, 1.0)]
             )
         end
 
@@ -71,26 +70,27 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             # values too short
             @test_throws ErrorException KnownCriticalPoints(
                 [[0.0], [1.0]], [0.0], [:min, :max],
-                [-1.0], [1.0]
+                [(-1.0, 1.0)]
             )
             # types too short
             @test_throws ErrorException KnownCriticalPoints(
                 [[0.0], [1.0]], [0.0, 1.0], [:min],
-                [-1.0], [1.0]
+                [(-1.0, 1.0)]
             )
         end
 
         @testset "Error on invalid type" begin
             @test_throws ErrorException KnownCriticalPoints(
                 [[0.0]], [0.0], [:minimum],  # :minimum is not valid, must be :min
-                [-1.0], [1.0]
+                [(-1.0, 1.0)]
             )
         end
 
         @testset "Error on mismatched bounds" begin
+            # 2D point with 1D bounds
             @test_throws ErrorException KnownCriticalPoints(
                 [[0.0, 0.0]], [0.0], [:min],
-                [-1.0], [1.0, 1.0]  # 1D lb, 2D ub
+                [(-1.0, 1.0)]  # 1D bounds, 2D point
             )
         end
 
@@ -98,7 +98,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             # 3D point with 2D bounds
             @test_throws ErrorException KnownCriticalPoints(
                 [[0.0, 0.0, 0.0]], [0.0], [:min],
-                [-1.0, -1.0], [1.0, 1.0]
+                [(-1.0, 1.0), (-1.0, 1.0)]
             )
         end
     end
@@ -109,7 +109,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
             [0.0, 1.0, 1.0],
             [:min, :saddle, :max],
-            [-2.0, -2.0], [2.0, 2.0]
+            [(-2.0, 2.0), (-2.0, 2.0)]
         )
         # Computed points are exactly at known CPs
         computed = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
@@ -134,7 +134,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
             [0.0, 1.0, 1.0],
             [:min, :saddle, :max],
-            [-2.0, -2.0], [2.0, 2.0]
+            [(-2.0, 2.0), (-2.0, 2.0)]
         )
         # Computed points are far away (outside any reasonable tolerance)
         computed = [[100.0, 100.0], [-100.0, -100.0]]
@@ -153,7 +153,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [1.0, 0.0]],
             [0.0, 1.0],
             [:min, :saddle],
-            [-2.0, -2.0], [2.0, 2.0]
+            [(-2.0, 2.0), (-2.0, 2.0)]
         )
         computed = Vector{Float64}[]
 
@@ -171,7 +171,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
             [0.0, 1.0, 1.0, 2.0],
             [:min, :saddle, :saddle, :max],
-            [-2.0, -2.0], [2.0, 2.0]
+            [(-2.0, 2.0), (-2.0, 2.0)]
         )
         # domain_diameter = norm([4, 4]) = 4*sqrt(2) ≈ 5.657
         # Computed points: very close to [0,0] and [1,1], far from [1,0] and [0,1]
@@ -207,7 +207,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]],
             [0.0, 1.0, 4.0],
             [:min, :saddle, :max],
-            [-5.0, -5.0], [5.0, 5.0]
+            [(-5.0, 5.0), (-5.0, 5.0)]
         )
         # domain_diameter = norm([10, 10]) = 10*sqrt(2) ≈ 14.14
         computed = [[0.05, 0.0]]
@@ -254,7 +254,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
              [2.0, 2.0]],               # maximum
             [0.0, 0.1, 1.0, 1.0, 5.0],
             [:min, :min, :saddle, :saddle, :max],
-            [-5.0, -5.0], [5.0, 5.0]
+            [(-5.0, 5.0), (-5.0, 5.0)]
         )
         # domain_diameter = 10*sqrt(2) ≈ 14.14
 
@@ -294,7 +294,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [10.0, 10.0]],
             [0.0, 100.0],
             [:min, :max],
-            [-20.0, -20.0], [20.0, 20.0]
+            [(-20.0, 20.0), (-20.0, 20.0)]
         )
         # domain_diameter = norm([40, 40]) = 40*sqrt(2) ≈ 56.57
 
@@ -324,7 +324,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]],
             [0.0, 25.0, 100.0],
             [:min, :saddle, :max],
-            [-15.0, -15.0], [15.0, 15.0]
+            [(-15.0, 15.0), (-15.0, 15.0)]
         )
         computed = [[0.01, -0.01]]  # only near [0,0]
 
@@ -375,7 +375,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
 
         # Small domain: [-1, 1]^2, diameter = 2*sqrt(2) ≈ 2.83
         # tol at 0.2 = 0.566 → captures (0.5 < 0.566)
-        known_small = KnownCriticalPoints(points, values, types, [-1.0, -1.0], [1.0, 1.0])
+        known_small = KnownCriticalPoints(points, values, types, [(-1.0, 1.0), (-1.0, 1.0)])
         result_small = compute_capture_analysis(known_small, computed;
             tolerance_fractions = [0.1, 0.2]
         )
@@ -383,7 +383,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         # Large domain: [-10, 10]^2, diameter = 20*sqrt(2) ≈ 28.28
         # tol at 0.2 = 5.66 → captures (0.5 < 5.66)
         # tol at 0.01 = 0.283 → does NOT capture (0.5 > 0.283)
-        known_large = KnownCriticalPoints(points, values, types, [-10.0, -10.0], [10.0, 10.0])
+        known_large = KnownCriticalPoints(points, values, types, [(-10.0, 10.0), (-10.0, 10.0)])
         result_large = compute_capture_analysis(known_large, computed;
             tolerance_fractions = [0.01, 0.2]
         )
@@ -405,7 +405,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
     @testset "Tolerance Fractions Sorted" begin
         known = KnownCriticalPoints(
             [[0.0, 0.0]], [0.0], [:min],
-            [-1.0, -1.0], [1.0, 1.0]
+            [(-1.0, 1.0), (-1.0, 1.0)]
         )
         computed = [[0.1, 0.0]]
 
@@ -424,7 +424,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [3.0, 0.0]],
             [0.0, 9.0],
             [:min, :max],
-            [-5.0, -5.0], [5.0, 5.0]
+            [(-5.0, 5.0), (-5.0, 5.0)]
         )
         computed = [
             [10.0, 10.0],  # idx 1: far from both
@@ -448,7 +448,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [1.0, 0.0], [0.5, 0.5]],
             [0.0, 1.0, 0.5],
             [:min, :max, :saddle],
-            [-2.0, -2.0], [2.0, 2.0]
+            [(-2.0, 2.0), (-2.0, 2.0)]
         )
         computed = [[0.01, 0.01], [0.99, 0.01]]
 
@@ -495,7 +495,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         @testset "print_degree_capture_convergence error on inconsistent tolerances" begin
             known2 = KnownCriticalPoints(
                 [[0.0, 0.0]], [0.0], [:min],
-                [-2.0, -2.0], [2.0, 2.0]
+                [(-2.0, 2.0), (-2.0, 2.0)]
             )
             r_a = compute_capture_analysis(known2, [[0.01, 0.01]];
                 tolerance_fractions = [0.01, 0.05])
@@ -511,7 +511,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         # When all CPs are captured, print should say so
         known = KnownCriticalPoints(
             [[0.0, 0.0]], [0.0], [:min],
-            [-1.0, -1.0], [1.0, 1.0]
+            [(-1.0, 1.0), (-1.0, 1.0)]
         )
         computed = [[0.0, 0.0]]
         result = compute_capture_analysis(known, computed)
@@ -535,7 +535,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0]],
             [f_origin],
             [:min],
-            [-1.2, -1.2], [1.2, 1.2]
+            [(-1.2, 1.2), (-1.2, 1.2)]
         )
         # domain_diameter = norm([2.4, 2.4]) = 2.4*sqrt(2) ≈ 3.394
 
@@ -573,10 +573,9 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
                 [-0.741151903683758, 0.741151903683749],        # min
                 [-0.126217280731682, -0.126217280731676],       # max
             ]
-            lb = [-1.2, -1.2, -1.2, -1.2]
-            ub = [1.2, 1.2, 1.2, 1.2]
+            b4d = [(-1.2, 1.2), (-1.2, 1.2), (-1.2, 1.2), (-1.2, 1.2)]
 
-            known_4d = build_known_cps_from_2d_product(deuflhard_2d, pts_2d, lb, ub)
+            known_4d = build_known_cps_from_2d_product(deuflhard_2d, pts_2d, b4d)
 
             # Should produce 3^2 = 9 4D critical points
             @test length(known_4d.points) == 9
@@ -620,10 +619,9 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
                 df = CSV.read(csv_path, DataFrame)
                 pts_2d = [[df[i, :x], df[i, :y]] for i in 1:nrow(df)]
 
-                lb = [-1.2, -1.2, -1.2, -1.2]
-                ub = [1.2, 1.2, 1.2, 1.2]
+                b4d = [(-1.2, 1.2), (-1.2, 1.2), (-1.2, 1.2), (-1.2, 1.2)]
 
-                known_4d = build_known_cps_from_2d_product(deuflhard_2d, pts_2d, lb, ub)
+                known_4d = build_known_cps_from_2d_product(deuflhard_2d, pts_2d, b4d)
 
                 @test length(known_4d.points) == 225  # 15^2
                 @test known_4d.domain_diameter ≈ 4.8
@@ -648,11 +646,11 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
 
         @testset "Error handling" begin
             @test_throws ErrorException build_known_cps_from_2d_product(
-                deuflhard_2d, Vector{Float64}[], [-1.0, -1.0, -1.0, -1.0], [1.0, 1.0, 1.0, 1.0]
+                deuflhard_2d, Vector{Float64}[], [(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)]
             )
             # Wrong dimension bounds
             @test_throws ErrorException build_known_cps_from_2d_product(
-                deuflhard_2d, [[0.0, 0.0]], [-1.0, -1.0], [1.0, 1.0]  # 2D bounds, not 4D
+                deuflhard_2d, [[0.0, 0.0]], [(-1.0, 1.0), (-1.0, 1.0)]  # 2D bounds, not 4D
             )
         end
     end
@@ -663,7 +661,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             [[0.0, 0.0], [1.0, 0.0]],
             [0.0, 1.0],
             [:min, :min],
-            [-2.0, -2.0], [2.0, 2.0]
+            [(-2.0, 2.0), (-2.0, 2.0)]
         )
         computed = [[0.0, 0.0], [1.0, 0.0]]
         result = compute_capture_analysis(known, computed)
@@ -734,8 +732,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         @testset "Respects box constraints" begin
             result = refine_to_critical_point(f_quad, [2.0, 2.0];
                 gradient_method=:forwarddiff,
-                lower_bounds=[0.5, 0.5],
-                upper_bounds=[3.0, 3.0],
+                bounds=[(0.5, 3.0), (0.5, 3.0)],
             )
             # The true minimum is at origin but box is [0.5, 3.0]²
             # Newton should converge but be clamped at lower bound
@@ -767,16 +764,16 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
 
         @testset "Basic: quadratic, multiple starts converge to same CP" begin
             raw_points = [[0.5, 0.3], [-0.2, 0.4], [0.1, -0.1], [-0.3, -0.2]]
-            lb = [-1.0, -1.0]
-            ub = [1.0, 1.0]
+            b2d = [(-1.0, 1.0), (-1.0, 1.0)]
 
-            known = build_known_cps_from_refinement(f_quad, raw_points, lb, ub;
+            known = build_known_cps_from_refinement(f_quad, raw_points, b2d;
                 gradient_method=:forwarddiff, dedup_fraction=0.01)
 
             # All 4 starts should converge to the same minimum at origin → 1 unique CP
             @test length(known.points) == 1
             @test known.types[1] == :min
             @test norm(known.points[1]) < 1e-4
+            lb, ub = GlobtimPostProcessing.lower_bounds(b2d), GlobtimPostProcessing.upper_bounds(b2d)
             @test known.domain_diameter ≈ norm(ub .- lb)
         end
 
@@ -789,10 +786,9 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
                 [-0.9, 0.1],  # should converge to (-1, 0) min
                 [0.05, 0.05], # should converge to (0, 0) saddle
             ]
-            lb = [-2.0, -2.0]
-            ub = [2.0, 2.0]
+            b2d = [(-2.0, 2.0), (-2.0, 2.0)]
 
-            known = build_known_cps_from_refinement(f_two_min, raw_points, lb, ub;
+            known = build_known_cps_from_refinement(f_two_min, raw_points, b2d;
                 gradient_method=:forwarddiff, dedup_fraction=0.01)
 
             # Should find 3 distinct CPs: two minima and one saddle
@@ -805,13 +801,13 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
 
         @testset "Error on empty raw_points" begin
             @test_throws ErrorException build_known_cps_from_refinement(
-                f_quad, Vector{Float64}[], [-1.0, -1.0], [1.0, 1.0];
+                f_quad, Vector{Float64}[], [(-1.0, 1.0), (-1.0, 1.0)];
                 gradient_method=:forwarddiff)
         end
 
         @testset "Error on dimension mismatch" begin
             @test_throws ErrorException build_known_cps_from_refinement(
-                f_quad, [[0.5, 0.3]], [-1.0], [1.0];  # 1D bounds, 2D points
+                f_quad, [[0.5, 0.3]], [(-1.0, 1.0)];  # 1D bounds, 2D points
                 gradient_method=:forwarddiff)
         end
     end
@@ -827,7 +823,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         @testset "Prints without error" begin
             types = [:min, :saddle]
             known = KnownCriticalPoints([[0.0, 0.0], [1.0, 1.0]], [0.0, 2.0], types,
-                [-1.0, -1.0], [1.0, 1.0])
+                [(-1.0, 1.0), (-1.0, 1.0)])
             dd = known.domain_diameter
             tol_fracs = [0.01, 0.05, 0.1]
 
@@ -862,7 +858,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             known = KnownCriticalPoints(
                 [[0.0, 0.0], [1.0, 0.0], [0.5, 0.5]],
                 [0.0, 1.0, 0.5], types,
-                [-2.0, -2.0], [2.0, 2.0])
+                [(-2.0, 2.0), (-2.0, 2.0)])
             dd = known.domain_diameter
             tol_fracs = [0.01, 0.05, 0.1]
 
@@ -887,7 +883,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
             known = KnownCriticalPoints(
                 [[0.0, 0.0], [1.0, 1.0]],
                 [0.0, 2.0], types,
-                [-2.0, -2.0], [2.0, 2.0])
+                [(-2.0, 2.0), (-2.0, 2.0)])
             tol_fracs = [0.01, 0.05, 0.1]
             cr = compute_capture_analysis(known, [[0.0, 0.0], [1.0, 1.0]];
                 tolerance_fractions=tol_fracs)
@@ -905,7 +901,7 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
 
         @testset "Error on missing tolerance fraction" begin
             types = [:min]
-            known = KnownCriticalPoints([[0.0, 0.0]], [0.0], types, [-1.0, -1.0], [1.0, 1.0])
+            known = KnownCriticalPoints([[0.0, 0.0]], [0.0], types, [(-1.0, 1.0), (-1.0, 1.0)])
             cr = compute_capture_analysis(known, [[0.0, 0.0]]; tolerance_fractions=[0.01, 0.1])
 
             # Default reference is 0.05, which is not in [0.01, 0.1]

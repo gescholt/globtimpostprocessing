@@ -26,18 +26,17 @@ A set of known critical points of an objective function, with their values and t
 - `domain_diameter::Float64`: Euclidean diameter of the domain (norm of diagonal)
 
 # Constructor
-    KnownCriticalPoints(points, values, types, lower_bounds, upper_bounds)
+    KnownCriticalPoints(points, values, types, bounds)
 
-Computes `domain_diameter = norm(upper_bounds - lower_bounds)` from the bounds.
+Computes `domain_diameter = norm(upper - lower)` from the bounds.
 
 # Example
 ```julia
 points = [[0.0, 0.0], [1.0, 1.0], [0.5, 0.5]]
 values = [0.0, 2.0, 1.0]
-types = [:min, :min, :saddle]
-lb = [-2.0, -2.0]
-ub = [2.0, 2.0]
-known = KnownCriticalPoints(points, values, types, lb, ub)
+types = [:min, :max, :saddle]
+bounds = [(-2.0, 2.0), (-2.0, 2.0)]
+known = KnownCriticalPoints(points, values, types, bounds)
 ```
 """
 struct KnownCriticalPoints
@@ -50,7 +49,7 @@ end
 const VALID_CP_TYPES = Set([:min, :max, :saddle])
 
 """
-    KnownCriticalPoints(points, values, types, lower_bounds, upper_bounds)
+    KnownCriticalPoints(points, values, types, bounds)
 
 Construct `KnownCriticalPoints` from bounds, computing domain diameter automatically.
 
@@ -58,32 +57,27 @@ Construct `KnownCriticalPoints` from bounds, computing domain diameter automatic
 - `points::Vector{Vector{Float64}}`: Known critical point coordinates
 - `values::Vector{Float64}`: f(x) at each known critical point
 - `types::Vector{Symbol}`: Type of each CP (`:min`, `:max`, `:saddle`)
-- `lower_bounds::Vector{Float64}`: Lower bounds of the domain
-- `upper_bounds::Vector{Float64}`: Upper bounds of the domain
+- `bounds::Vector{Tuple{Float64,Float64}}`: Domain bounds as (lo, hi) tuples
 
 # Errors
 - If `points` is empty
 - If `points`, `values`, `types` have different lengths
 - If any type is not in `{:min, :max, :saddle}`
-- If `lower_bounds` and `upper_bounds` have different lengths
 """
 function KnownCriticalPoints(
     points::Vector{Vector{Float64}},
     values::Vector{Float64},
     types::Vector{Symbol},
-    lower_bounds::Vector{Float64},
-    upper_bounds::Vector{Float64}
+    bounds::Vector{Tuple{Float64,Float64}}
 )
     isempty(points) && error("KnownCriticalPoints: points must be non-empty")
 
     n = length(points)
     length(values) == n || error("KnownCriticalPoints: values length ($(length(values))) must match points length ($n)")
     length(types) == n || error("KnownCriticalPoints: types length ($(length(types))) must match points length ($n)")
-    length(lower_bounds) == length(upper_bounds) || error(
-        "KnownCriticalPoints: lower_bounds length ($(length(lower_bounds))) must match upper_bounds length ($(length(upper_bounds)))"
-    )
 
-    ndim = length(lower_bounds)
+    lb, ub = split_bounds(bounds)
+    ndim = length(bounds)
     for (i, pt) in enumerate(points)
         length(pt) == ndim || error(
             "KnownCriticalPoints: point $i has dimension $(length(pt)), expected $ndim (from bounds)"
@@ -94,7 +88,7 @@ function KnownCriticalPoints(
         t in VALID_CP_TYPES || error("KnownCriticalPoints: invalid type $(repr(t)) at index $i. Must be one of $VALID_CP_TYPES")
     end
 
-    domain_diameter = LinearAlgebra.norm(upper_bounds - lower_bounds)
+    domain_diameter = LinearAlgebra.norm(ub - lb)
 
     return KnownCriticalPoints(points, values, types, domain_diameter)
 end
@@ -510,8 +504,7 @@ end
     build_known_cps_from_2d_product(
         objective_2d::Function,
         points_2d::Vector{Vector{Float64}},
-        lower_bounds::Vector{Float64},
-        upper_bounds::Vector{Float64};
+        bounds::Vector{Tuple{Float64,Float64}};
         hessian_tol::Float64 = 1e-6
     ) -> KnownCriticalPoints
 
@@ -530,8 +523,7 @@ classification of each 2D component, then combines types:
 # Arguments
 - `objective_2d::Function`: The 2D component function g(x) where f = g(x₁₂) + g(x₃₄)
 - `points_2d::Vector{Vector{Float64}}`: Known 2D critical points of g
-- `lower_bounds::Vector{Float64}`: Lower bounds of the 4D domain
-- `upper_bounds::Vector{Float64}`: Upper bounds of the 4D domain
+- `bounds::Vector{Tuple{Float64,Float64}}`: Domain bounds as (lo, hi) tuples (must be 4D)
 - `hessian_tol::Float64`: Tolerance for eigenvalue sign classification (default: 1e-6)
 
 # Returns
@@ -543,20 +535,18 @@ deuflhard_2d(x) = (exp(x[1]^2 + x[2]^2) - 3)^2 + (x[1] + x[2] - sin(3(x[1] + x[2
 pts_2d = [[0.0, 0.0], [0.741, 0.741], ...]  # from CSV
 known_4d = build_known_cps_from_2d_product(
     deuflhard_2d, pts_2d,
-    [-1.2, -1.2, -1.2, -1.2], [1.2, 1.2, 1.2, 1.2]
+    [(-1.2, 1.2), (-1.2, 1.2), (-1.2, 1.2), (-1.2, 1.2)]
 )
 ```
 """
 function build_known_cps_from_2d_product(
     objective_2d::Function,
     points_2d::Vector{Vector{Float64}},
-    lower_bounds::Vector{Float64},
-    upper_bounds::Vector{Float64};
+    bounds::Vector{Tuple{Float64,Float64}};
     hessian_tol::Float64 = 1e-6
 )::KnownCriticalPoints
     isempty(points_2d) && error("points_2d must be non-empty")
-    length(lower_bounds) == 4 || error("lower_bounds must be 4D, got $(length(lower_bounds))D")
-    length(upper_bounds) == 4 || error("upper_bounds must be 4D, got $(length(upper_bounds))D")
+    length(bounds) == 4 || error("bounds must be 4D, got $(length(bounds))D")
 
     n_2d = length(points_2d)
 
@@ -593,15 +583,14 @@ function build_known_cps_from_2d_product(
         end
     end
 
-    return KnownCriticalPoints(points_4d, values_4d, types_4d, lower_bounds, upper_bounds)
+    return KnownCriticalPoints(points_4d, values_4d, types_4d, bounds)
 end
 
 """
     build_known_cps_from_refinement(
         objective::Function,
         raw_points::Vector{Vector{Float64}},
-        lower_bounds::Vector{Float64},
-        upper_bounds::Vector{Float64};
+        bounds::Vector{Tuple{Float64,Float64}};
         gradient_method::Symbol = :finitediff,
         tol::Float64 = 1e-8,
         max_iterations::Int = 100,
@@ -628,8 +617,7 @@ refinement which only finds minima.
 # Arguments
 - `objective::Function`: Objective function f(x) -> Float64
 - `raw_points::Vector{Vector{Float64}}`: Raw polynomial CPs (typically from the highest degree)
-- `lower_bounds::Vector{Float64}`: Domain lower bounds
-- `upper_bounds::Vector{Float64}`: Domain upper bounds
+- `bounds::Vector{Tuple{Float64,Float64}}`: Domain bounds as (lo, hi) tuples
 
 # Keyword Arguments
 - `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff` for ODE compatibility)
@@ -646,7 +634,7 @@ refinement which only finds minima.
 # For an ODE-based objective (no analytically known CPs)
 raw_cps = degree_results[end].critical_points  # from highest degree
 known = build_known_cps_from_refinement(
-    objective, raw_cps, LB, UB;
+    objective, raw_cps, bounds;
     gradient_method = :finitediff,
 )
 # Now use for capture analysis at every degree
@@ -656,8 +644,7 @@ cr = compute_capture_analysis(known, degree_results[4].critical_points)
 function build_known_cps_from_refinement(
     objective::Function,
     raw_points::Vector{Vector{Float64}},
-    lower_bounds::Vector{Float64},
-    upper_bounds::Vector{Float64};
+    bounds::Vector{Tuple{Float64,Float64}};
     gradient_method::Symbol = :finitediff,
     tol::Float64 = 1e-8,
     max_iterations::Int = 100,
@@ -665,15 +652,14 @@ function build_known_cps_from_refinement(
     dedup_fraction::Float64 = 0.01,
 )::KnownCriticalPoints
     isempty(raw_points) && error("raw_points must be non-empty")
-    length(lower_bounds) == length(upper_bounds) || error(
-        "lower_bounds ($(length(lower_bounds))D) and upper_bounds ($(length(upper_bounds))D) must have same dimension")
-    n = length(lower_bounds)
+    lb, ub = split_bounds(bounds)
+    n = length(bounds)
     for (i, pt) in enumerate(raw_points)
         length(pt) == n || error("raw_points[$i] has dimension $(length(pt)), expected $n")
     end
     0 < dedup_fraction < 1 || error("dedup_fraction must be in (0, 1), got $dedup_fraction")
 
-    domain_diameter = LinearAlgebra.norm(upper_bounds .- lower_bounds)
+    domain_diameter = LinearAlgebra.norm(ub .- lb)
     dedup_tol = dedup_fraction * domain_diameter
 
     # Step 1: Refine all points via Newton on ∇f = 0
@@ -682,8 +668,7 @@ function build_known_cps_from_refinement(
         gradient_method = gradient_method,
         tol = tol,
         max_iterations = max_iterations,
-        lower_bounds = lower_bounds,
-        upper_bounds = upper_bounds,
+        bounds = bounds,
         hessian_tol = hessian_tol,
     )
 
@@ -717,7 +702,7 @@ function build_known_cps_from_refinement(
     values = [r.objective_value for r in unique_results]
     types = Symbol[r.cp_type == :degenerate ? :saddle : r.cp_type for r in unique_results]
 
-    return KnownCriticalPoints(points, values, types, lower_bounds, upper_bounds)
+    return KnownCriticalPoints(points, values, types, bounds)
 end
 
 # ─── Degree Convergence Summary and Verdict ─────────────────────────────────

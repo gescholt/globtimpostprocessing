@@ -47,8 +47,7 @@ end
         gradient_method::Symbol = :finitediff,
         tol::Float64 = 1e-8,
         max_iterations::Int = 100,
-        lower_bounds::Union{Nothing, Vector{Float64}} = nothing,
-        upper_bounds::Union{Nothing, Vector{Float64}} = nothing,
+        bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing,
         hessian_tol::Float64 = 1e-6,
         damping::Float64 = 1.0,
         min_damping::Float64 = 0.01,
@@ -71,7 +70,7 @@ Unlike Nelder-Mead (which only finds minima), this finds critical points of
 - `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff` for ODE compatibility)
 - `tol::Float64`: Convergence tolerance on ||∇f(x)|| (default: 1e-8)
 - `max_iterations::Int`: Maximum Newton iterations (default: 100)
-- `lower_bounds`, `upper_bounds`: Box constraints. If provided, iterates are clamped to stay in-domain.
+- `bounds`: Box constraints as Vector{Tuple{Float64,Float64}}. If provided, iterates are clamped to stay in-domain.
 - `hessian_tol::Float64`: Tolerance for Hessian eigenvalue classification (default: 1e-6)
 - `damping::Float64`: Initial damping factor α ∈ (0, 1] (default: 1.0 = undamped Newton)
 - `min_damping::Float64`: Minimum damping before giving up on a step (default: 0.01)
@@ -100,8 +99,7 @@ function refine_to_critical_point(
     gradient_method::Symbol = :finitediff,
     tol::Float64 = 1e-8,
     max_iterations::Int = 100,
-    lower_bounds::Union{Nothing, Vector{Float64}} = nothing,
-    upper_bounds::Union{Nothing, Vector{Float64}} = nothing,
+    bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing,
     hessian_tol::Float64 = 1e-6,
     damping::Float64 = 1.0,
     min_damping::Float64 = 0.01,
@@ -109,6 +107,9 @@ function refine_to_critical_point(
 
     n = length(initial_point)
     x = copy(initial_point)
+
+    # Unpack bounds for internal clamping
+    lb, ub = split_bounds(bounds)
 
     0.0 < damping <= 1.0 || error("damping must be in (0, 1], got $damping")
     0.0 < min_damping <= damping || error("min_damping must be in (0, damping], got $min_damping")
@@ -170,14 +171,14 @@ function refine_to_critical_point(
         # Damped line search: ensure step reduces ||∇f||
         α = damping
         x_new = x .+ α .* step
-        _clamp_to_bounds!(x_new, lower_bounds, upper_bounds)
+        _clamp_to_bounds!(x_new, lb, ub)
         grad_new = compute_grad(x_new)
         grad_norm_new = LinearAlgebra.norm(grad_new)
 
         while grad_norm_new > grad_norm && α > min_damping
             α *= 0.5
             x_new = x .+ α .* step
-            _clamp_to_bounds!(x_new, lower_bounds, upper_bounds)
+            _clamp_to_bounds!(x_new, lb, ub)
             grad_new = compute_grad(x_new)
             grad_norm_new = LinearAlgebra.norm(grad_new)
         end

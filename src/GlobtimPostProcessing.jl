@@ -110,6 +110,9 @@ export check_objective_proximity, estimate_basin_radius, check_hessian_basin
 export assess_landscape_fidelity, batch_assess_fidelity
 export ObjectiveProximityResult, HessianBasinResult, LandscapeFidelityResult
 
+# Bounds helpers
+export lower_bounds, upper_bounds, split_bounds
+
 # Critical point refinement exports
 export RefinementConfig, ode_refinement_config
 export refine_experiment_results, refine_critical_points
@@ -233,8 +236,8 @@ include("CriticalPointClassification.jl")  # Critical point classification based
 include("LandscapeFidelity.jl")  # Landscape fidelity: polynomial vs objective basin assessment
 
 # Critical point refinement (moved from globtim - 2025-11-22)
+include("refinement/config.jl")           # RefinementConfig struct + bounds helpers (split_bounds, lower_bounds, upper_bounds)
 include("refinement/core_refinement.jl")  # Core refinement algorithms
-include("refinement/config.jl")           # RefinementConfig struct
 include("refinement/gradient_validation.jl")  # Gradient norm validation (before io.jl - defines GradientValidationResult)
 include("refinement/newton_refinement.jl")      # Newton-based critical point refinement (∇f=0)
 include("refinement/capture_analysis.jl")      # Capture analysis for known critical points

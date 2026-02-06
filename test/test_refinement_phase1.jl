@@ -343,15 +343,12 @@ using Optim  # Need Optim for type checks
         @testset "RefinementConfig Bounds Fields" begin
             # Default config has no bounds
             config = RefinementConfig()
-            @test config.lower_bounds === nothing
-            @test config.upper_bounds === nothing
+            @test config.bounds === nothing
 
             # Config with bounds
-            lb = [-1.0, -1.0]
-            ub = [1.0, 1.0]
-            bounded_config = RefinementConfig(lower_bounds=lb, upper_bounds=ub)
-            @test bounded_config.lower_bounds == lb
-            @test bounded_config.upper_bounds == ub
+            b = [(-1.0, 1.0), (-1.0, 1.0)]
+            bounded_config = RefinementConfig(bounds=b)
+            @test bounded_config.bounds == b
         end
 
         @testset "Initial Point Clamping" begin
@@ -362,14 +359,12 @@ using Optim  # Need Optim for type checks
 
             # Start OUTSIDE bounds [-1, 1]^2
             initial_outside = [2.0, 3.0]
-            lb = [-1.0, -1.0]
-            ub = [1.0, 1.0]
+            b = [(-1.0, 1.0), (-1.0, 1.0)]
 
             result = refine_critical_point(
                 sphere,
                 initial_outside;
-                lower_bounds=lb,
-                upper_bounds=ub,
+                bounds=b,
                 max_iterations=100
             )
 
@@ -383,8 +378,9 @@ using Optim  # Need Optim for type checks
                 return sum(p.^2)
             end
 
-            lb = [-1.0, -1.0]
-            ub = [1.0, 1.0]
+            b = [(-1.0, 1.0), (-1.0, 1.0)]
+            lb = lower_bounds(b)
+            ub = upper_bounds(b)
 
             # Multiple starting points, some inside, some outside bounds
             test_cases = [
@@ -398,8 +394,7 @@ using Optim  # Need Optim for type checks
                 result = refine_critical_point(
                     sphere,
                     initial;
-                    lower_bounds=lb,
-                    upper_bounds=ub,
+                    bounds=b,
                     max_iterations=200
                 )
 
@@ -416,8 +411,8 @@ using Optim  # Need Optim for type checks
             end
 
             initial = [1.0, 1.0]
-            lb = [-1.0, -1.0]
-            ub = [1.0, 1.0]
+            b = [(-1.0, 1.0), (-1.0, 1.0)]
+            ub = upper_bounds(b)
 
             # Unbounded: should find true minimum at [2, 2]
             result_unbounded = refine_critical_point(
@@ -433,8 +428,7 @@ using Optim  # Need Optim for type checks
             result_bounded = refine_critical_point(
                 offset_sphere,
                 initial;
-                lower_bounds=lb,
-                upper_bounds=ub,
+                bounds=b,
                 max_iterations=200
             )
             @test all(result_bounded.refined .<= ub)
@@ -447,8 +441,9 @@ using Optim  # Need Optim for type checks
                 return sum(p.^2)
             end
 
-            lb = [-0.5, -0.5]
-            ub = [0.5, 0.5]
+            b = [(-0.5, 0.5), (-0.5, 0.5)]
+            lb = lower_bounds(b)
+            ub = upper_bounds(b)
 
             # Some points inside, some outside bounds
             points = [
@@ -461,8 +456,7 @@ using Optim  # Need Optim for type checks
             results = refine_critical_points_batch(
                 sphere,
                 points;
-                lower_bounds=lb,
-                upper_bounds=ub,
+                bounds=b,
                 max_iterations=100,
                 show_progress=false
             )
@@ -479,14 +473,14 @@ using Optim  # Need Optim for type checks
             end
 
             # Asymmetric bounds: minimum at origin is within bounds
-            lb = [-2.0, -0.5]
-            ub = [0.5, 2.0]
+            b = [(-2.0, 0.5), (-0.5, 2.0)]
+            lb = lower_bounds(b)
+            ub = upper_bounds(b)
 
             result = refine_critical_point(
                 sphere,
                 [0.3, 0.3];
-                lower_bounds=lb,
-                upper_bounds=ub,
+                bounds=b,
                 max_iterations=100
             )
 
@@ -501,8 +495,9 @@ using Optim  # Need Optim for type checks
                 return sum(p.^2)
             end
 
-            lb = fill(-1.0, 4)
-            ub = fill(1.0, 4)
+            b = [(-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0), (-1.0, 1.0)]
+            lb = lower_bounds(b)
+            ub = upper_bounds(b)
 
             # Start outside in some dimensions
             initial = [0.5, 1.5, -0.5, 2.0]
@@ -510,8 +505,7 @@ using Optim  # Need Optim for type checks
             result = refine_critical_point(
                 sphere_4d,
                 initial;
-                lower_bounds=lb,
-                upper_bounds=ub,
+                bounds=b,
                 max_iterations=200
             )
 
