@@ -73,7 +73,7 @@ norms = compute_gradient_norms(points, ode_objective; gradient_method=:finitedif
 """
 function compute_gradient_norms(
     points::Vector{Vector{Float64}},
-    objective::Function;
+    objective;
     gradient_method::Symbol = :forwarddiff
 )::Vector{Float64}
     norms = Vector{Float64}(undef, length(points))
@@ -121,7 +121,7 @@ norm = compute_gradient_norm(point, ode_func; gradient_method=:finitediff)
 """
 function compute_gradient_norm(
     point::Vector{Float64},
-    objective::Function;
+    objective;
     gradient_method::Symbol = :forwarddiff
 )::Float64
     try
@@ -182,7 +182,7 @@ result = validate_critical_points(points, ode_func; gradient_method=:finitediff)
 """
 function validate_critical_points(
     points::Vector{Vector{Float64}},
-    objective::Function;
+    objective;
     tolerance::Float64 = 1e-6,
     gradient_method::Symbol = :forwarddiff
 )::GradientValidationResult
@@ -275,7 +275,7 @@ CSV.write("refinement_comparison_deg_12.csv", df)
 """
 function add_gradient_validation!(
     comparison_df::DataFrame,
-    objective::Function;
+    objective;
     tolerance::Float64 = 1e-6,
     use_refined::Bool = true,
     gradient_method::Symbol = :forwarddiff

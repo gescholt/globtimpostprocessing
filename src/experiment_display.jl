@@ -164,13 +164,13 @@ Returns a vector of `(degree, GradientValidationResult, RefinedExperimentResult)
 
 # Arguments
 - `degree_results`: Vector of degree result objects (from `run_standard_experiment`)
-- `objective::Function`: Objective function for refinement (may be Float64-wrapped)
+- `objective`: Objective callable for refinement (Function or callable struct like TolerantObjective)
 - `output_dir::String`: Experiment output directory (where raw CP CSVs are stored)
 - `refinement_config::RefinementConfig`: Configuration for Nelder-Mead refinement
 
 # Keyword Arguments
 - `gradient_method::Symbol = :forwarddiff`: Gradient computation method (`:forwarddiff` or `:finitediff`)
-- `gradient_objective::Function = objective`: Objective for gradient computation (may differ from
+- `gradient_objective = objective`: Objective for gradient computation (may differ from
   `objective` if the latter has type annotations blocking AD)
 - `io::IO = stdout`: Output stream for progress messages
 
@@ -182,11 +182,11 @@ analyses = run_degree_analyses(degree_results, objective, output_dir, ref_config
 """
 function run_degree_analyses(
     degree_results,
-    objective::Function,
+    objective,
     output_dir::String,
     refinement_config::RefinementConfig;
     gradient_method::Symbol = :forwarddiff,
-    gradient_objective::Function = objective,
+    gradient_objective = objective,
     io::IO = stdout,
 )::Vector{DegreeAnalysisResult}
 

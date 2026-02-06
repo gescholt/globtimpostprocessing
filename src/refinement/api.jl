@@ -16,7 +16,7 @@ using local optimization on the original objective function.
 
 # Arguments
 - `experiment_dir::String`: Path to globtim output (contains `critical_points_raw_deg_*.csv`)
-- `objective_func::Function`: Original objective function `f(p::Vector{Float64}) -> Float64`
+- `objective_func`: Original objective callable `f(p::Vector{Float64}) -> Float64` (Function or callable struct)
 - `config::RefinementConfig`: Refinement configuration (default: gradient-free NelderMead)
 
 # Keyword Arguments
@@ -67,7 +67,7 @@ println("Best estimate: ", best_params)
 """
 function refine_experiment_results(
     experiment_dir::String,
-    objective_func::Function,
+    objective_func,
     config::RefinementConfig = RefinementConfig();
     degree::Union{Int,Nothing} = nothing
 )
@@ -187,7 +187,7 @@ This is a convenience wrapper that delegates to `refine_experiment_results()`.
 
 # Arguments
 - `raw_result`: Object with `output_dir` field (e.g., from `run_standard_experiment()`)
-- `objective_func::Function`: Original objective function
+- `objective_func`: Original objective callable (Function or callable struct)
 - `config::RefinementConfig`: Refinement configuration
 
 # Returns
@@ -210,7 +210,7 @@ refined = refine_critical_points(raw, my_objective, ode_refinement_config())
 """
 function refine_critical_points(
     raw_result,
-    objective_func::Function,
+    objective_func,
     config::RefinementConfig = RefinementConfig()
 )
     # Extract output directory from result object
