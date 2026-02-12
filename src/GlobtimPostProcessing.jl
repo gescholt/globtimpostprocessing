@@ -73,6 +73,7 @@ export aggregate_campaign_statistics_with_progress, batch_analyze_campaign_with_
 
 # Parameter recovery exports (Issue #7)
 export param_distance, load_experiment_config, load_critical_points_for_degree
+export detect_csv_schema, get_coordinate_columns
 export compute_parameter_recovery_stats, generate_parameter_recovery_table, has_ground_truth
 
 # Quality diagnostics exports (Issue #7, Phase 3)
