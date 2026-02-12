@@ -131,6 +131,71 @@ using CSV
         @test minimization_data[2].min_objective > 0
     end
 
+    @testset "extract_true_parameters - flat format" begin
+        config_flat = Dict("p_true" => [0.2, 0.3, 0.5, 0.6])
+        p = extract_true_parameters(config_flat)
+        @test p isa Vector{Float64}
+        @test p == [0.2, 0.3, 0.5, 0.6]
+    end
+
+    @testset "extract_true_parameters - nested model_config format" begin
+        config_nested = Dict(
+            "model_config" => Dict(
+                "name" => "lotka_volterra_4d",
+                "dimension" => 4,
+                "true_parameters" => [0.2, 0.3, 0.5, 0.6]
+            )
+        )
+        p = extract_true_parameters(config_nested)
+        @test p isa Vector{Float64}
+        @test p == [0.2, 0.3, 0.5, 0.6]
+    end
+
+    @testset "extract_true_parameters - no true params" begin
+        config_none = Dict("function_name" => "test")
+        @test extract_true_parameters(config_none) === nothing
+    end
+
+    @testset "extract_true_parameters - flat takes precedence" begin
+        config_both = Dict(
+            "p_true" => [1.0, 2.0],
+            "model_config" => Dict("true_parameters" => [3.0, 4.0])
+        )
+        p = extract_true_parameters(config_both)
+        @test p == [1.0, 2.0]
+    end
+
+    @testset "has_ground_truth - nested config format" begin
+        nested_dir = joinpath(@__DIR__, "fixtures", "nested_config")
+        @test has_ground_truth(nested_dir) == true
+
+        # Load config and verify extraction
+        config = load_experiment_config(nested_dir)
+        p = extract_true_parameters(config)
+        @test p == [0.2, 0.3, 0.5, 0.6]
+    end
+
+    @testset "Nested config: parameter recovery with extract_true_parameters" begin
+        nested_dir = joinpath(@__DIR__, "fixtures", "nested_config")
+        config = load_experiment_config(nested_dir)
+        p_true = extract_true_parameters(config)
+        @test p_true !== nothing
+
+        df = load_critical_points_for_degree(nested_dir, 4)
+        @test nrow(df) == 4
+
+        stats = compute_parameter_recovery_stats(df, p_true, 0.01)
+        @test stats["min_distance"] < 0.01
+        @test stats["num_recoveries"] >= 2  # Points 1 and 4 are close to p_true
+    end
+
+    @testset "Nested config: tracking labels detect true_parameters" begin
+        nested_dir = joinpath(@__DIR__, "fixtures", "nested_config")
+        exp_result = load_experiment_results(nested_dir)
+        @test "distance_to_true_parameters" in exp_result.enabled_tracking
+        @test "distance_to_true_parameters" in exp_result.tracking_capabilities
+    end
+
     @testset "Load experiment results from directory" begin
         # Test loading from fixtures directory
         exp_result = load_experiment_results(fixtures_dir)
