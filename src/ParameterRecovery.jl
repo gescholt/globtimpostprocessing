@@ -331,15 +331,46 @@ function generate_parameter_recovery_table(
 end
 
 """
+    extract_true_parameters(config::AbstractDict) -> Union{Vector{Float64}, Nothing}
+
+Extract true parameter values from an experiment config dict.
+
+Supports two config formats:
+- Flat format: `config["p_true"]` (legacy/Phase 2)
+- Nested format: `config["model_config"]["true_parameters"]` (Schema v1.1.0+)
+
+# Returns
+- `Vector{Float64}` of true parameters, or `nothing` if not found
+"""
+function extract_true_parameters(config::AbstractDict)
+    # Check flat format first (legacy/Phase 2)
+    if haskey(config, "p_true") && !isnothing(config["p_true"])
+        return Float64.(config["p_true"])
+    end
+
+    # Check nested format (Schema v1.1.0+)
+    if haskey(config, "model_config")
+        mc = config["model_config"]
+        if mc isa AbstractDict && haskey(mc, "true_parameters") && !isnothing(mc["true_parameters"])
+            return Float64.(mc["true_parameters"])
+        end
+    end
+
+    return nothing
+end
+
+"""
     has_ground_truth(experiment_path::String) -> Bool
 
-Check if experiment has ground truth parameters (p_true).
+Check if experiment has ground truth parameters.
+
+Supports both flat (`p_true`) and nested (`model_config.true_parameters`) config formats.
 
 # Arguments
 - `experiment_path`: Path to experiment directory
 
 # Returns
-- `true` if experiment_config.json exists and contains `p_true`
+- `true` if experiment_config.json exists and contains true parameters
 - `false` otherwise (including when config file doesn't exist)
 """
 function has_ground_truth(experiment_path::String)
@@ -348,7 +379,7 @@ function has_ground_truth(experiment_path::String)
         return false
     end
     config = load_experiment_config(experiment_path)
-    return haskey(config, "p_true") && !isnothing(config["p_true"])
+    return extract_true_parameters(config) !== nothing
 end
 
 # Export functions
@@ -357,6 +388,7 @@ export load_experiment_config
 export load_critical_points_for_degree
 export detect_csv_schema
 export get_coordinate_columns
+export extract_true_parameters
 export compute_parameter_recovery_stats
 export generate_parameter_recovery_table
 export has_ground_truth

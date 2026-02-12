@@ -1,0 +1,17 @@
+{
+    "model_config": {
+        "name": "lotka_volterra_4d",
+        "dimension": 4,
+        "true_parameters": [0.2, 0.3, 0.5, 0.6]
+    },
+    "numerical_params": {
+        "GN": 8,
+        "degree_range": [4, 6],
+        "basis": "chebyshev",
+        "precision": "Float64Precision"
+    },
+    "domain_config": {
+        "ranges": [0.1, 0.1, 0.1, 0.1],
+        "center_offset_strategy": "none"
+    }
+}

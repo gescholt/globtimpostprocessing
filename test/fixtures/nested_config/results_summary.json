@@ -1,0 +1,20 @@
+{
+    "schema_version": "1.1.0",
+    "experiment_id": "nested_config_test",
+    "model_config": {
+        "name": "lotka_volterra_4d",
+        "dimension": 4,
+        "true_parameters": [0.2, 0.3, 0.5, 0.6]
+    },
+    "results_summary": {
+        "degree_4": {
+            "degree": 4,
+            "critical_points": 4,
+            "l2_approx_error": 0.001,
+            "condition_number": 15.3,
+            "recovery_error": 0.003,
+            "best_objective": 0.00089,
+            "total_computation_time": 2.5
+        }
+    }
+}

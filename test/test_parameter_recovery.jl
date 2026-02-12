@@ -145,6 +145,23 @@ using JSON3
         @test has_ground_truth("/nonexistent/path") == false
     end
 
+    @testset "has_ground_truth with nested config format" begin
+        nested_dir = joinpath(@__DIR__, "fixtures", "nested_config")
+        @test has_ground_truth(nested_dir) == true
+    end
+
+    @testset "extract_true_parameters from loaded config" begin
+        fixtures_dir = joinpath(@__DIR__, "fixtures")
+        config = load_experiment_config(fixtures_dir)
+        p = extract_true_parameters(config)
+        @test p == [0.2, 0.3, 0.5, 0.6]
+
+        nested_dir = joinpath(@__DIR__, "fixtures", "nested_config")
+        config_nested = load_experiment_config(nested_dir)
+        p_nested = extract_true_parameters(config_nested)
+        @test p_nested == [0.2, 0.3, 0.5, 0.6]
+    end
+
     @testset "Parameter distance with different dimensions" begin
         # 2D case
         p_true_2d = [1.0, 2.0]
