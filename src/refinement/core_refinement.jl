@@ -83,8 +83,7 @@ Refine a single critical point using local optimization with adaptive tolerances
 - `objective_func`: Function to minimize, signature f(x::Vector{Float64}) -> Float64
 - `initial_point::Vector{Float64}`: Initial guess from HomotopyContinuation
 - `method`: Optimization method (default: NelderMead() - gradient-free, robust)
-- `lower_bounds::Union{Nothing, Vector{Float64}}`: Box constraint lower bounds (default: nothing = unconstrained)
-- `upper_bounds::Union{Nothing, Vector{Float64}}`: Box constraint upper bounds (default: nothing = unconstrained)
+- `bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}}`: Box constraints as (lo, hi) tuples (default: nothing = unconstrained)
 - `f_abstol::Float64`: Absolute function tolerance for convergence (default: 1e-6, relaxed for robustness)
 - `x_abstol::Float64`: Absolute parameter tolerance for convergence (default: 1e-6)
 - `max_time::Union{Float64,Nothing}`: Maximum time in seconds per refinement (default: nothing = no timeout)
@@ -124,16 +123,18 @@ function refine_critical_point(
     objective_func,
     initial_point::Vector{Float64};
     method = Optim.NelderMead(),
-    lower_bounds::Union{Nothing, Vector{Float64}} = nothing,
-    upper_bounds::Union{Nothing, Vector{Float64}} = nothing,
+    bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing,
     f_abstol::Float64 = 1e-6,
     x_abstol::Float64 = 1e-6,
     max_time::Union{Float64,Nothing} = nothing,
     max_iterations::Int = 300
 )
+    # Unpack bounds
+    lb, ub = split_bounds(bounds)
+
     # Determine starting point (clamp if bounds provided)
-    starting_point = if lower_bounds !== nothing && upper_bounds !== nothing
-        clamp.(initial_point, lower_bounds, upper_bounds)
+    starting_point = if lb !== nothing && ub !== nothing
+        clamp.(initial_point, lb, ub)
     else
         initial_point
     end
@@ -178,12 +179,12 @@ function refine_critical_point(
         )
 
         # Choose bounded or unbounded optimization
-        result = if lower_bounds !== nothing && upper_bounds !== nothing
+        result = if lb !== nothing && ub !== nothing
             # Use starting_point (already clamped above)
             Optim.optimize(
                 objective_func,
-                lower_bounds,
-                upper_bounds,
+                lb,
+                ub,
                 starting_point,
                 Optim.Fminbox(method),
                 opt_options
@@ -206,8 +207,8 @@ function refine_critical_point(
         refined_point = Optim.minimizer(result)
 
         # Ensure result respects bounds (Fminbox + NelderMead may not strictly enforce)
-        if lower_bounds !== nothing && upper_bounds !== nothing
-            refined_point = clamp.(refined_point, lower_bounds, upper_bounds)
+        if lb !== nothing && ub !== nothing
+            refined_point = clamp.(refined_point, lb, ub)
         end
 
         value_refined = Optim.minimum(result)
@@ -311,8 +312,7 @@ Refine multiple critical points in batch with progress tracking.
 - `objective_func`: Function to minimize
 - `points::Vector{Vector{Float64}}`: Array of initial points from HomotopyContinuation
 - `method`: Optimization method (default: NelderMead() - gradient-free)
-- `lower_bounds::Union{Nothing, Vector{Float64}}`: Box constraint lower bounds (default: nothing = unconstrained)
-- `upper_bounds::Union{Nothing, Vector{Float64}}`: Box constraint upper bounds (default: nothing = unconstrained)
+- `bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}}`: Box constraints as (lo, hi) tuples (default: nothing = unconstrained)
 - `f_abstol::Float64`: Absolute function tolerance (default: 1e-6)
 - `x_abstol::Float64`: Absolute parameter tolerance (default: 1e-6)
 - `max_time::Union{Float64,Nothing}`: Maximum time per point in seconds (default: nothing = no timeout)
@@ -360,8 +360,7 @@ function refine_critical_points_batch(
     objective_func,
     points::Vector{Vector{Float64}};
     method = Optim.NelderMead(),
-    lower_bounds::Union{Nothing, Vector{Float64}} = nothing,
-    upper_bounds::Union{Nothing, Vector{Float64}} = nothing,
+    bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing,
     f_abstol::Float64 = 1e-6,
     x_abstol::Float64 = 1e-6,
     max_time::Union{Float64,Nothing} = nothing,
@@ -383,8 +382,7 @@ function refine_critical_points_batch(
         result = refine_critical_point(
             objective_func, pt;
             method=method,
-            lower_bounds=lower_bounds,
-            upper_bounds=upper_bounds,
+            bounds=bounds,
             f_abstol=f_abstol,
             x_abstol=x_abstol,
             max_time=max_time,

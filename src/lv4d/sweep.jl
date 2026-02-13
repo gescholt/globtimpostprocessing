@@ -329,11 +329,9 @@ function _print_results_table(summary::DataFrame)
         headers = ["Domain", "Deg", "Success", "RecErr", "L2", ""]
     end
 
-    pretty_table(display_df;
+    styled_table(display_df;
         header = headers,
         alignment = show_gn ? [:r, :r, :r, :r, :r, :r, :l] : [:r, :r, :r, :r, :r, :l],
-        crop = :none,
-        tf = tf_unicode_rounded
     )
 end
 
@@ -456,12 +454,10 @@ function _print_top_experiments_by_l2(summary::DataFrame; limit::Int=20)
 
     # Use PrettyTables title parameter instead of decorative banner
     println()
-    pretty_table(display_df;
+    styled_table(display_df;
         header = ["GN", "Domain", "Deg", "L2", "Success"],
         alignment = [:r, :r, :r, :r, :r],
-        crop = :none,
-        tf = tf_unicode_rounded,
-        title = @sprintf("Top %d Configurations by Lowest L2 Error", min(limit, nrow(sorted)))
+        title = @sprintf("Top %d Configurations by Lowest L2 Error", min(limit, nrow(sorted))),
     )
 end
 

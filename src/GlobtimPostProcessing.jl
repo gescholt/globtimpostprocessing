@@ -86,6 +86,22 @@ export check_objective_distribution_quality, ObjectiveDistributionResult
 # Table formatting exports (display functions)
 export format_metrics_table, format_compact_summary, format_grouped_metrics
 
+# Display helpers (shared formatting for terminal output)
+export fmt_sci, fmt_time, fmt_pct, print_section, styled_table
+export Highlighter  # re-exported from PrettyTables for demo scripts
+
+# Experiment display (pipeline orchestration + display functions)
+export print_experiment_header, print_poly_summary_table
+export compute_degree_capture_results
+export DegreeAnalysisResult, run_degree_analyses, print_degree_analysis_table
+export build_degree_convergence_info
+export BestEstimate, find_best_estimate, find_best_raw_estimate
+export print_parameter_recovery_table, print_recovery_verdict
+export print_best_minimum, print_error_banner
+export SparsifyCompare, analyze_sparsification
+export print_sparsification_metrics_table, print_sparsification_capture_table
+export print_sparsification_summary, build_sparsification_plot_entries
+
 # Critical point classification exports
 export classify_critical_point, classify_all_critical_points!
 export count_classifications, find_distinct_local_minima
@@ -95,6 +111,9 @@ export get_classification_summary
 export check_objective_proximity, estimate_basin_radius, check_hessian_basin
 export assess_landscape_fidelity, batch_assess_fidelity
 export ObjectiveProximityResult, HessianBasinResult, LandscapeFidelityResult
+
+# Bounds helpers
+export lower_bounds, upper_bounds, split_bounds
 
 # Critical point refinement exports
 export RefinementConfig, ode_refinement_config
@@ -109,6 +128,18 @@ export RefinementDistanceResult, compute_refinement_distances
 export compute_gradient_norms, compute_gradient_norm
 export validate_critical_points, add_gradient_validation!
 export GradientValidationResult
+
+# Newton-based critical point refinement exports
+export CriticalPointRefinementResult
+export refine_to_critical_point, refine_to_critical_points
+
+# Capture analysis exports
+export KnownCriticalPoints, CaptureResult, capture_rate_at
+export compute_capture_analysis, missed_critical_points
+export print_capture_summary, print_degree_capture_convergence
+export build_known_cps_from_2d_product, build_known_cps_from_refinement
+export DegreeConvergenceInfo, print_degree_convergence_summary
+export CaptureVerdict, compute_capture_verdict, print_capture_verdict
 
 # Valley walking exports (positive-dimensional minima tracing)
 export ValleyWalkConfig, ValleyTraceResult
@@ -193,6 +224,7 @@ struct CampaignResults
 end
 
 # Include submodules (after type definitions)
+include("display_helpers.jl")  # Shared formatting: fmt_sci, fmt_time, fmt_pct, print_section
 include("ResultsLoader.jl")
 include("LabelDispatcher.jl")
 include("StatisticsCompute.jl")
@@ -206,11 +238,16 @@ include("CriticalPointClassification.jl")  # Critical point classification based
 include("LandscapeFidelity.jl")  # Landscape fidelity: polynomial vs objective basin assessment
 
 # Critical point refinement (moved from globtim - 2025-11-22)
+include("refinement/config.jl")           # RefinementConfig struct + bounds helpers (split_bounds, lower_bounds, upper_bounds)
 include("refinement/core_refinement.jl")  # Core refinement algorithms
-include("refinement/config.jl")           # RefinementConfig struct
 include("refinement/gradient_validation.jl")  # Gradient norm validation (before io.jl - defines GradientValidationResult)
+include("refinement/newton_refinement.jl")      # Newton-based critical point refinement (∇f=0)
+include("refinement/capture_analysis.jl")      # Capture analysis for known critical points
 include("refinement/io.jl")               # Load/save utilities
 include("refinement/api.jl")              # High-level API
+
+# Experiment display (pipeline orchestration + display functions)
+include("experiment_display.jl")
 
 # Valley walking (positive-dimensional minima tracing)
 include("ValleyWalking.jl")

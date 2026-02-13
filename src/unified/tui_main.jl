@@ -323,9 +323,9 @@ function _print_generic_quality(data::BaseExperimentData)
                 data_matrix[i, 3] = hasproperty(row, :critical_points) ? row.critical_points : "-"
             end
 
-            pretty_table(data_matrix, header=headers)
+            styled_table(data_matrix; header=headers, alignment=[:r, :r, :r])
         else
-            pretty_table(dr)
+            styled_table(dr; header=string.(names(dr)), alignment=:r)
         end
     else
         tui_warning("No degree results found")

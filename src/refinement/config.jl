@@ -6,6 +6,36 @@ Provides configuration structs and presets for critical point refinement.
 Created: 2025-11-22 (Architecture cleanup)
 """
 
+# ============================================================================
+# Bounds helpers
+# ============================================================================
+
+"""
+    lower_bounds(bounds::Vector{Tuple{Float64,Float64}}) -> Vector{Float64}
+
+Extract lower bounds from paired (lo, hi) tuples.
+"""
+lower_bounds(bounds::Vector{Tuple{Float64,Float64}}) = [b[1] for b in bounds]
+
+"""
+    upper_bounds(bounds::Vector{Tuple{Float64,Float64}}) -> Vector{Float64}
+
+Extract upper bounds from paired (lo, hi) tuples.
+"""
+upper_bounds(bounds::Vector{Tuple{Float64,Float64}}) = [b[2] for b in bounds]
+
+"""
+    split_bounds(bounds) -> (Vector{Float64}, Vector{Float64}) or (nothing, nothing)
+
+Split paired bounds into (lower, upper) vectors. Returns (nothing, nothing) if bounds is nothing.
+"""
+split_bounds(::Nothing) = (nothing, nothing)
+split_bounds(bounds::Vector{Tuple{Float64,Float64}}) = (lower_bounds(bounds), upper_bounds(bounds))
+
+# ============================================================================
+# RefinementConfig
+# ============================================================================
+
 """
     RefinementConfig
 
@@ -22,8 +52,7 @@ Configuration for critical point refinement.
 - `show_progress::Bool`: Display progress counter (default: true)
 - `gradient_method::Symbol`: Gradient computation method for validation (:forwarddiff or :finitediff)
 - `gradient_tolerance::Float64`: Tolerance for gradient norm validation (default: 1e-8, use 1e-4 for ODE)
-- `lower_bounds::Union{Nothing, Vector{Float64}}`: Box constraint lower bounds (default: nothing = unconstrained)
-- `upper_bounds::Union{Nothing, Vector{Float64}}`: Box constraint upper bounds (default: nothing = unconstrained)
+- `bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}}`: Box constraints as (lo, hi) tuples (default: nothing = unconstrained)
 
 # Presets
 Use `ode_refinement_config()` for ODE-based objectives (longer timeouts, robust mode, finitediff).
@@ -36,10 +65,11 @@ config = RefinementConfig()
 # ODE-specific config (longer timeout, robust mode, uses FiniteDiff)
 config_ode = ode_refinement_config()
 
-# Custom config with numerical gradients
+# Custom config with bounds
 config_custom = RefinementConfig(
     max_time_per_point = 60.0,
     f_abstol = 1e-8,
+    bounds = [(0.0, 1.0), (0.0, 2.0)],
     gradient_method = :finitediff
 )
 ```
@@ -55,8 +85,7 @@ struct RefinementConfig
     show_progress::Bool
     gradient_method::Symbol
     gradient_tolerance::Float64
-    lower_bounds::Union{Nothing, Vector{Float64}}
-    upper_bounds::Union{Nothing, Vector{Float64}}
+    bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}}
 end
 
 """
@@ -75,8 +104,7 @@ Construct RefinementConfig with keyword arguments.
 - `show_progress = true`: Display progress counter
 - `gradient_method = :forwarddiff`: Gradient method (:forwarddiff or :finitediff)
 - `gradient_tolerance = 1e-8`: Gradient norm tolerance for validation (use 1e-4 for ODE)
-- `lower_bounds = nothing`: Box constraint lower bounds (Vector{Float64} or nothing)
-- `upper_bounds = nothing`: Box constraint upper bounds (Vector{Float64} or nothing)
+- `bounds = nothing`: Box constraints as Vector{Tuple{Float64,Float64}} or nothing
 
 # Examples
 ```julia
@@ -104,8 +132,7 @@ function RefinementConfig(;
     show_progress::Bool = true,
     gradient_method::Symbol = :forwarddiff,
     gradient_tolerance::Float64 = 1e-8,
-    lower_bounds::Union{Nothing, Vector{Float64}} = nothing,
-    upper_bounds::Union{Nothing, Vector{Float64}} = nothing
+    bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing
 )
     return RefinementConfig(
         method,
@@ -118,8 +145,7 @@ function RefinementConfig(;
         show_progress,
         gradient_method,
         gradient_tolerance,
-        lower_bounds,
-        upper_bounds
+        bounds
     )
 end
 

@@ -549,10 +549,9 @@ function format_metrics_pretty_table(metrics::Dict, _metric_labels::Dict)
     header = ["Metric", "Mean", "Min", "Max", "Std Dev", "N", "Best Experiment"]
     data = hcat(metric_names, means, mins, maxs, stds, num_exps, best_exps)
 
-    pretty_table(data,
+    styled_table(data;
                 header=header,
                 alignment=[:l, :r, :r, :r, :r, :c, :l],
-                crop=:none,
                 header_crayon=crayon"bold cyan",
                 border_crayon=crayon"cyan")
 end

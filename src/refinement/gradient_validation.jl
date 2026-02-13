@@ -23,6 +23,7 @@ Result of gradient validation for a set of critical points.
 - `n_invalid::Int`: Number of invalid critical points
 - `tolerance::Float64`: Tolerance used for validation
 - `mean_norm::Float64`: Mean gradient norm across all points
+- `median_norm::Float64`: Median gradient norm across all points
 - `max_norm::Float64`: Maximum gradient norm
 - `min_norm::Float64`: Minimum gradient norm
 """
@@ -33,6 +34,7 @@ struct GradientValidationResult
     n_invalid::Int
     tolerance::Float64
     mean_norm::Float64
+    median_norm::Float64
     max_norm::Float64
     min_norm::Float64
 end
@@ -71,7 +73,7 @@ norms = compute_gradient_norms(points, ode_objective; gradient_method=:finitedif
 """
 function compute_gradient_norms(
     points::Vector{Vector{Float64}},
-    objective::Function;
+    objective;
     gradient_method::Symbol = :forwarddiff
 )::Vector{Float64}
     norms = Vector{Float64}(undef, length(points))
@@ -119,7 +121,7 @@ norm = compute_gradient_norm(point, ode_func; gradient_method=:finitediff)
 """
 function compute_gradient_norm(
     point::Vector{Float64},
-    objective::Function;
+    objective;
     gradient_method::Symbol = :forwarddiff
 )::Float64
     try
@@ -180,7 +182,7 @@ result = validate_critical_points(points, ode_func; gradient_method=:finitediff)
 """
 function validate_critical_points(
     points::Vector{Vector{Float64}},
-    objective::Function;
+    objective;
     tolerance::Float64 = 1e-6,
     gradient_method::Symbol = :forwarddiff
 )::GradientValidationResult
@@ -192,14 +194,16 @@ function validate_critical_points(
     n_valid = sum(valid)
     n_invalid = length(points) - n_valid
 
-    # Compute statistics (excluding Inf values for mean)
+    # Compute statistics (excluding Inf values for mean/median)
     finite_norms = filter(isfinite, norms)
     if isempty(finite_norms)
         mean_norm = Inf
+        median_norm = Inf
         max_norm = Inf
         min_norm = Inf
     else
         mean_norm = Statistics.mean(finite_norms)
+        median_norm = Statistics.median(finite_norms)
         max_norm = maximum(finite_norms)
         min_norm = minimum(finite_norms)
     end
@@ -211,6 +215,7 @@ function validate_critical_points(
         n_invalid,
         tolerance,
         mean_norm,
+        median_norm,
         max_norm,
         min_norm
     )
@@ -270,7 +275,7 @@ CSV.write("refinement_comparison_deg_12.csv", df)
 """
 function add_gradient_validation!(
     comparison_df::DataFrame,
-    objective::Function;
+    objective;
     tolerance::Float64 = 1e-6,
     use_refined::Bool = true,
     gradient_method::Symbol = :forwarddiff
@@ -322,10 +327,12 @@ function add_gradient_validation!(
     finite_norms = filter(isfinite, norms)
     if isempty(finite_norms)
         mean_norm = Inf
+        median_norm = Inf
         max_norm = Inf
         min_norm = Inf
     else
         mean_norm = Statistics.mean(finite_norms)
+        median_norm = Statistics.median(finite_norms)
         max_norm = maximum(finite_norms)
         min_norm = minimum(finite_norms)
     end
@@ -337,6 +344,7 @@ function add_gradient_validation!(
         n_invalid,
         tolerance,
         mean_norm,
+        median_norm,
         max_norm,
         min_norm
     )

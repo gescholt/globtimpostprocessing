@@ -9,9 +9,8 @@ using Statistics
 using LinearAlgebra
 using JSON3
 
-# Load the real objective function from fixtures
+# Test fixtures (test_functions.jl) are included once in runtests.jl
 fixtures_dir = joinpath(@__DIR__, "fixtures")
-include(joinpath(fixtures_dir, "test_functions.jl"))
 
 @testset "Integration: Real Fixtures End-to-End" begin
     @testset "Fixture Availability" begin

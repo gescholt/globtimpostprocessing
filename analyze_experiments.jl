@@ -29,8 +29,8 @@ using GlobtimPostProcessing
 using GlobtimPostProcessing: load_experiment_config, load_experiment_results,
                              compute_statistics, has_ground_truth,
                              load_critical_points_for_degree,
-                             compute_parameter_recovery_stats,
                              detect_csv_schema,
+                             compute_parameter_recovery_stats,
                              load_quality_thresholds, check_l2_quality,
                              detect_stagnation, check_objective_distribution_quality
 using DataFrames

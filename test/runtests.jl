@@ -1,6 +1,11 @@
 using Test
 using GlobtimPostProcessing
 
+# Include shared test fixtures once (used by test_capture_analysis, test_refinement_phase1,
+# test_integration_real_fixtures — previously each included it independently, causing
+# duplicate method definition warnings)
+include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
+
 @testset "GlobtimPostProcessing.jl" begin
     @testset "Module Loading" begin
         @test isdefined(GlobtimPostProcessing, :load_experiment_results)
@@ -83,6 +88,11 @@ using GlobtimPostProcessing
     # Run Phase 1 Refinement tests (simple functions, no Globtim dependency)
     @testset "Phase 1 Refinement" begin
         include("test_refinement_phase1.jl")
+    end
+
+    # Run Capture Analysis tests (known CP capture rates, no Globtim dependency)
+    @testset "Capture Analysis" begin
+        include("test_capture_analysis.jl")
     end
 
     # Run Integration tests with Real Fixtures (uses real globtimcore data)

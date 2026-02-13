@@ -131,6 +131,31 @@ using CSV
         @test minimization_data[2].min_objective > 0
     end
 
+    @testset "Load experiment results from directory" begin
+        # Test loading from fixtures directory
+        exp_result = load_experiment_results(fixtures_dir)
+
+        @test exp_result isa ExperimentResult
+        @test !isnothing(exp_result.experiment_id)
+        @test exp_result.source_path == fixtures_dir
+        @test !isnothing(exp_result.critical_points)
+
+        # Check critical points were loaded
+        cp_df = exp_result.critical_points
+        @test cp_df isa DataFrame
+        @test nrow(cp_df) > 0
+        @test hasproperty(cp_df, :degree)  # Should have degree column added
+    end
+
+    @testset "Load campaign results (single experiment)" begin
+        # When given a single experiment directory, should load as 1-experiment campaign
+        campaign = load_campaign_results(fixtures_dir)
+
+        @test campaign isa CampaignResults
+        @test length(campaign.experiments) >= 1
+        @test campaign.experiments[1] isa ExperimentResult
+    end
+
     @testset "extract_true_parameters - flat format" begin
         config_flat = Dict("p_true" => [0.2, 0.3, 0.5, 0.6])
         p = extract_true_parameters(config_flat)
@@ -196,28 +221,4 @@ using CSV
         @test "distance_to_true_parameters" in exp_result.tracking_capabilities
     end
 
-    @testset "Load experiment results from directory" begin
-        # Test loading from fixtures directory
-        exp_result = load_experiment_results(fixtures_dir)
-
-        @test exp_result isa ExperimentResult
-        @test !isnothing(exp_result.experiment_id)
-        @test exp_result.source_path == fixtures_dir
-        @test !isnothing(exp_result.critical_points)
-
-        # Check critical points were loaded
-        cp_df = exp_result.critical_points
-        @test cp_df isa DataFrame
-        @test nrow(cp_df) > 0
-        @test hasproperty(cp_df, :degree)  # Should have degree column added
-    end
-
-    @testset "Load campaign results (single experiment)" begin
-        # When given a single experiment directory, should load as 1-experiment campaign
-        campaign = load_campaign_results(fixtures_dir)
-
-        @test campaign isa CampaignResults
-        @test length(campaign.experiments) >= 1
-        @test campaign.experiments[1] isa ExperimentResult
-    end
 end
