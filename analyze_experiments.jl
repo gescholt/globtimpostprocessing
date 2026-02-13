@@ -29,6 +29,7 @@ using GlobtimPostProcessing
 using GlobtimPostProcessing: load_experiment_config, load_experiment_results,
                              compute_statistics, has_ground_truth,
                              load_critical_points_for_degree,
+                             detect_csv_schema,
                              compute_parameter_recovery_stats,
                              load_quality_thresholds, check_l2_quality,
                              detect_stagnation, check_objective_distribution_quality
@@ -440,6 +441,104 @@ function display_validation_stats(exp_path::String)
 end
 
 """
+    display_refinement_statistics(exp_path::String)
+
+Display refinement statistics for Schema v1.1.0 experiments.
+Shows per-degree refinement improvement, L2 approximation error from CSV data,
+and raw vs refined objective comparisons.
+"""
+function display_refinement_statistics(exp_path::String)
+    try
+        # Get all degrees from CSV files
+        csv_files = filter(f -> startswith(basename(f), "critical_points_deg_"),
+                          readdir(exp_path, join=true))
+        degrees = Int[]
+        for csv_file in csv_files
+            m = match(r"deg_(\d+)\.csv", basename(csv_file))
+            if m !== nothing
+                push!(degrees, parse(Int, m[1]))
+            end
+        end
+        sort!(degrees)
+
+        if isempty(degrees)
+            # Also check Phase 2 format files
+            csv_files = filter(f -> startswith(basename(f), "critical_points_raw_deg_"),
+                              readdir(exp_path, join=true))
+            for csv_file in csv_files
+                m = match(r"deg_(\d+)\.csv", basename(csv_file))
+                if m !== nothing
+                    push!(degrees, parse(Int, m[1]))
+                end
+            end
+            sort!(degrees)
+        end
+
+        if isempty(degrees)
+            println("  $(YELLOW)⚠ No critical points data available$(RESET)")
+            return
+        end
+
+        # Check if any degree has v1.1.0 format
+        has_v110 = false
+        for degree in degrees
+            df = load_critical_points_for_degree(exp_path, degree)
+            if detect_csv_schema(df) == :v1_1_0
+                has_v110 = true
+                break
+            end
+        end
+
+        if !has_v110
+            println("  $(YELLOW)⚠ No refinement data (requires Schema v1.1.0 CSV format)$(RESET)")
+            return
+        end
+
+        # Display table header
+        println("  " * "="^95)
+        @printf("  %-8s | %-8s | %-14s | %-14s | %-14s | %-14s\n",
+                "Degree", "# CPs", "Mean Improve", "Max Improve", "Mean L2 Err", "Refined Obj")
+        println("  " * "="^95)
+
+        for degree in degrees
+            df = load_critical_points_for_degree(exp_path, degree)
+            schema = detect_csv_schema(df)
+
+            if schema != :v1_1_0
+                @printf("  %-8d | %-8d | %-14s | %-14s | %-14s | %-14s\n",
+                        degree, nrow(df), "N/A", "N/A", "N/A", "N/A")
+                continue
+            end
+
+            n_points = nrow(df)
+
+            # Refinement improvement stats
+            improvements = df[!, :refinement_improvement]
+            mean_improve = mean(improvements)
+            max_improve = maximum(improvements)
+
+            # L2 approximation error stats
+            l2_errors = df[!, :l2_approx_error]
+            mean_l2 = mean(l2_errors)
+
+            # Refined objective value (best)
+            objectives = df[!, :objective]
+            best_obj = minimum(objectives)
+
+            improve_color = mean_improve > 0 ? GREEN : YELLOW
+            @printf("  %-8d | %-8d | %s%-14.6g%s | %-14.6g | %-14.6g | %-14.6g\n",
+                    degree, n_points,
+                    improve_color, mean_improve, RESET,
+                    max_improve, mean_l2, best_obj)
+        end
+        println("  " * "="^95)
+
+    catch e
+        println("  $(RED)Error displaying refinement statistics:$(RESET) $e")
+    end
+end
+
+"""
     display_parameter_recovery(exp_path::String)
 
 Display parameter recovery table for an experiment with ground truth.
@@ -717,6 +816,10 @@ function analyze_single_experiment(exp_path::String)
         # Critical Point Validation (Schema v1.2.0)
         println("\n$(BOLD)$(GREEN)═══ Critical Point Validation ═══$(RESET)\n")
         display_validation_stats(exp_path)
+
+        # Refinement Statistics (Schema v1.1.0)
+        println("\n$(BOLD)$(GREEN)═══ Refinement Statistics ═══$(RESET)\n")
+        display_refinement_statistics(exp_path)
 
         # Parameter Recovery (if p_true exists)
         if has_ground_truth(exp_path)

@@ -62,13 +62,44 @@ function load_experiment_config(experiment_path::String)
 end
 
 """
+    detect_csv_schema(df::DataFrame) -> Symbol
+
+Detect the CSV schema version from column names.
+
+Returns one of:
+- `:v1_1_0` - Schema v1.1.0 with refinement data (theta1_raw,...,theta4_raw,theta1,...,theta4,objective_raw,objective,l2_approx_error,refinement_improvement)
+- `:phase2` - Phase 2 format (index, p1, p2, ..., objective)
+- `:phase1` - Phase 1/legacy format (x1, x2, ..., z)
+
+# Throws
+- `ErrorException` if column names don't match any known schema
+"""
+function detect_csv_schema(df::DataFrame)
+    col_names = names(df)
+    if "theta1_raw" in col_names
+        return :v1_1_0
+    elseif "p1" in col_names
+        return :phase2
+    elseif "x1" in col_names
+        return :phase1
+    else
+        error("Unrecognized CSV schema. Columns: $(col_names)")
+    end
+end
+
+"""
     load_critical_points_for_degree(experiment_path::String, degree::Int) -> DataFrame
 
 Load critical points CSV for a specific polynomial degree.
 
-Supports both Phase 1 and Phase 2 file formats:
+Supports three file formats (tried in order):
 - Phase 2: `critical_points_raw_deg_X.csv` with columns (index, p1, p2, ..., objective)
-- Phase 1: `critical_points_deg_X.csv` with columns (x1, x2, ..., z)
+- Phase 1: `critical_points_deg_X.csv` with columns (x1, x2, ..., z) or Schema v1.1.0 columns
+
+Schema v1.1.0 format has 12 columns:
+  theta1_raw,...,theta4_raw,theta1,...,theta4,objective_raw,objective,l2_approx_error,refinement_improvement
+
+Auto-detection uses column names to determine the schema.
 
 # Arguments
 - `experiment_path`: Path to experiment directory
@@ -87,7 +118,7 @@ function load_critical_points_for_degree(experiment_path::String, degree::Int)
         return CSV.read(csv_file_raw, DataFrame)
     end
 
-    # Fall back to Phase 1 format
+    # Fall back to Phase 1 / v1.1.0 format
     csv_file_legacy = joinpath(experiment_path, "critical_points_deg_$(degree).csv")
     if isfile(csv_file_legacy)
         return CSV.read(csv_file_legacy, DataFrame)
@@ -96,6 +127,59 @@ function load_critical_points_for_degree(experiment_path::String, degree::Int)
     error("Critical points file not found for degree $degree. Tried:\n" *
           "  Phase 2: $csv_file_raw\n" *
           "  Phase 1: $csv_file_legacy")
+end
+
+"""
+    get_coordinate_columns(df::DataFrame, dim::Int) -> Tuple{String, Bool}
+
+Determine the column prefix for parameter coordinates in a DataFrame.
+
+For Schema v1.1.0, prefers refined coordinates (theta1, theta2, ...) over raw
+(theta1_raw, theta2_raw, ...). Returns the prefix and whether refinement data is available.
+
+# Returns
+- `(col_prefix, has_refinement)`: Column prefix string and whether v1.1.0 refinement is present
+
+# Column resolution order:
+1. v1.1.0 refined: `theta1`, `theta2`, ... (preferred)
+2. Phase 2: `p1`, `p2`, ...
+3. Phase 1: `x1`, `x2`, ...
+4. v1.1.0 raw only: `theta1_raw`, `theta2_raw`, ... (if refined not available)
+"""
+function get_coordinate_columns(df::DataFrame, dim::Int)
+    schema = detect_csv_schema(df)
+
+    if schema == :v1_1_0
+        # Prefer refined coordinates (theta1, theta2, ...) if available
+        if hasproperty(df, :theta1)
+            return ("theta", true)
+        else
+            # Only raw coordinates available
+            return ("theta_raw", true)  # has_refinement=true but using raw prefix pattern
+        end
+    elseif schema == :phase2
+        return ("p", false)
+    elseif schema == :phase1
+        return ("x", false)
+    else
+        error("Unrecognized CSV schema in DataFrame")
+    end
+end
+
+"""
+    _extract_coordinate(row, prefix::String, i::Int) -> Float64
+
+Extract a coordinate value from a DataFrame row given a column prefix and index.
+
+Handles the special case of v1.1.0 raw columns where prefix is "theta_raw"
+and columns are named `theta1_raw`, `theta2_raw`, etc. (not `theta_raw1`, `theta_raw2`).
+"""
+function _extract_coordinate(row, prefix::String, i::Int)
+    if prefix == "theta_raw"
+        return row[Symbol("theta$(i)_raw")]
+    else
+        return row[Symbol("$(prefix)$i")]
+    end
 end
 
 """
@@ -113,8 +197,13 @@ For each critical point (row in df), computes distance to p_true and aggregates:
 - Number of recoveries (points within threshold)
 - All individual distances
 
+Supports all CSV schemas:
+- Schema v1.1.0: Uses refined coordinates (theta1,...) when available, raw (theta1_raw,...) otherwise
+- Phase 2: Uses p1, p2, ... columns
+- Phase 1: Uses x1, x2, ... columns
+
 # Arguments
-- `df`: DataFrame with columns x1, x2, ..., x_dim, z
+- `df`: DataFrame with parameter coordinate columns
 - `p_true`: True parameter vector
 - `recovery_threshold`: Distance threshold for considering a point "recovered"
 
@@ -124,6 +213,8 @@ Dictionary with keys:
 - `"mean_distance"`: Mean distance to p_true
 - `"num_recoveries"`: Count of points within threshold
 - `"all_distances"`: Vector of all distances
+- `"schema"`: Detected schema symbol (:v1_1_0, :phase2, or :phase1)
+- `"used_refined"`: Whether refined coordinates were used (v1.1.0 only)
 
 # Example
 ```julia
@@ -139,25 +230,22 @@ function compute_parameter_recovery_stats(
     p_true::AbstractVector,
     recovery_threshold::Float64
 )
-    # Determine dimension from DataFrame columns
     dim = length(p_true)
+    schema = detect_csv_schema(df)
+    col_prefix, has_refinement = get_coordinate_columns(df, dim)
 
-    # Detect column naming convention: Phase 1 (x1, x2, ...) or Phase 2 (p1, p2, ...)
-    uses_phase2_format = hasproperty(df, :p1)
-    col_prefix = uses_phase2_format ? "p" : "x"
-
-    # Check DataFrame has required columns
+    # Validate required columns exist
     for i in 1:dim
-        col_name = Symbol("$(col_prefix)$i")
+        col_name = col_prefix == "theta_raw" ? Symbol("theta$(i)_raw") : Symbol("$(col_prefix)$i")
         if !hasproperty(df, col_name)
-            error("DataFrame missing column: $col_name (tried $(col_prefix)1, $(col_prefix)2, ...)")
+            error("DataFrame missing column: $col_name")
         end
     end
 
     # Compute distances for all critical points
     distances = Float64[]
     for row in eachrow(df)
-        p_found = [row[Symbol("$(col_prefix)$i")] for i in 1:dim]
+        p_found = [_extract_coordinate(row, col_prefix, i) for i in 1:dim]
         dist = param_distance(p_found, p_true)
         push!(distances, dist)
     end
@@ -171,7 +259,9 @@ function compute_parameter_recovery_stats(
         "min_distance" => min_dist,
         "mean_distance" => mean_dist,
         "num_recoveries" => num_recoveries,
-        "all_distances" => distances
+        "all_distances" => distances,
+        "schema" => schema,
+        "used_refined" => (schema == :v1_1_0 && col_prefix == "theta")
     )
 end
 
@@ -241,16 +331,47 @@ function generate_parameter_recovery_table(
 end
 
 """
+    extract_true_parameters(config::AbstractDict) -> Union{Vector{Float64}, Nothing}
+
+Extract true parameter values from an experiment config dict.
+
+Supports two config formats:
+- Flat format: `config["p_true"]` (legacy/Phase 2)
+- Nested format: `config["model_config"]["true_parameters"]` (Schema v1.1.0+)
+
+# Returns
+- `Vector{Float64}` of true parameters, or `nothing` if not found
+"""
+function extract_true_parameters(config::AbstractDict)
+    # Check flat format first (legacy/Phase 2)
+    if haskey(config, "p_true") && !isnothing(config["p_true"])
+        return Float64.(config["p_true"])
+    end
+
+    # Check nested format (Schema v1.1.0+)
+    if haskey(config, "model_config")
+        mc = config["model_config"]
+        if mc isa AbstractDict && haskey(mc, "true_parameters") && !isnothing(mc["true_parameters"])
+            return Float64.(mc["true_parameters"])
+        end
+    end
+
+    return nothing
+end
+
+"""
     has_ground_truth(experiment_path::String) -> Bool
 
-Check if experiment has ground truth parameters (p_true).
+Check if experiment has ground truth parameters.
+
+Supports both flat (`p_true`) and nested (`model_config.true_parameters`) config formats.
 
 # Arguments
 - `experiment_path`: Path to experiment directory
 
 # Returns
-- `true` if experiment_config.json exists and contains `p_true`
-- `false` otherwise
+- `true` if experiment_config.json exists and contains true parameters
+- `false` otherwise (including when config file doesn't exist)
 """
 function has_ground_truth(experiment_path::String)
     config_file = joinpath(experiment_path, "experiment_config.json")
@@ -258,13 +379,16 @@ function has_ground_truth(experiment_path::String)
         return false
     end
     config = load_experiment_config(experiment_path)
-    return haskey(config, "p_true") && !isnothing(config["p_true"])
+    return extract_true_parameters(config) !== nothing
 end
 
 # Export functions
 export param_distance
 export load_experiment_config
 export load_critical_points_for_degree
+export detect_csv_schema
+export get_coordinate_columns
+export extract_true_parameters
 export compute_parameter_recovery_stats
 export generate_parameter_recovery_table
 export has_ground_truth

@@ -96,9 +96,8 @@ function compute_parameter_recovery(result::ExperimentResult, per_degree::Dict)
 
     valid_errors = filter(!isnan, recovery_errors)
 
-    # Get true parameters if available
-    system_info = get(result.metadata, "system_info", Dict())
-    true_params = get(system_info, "true_parameters", nothing)
+    # Get true parameters - check both system_info and model_config formats
+    true_params = _extract_true_params_from_metadata(result.metadata)
 
     return Dict(
         "degrees" => degrees,
@@ -108,6 +107,35 @@ function compute_parameter_recovery(result::ExperimentResult, per_degree::Dict)
         "best_degree" => isempty(valid_errors) ? nothing : degrees[argmin(recovery_errors)],
         "true_parameters" => true_params
     )
+end
+
+"""
+    _extract_true_params_from_metadata(metadata::AbstractDict) -> Union{Vector, Nothing}
+
+Extract true parameters from experiment metadata, checking both formats:
+- `system_info.true_parameters` (results_summary format)
+- `model_config.true_parameters` (Schema v1.1.0+ experiment_config format)
+"""
+function _extract_true_params_from_metadata(metadata::AbstractDict)
+    # Check system_info format first
+    system_info = get(metadata, "system_info", Dict())
+    if system_info isa AbstractDict
+        tp = get(system_info, "true_parameters", nothing)
+        if tp !== nothing
+            return tp
+        end
+    end
+
+    # Check model_config format (Schema v1.1.0+)
+    model_config = get(metadata, "model_config", Dict())
+    if model_config isa AbstractDict
+        tp = get(model_config, "true_parameters", nothing)
+        if tp !== nothing
+            return tp
+        end
+    end
+
+    return nothing
 end
 
 """
@@ -465,9 +493,8 @@ function compute_parameter_recovery_statistics(result::ExperimentResult)
         return stats
     end
 
-    # Get true parameters from system_info if available
-    system_info = get(result.metadata, "system_info", Dict())
-    true_params = get(system_info, "true_parameters", nothing)
+    # Get true parameters - check both system_info and model_config formats
+    true_params = _extract_true_params_from_metadata(result.metadata)
 
     stats["available"] = true
     stats["mean_error"] = mean(errors)

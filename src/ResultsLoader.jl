@@ -364,9 +364,18 @@ function discover_tracking_labels(data::AbstractDict)
         end
     end
 
-    # Check for parameter recovery
+    # Check for parameter recovery - support both flat and nested config formats
+    has_true_params = false
     system_info = get(data, "system_info", Dict())
     if haskey(system_info, "true_parameters")
+        has_true_params = true
+    end
+    # Also check nested model_config format (Schema v1.1.0+)
+    model_config = get(data, "model_config", Dict())
+    if model_config isa AbstractDict && haskey(model_config, "true_parameters")
+        has_true_params = true
+    end
+    if has_true_params
         push!(tracking_capabilities, "distance_to_true_parameters")
         push!(enabled_tracking, "distance_to_true_parameters")
     end
