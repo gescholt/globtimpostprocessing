@@ -9,10 +9,65 @@ on the gradient equation finds critical points of ALL types: minima, maxima,
 and saddle points. This is essential for building reference sets from refinement
 when analytically known critical points are not available.
 
+Most polynomial CPs are **spurious** — they are artifacts of the polynomial
+approximation, not real critical points of the objective. The refinement pipeline
+uses early exit (patience) to cheaply discard spurious CPs and only spend
+computational effort on promising ones.
+
 Created: 2026-02-04
 """
 
-# Note: ForwardDiff, FiniteDiff, LinearAlgebra are imported in main module
+# Note: ForwardDiff, FiniteDiff, LinearAlgebra, Printf are imported in main module
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Early exit — modular improvement criterion
+# ═══════════════════════════════════════════════════════════════════════════════
+
+"""
+    _should_continue(iteration, best_grad_norm, initial_grad_norm;
+                     patience=10, min_improvement_ratio=0.99) -> Bool
+
+Check whether Newton refinement is making sufficient progress. Called
+periodically (every `patience` iterations) to decide whether to continue
+or bail early on a spurious polynomial CP.
+
+Returns `false` (bail out) if the best gradient norm seen so far hasn't
+improved by at least `(1 - min_improvement_ratio)` relative to the initial
+gradient norm.
+
+# Arguments
+- `iteration`: Current Newton iteration number
+- `best_grad_norm`: Best (lowest) gradient norm seen so far
+- `initial_grad_norm`: Gradient norm at the starting point
+
+# Keyword Arguments
+- `patience::Int`: Check every this many iterations (default: 10)
+- `min_improvement_ratio::Float64`: Bail if `best < ratio * initial` is NOT satisfied.
+  Default 0.99 means: require at least 1% improvement. Very generous — only rejects
+  CPs showing essentially zero progress.
+"""
+function _should_continue(
+    iteration::Int,
+    best_grad_norm::Float64,
+    initial_grad_norm::Float64;
+    patience::Int = 10,
+    min_improvement_ratio::Float64 = 0.99,
+)::Bool
+    # Don't check before patience window
+    if iteration < patience
+        return true
+    end
+    # Only check at patience intervals
+    if iteration % patience != 0
+        return true
+    end
+    # Continue if gradient has improved sufficiently
+    return best_grad_norm < min_improvement_ratio * initial_grad_norm
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Single-point refinement
+# ═══════════════════════════════════════════════════════════════════════════════
 
 """
     CriticalPointRefinementResult
@@ -47,51 +102,39 @@ end
         gradient_method::Symbol = :finitediff,
         tol::Float64 = 1e-8,
         max_iterations::Int = 100,
-        bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing,
+        bounds = nothing,
         hessian_tol::Float64 = 1e-6,
         damping::Float64 = 1.0,
         min_damping::Float64 = 0.01,
+        patience::Int = 10,
+        min_improvement_ratio::Float64 = 0.99,
     ) -> CriticalPointRefinementResult
 
 Refine a raw polynomial critical point to a true critical point of `f` by solving
 `∇f(x) = 0` via damped Newton's method.
 
-Newton's method iterates: `x_{k+1} = x_k - α * H(x_k)^{-1} * ∇f(x_k)`
-where H is the Hessian and α is a damping factor.
-
-Unlike Nelder-Mead (which only finds minima), this finds critical points of
-**all types**: minima, maxima, and saddle points.
+Most polynomial CPs are spurious. This function uses an early-exit mechanism
+(controlled by `patience` and `min_improvement_ratio`) to cheaply reject CPs
+that show no progress, avoiding wasted iterations on artifacts.
 
 # Arguments
 - `objective`: Callable objective function f(x::Vector{Float64}) -> Float64
 - `initial_point::Vector{Float64}`: Starting point (raw polynomial CP)
 
 # Keyword Arguments
-- `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff` for ODE compatibility)
+- `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff`)
 - `tol::Float64`: Convergence tolerance on ||∇f(x)|| (default: 1e-8)
 - `max_iterations::Int`: Maximum Newton iterations (default: 100)
-- `bounds`: Box constraints as Vector{Tuple{Float64,Float64}}. If provided, iterates are clamped to stay in-domain.
+- `bounds`: Box constraints as Vector{Tuple{Float64,Float64}}. Iterates are clamped in-domain.
 - `hessian_tol::Float64`: Tolerance for Hessian eigenvalue classification (default: 1e-6)
-- `damping::Float64`: Initial damping factor α ∈ (0, 1] (default: 1.0 = undamped Newton)
+- `damping::Float64`: Initial damping factor α ∈ (0, 1] (default: 1.0)
 - `min_damping::Float64`: Minimum damping before giving up on a step (default: 0.01)
+- `patience::Int`: Check for progress every this many iterations (default: 10)
+- `min_improvement_ratio::Float64`: Bail if best gradient norm hasn't improved by
+  this ratio of the initial (default: 0.99 = require at least 1% improvement)
 
 # Returns
 - `CriticalPointRefinementResult`: Refined point with convergence info and CP classification.
-
-# Algorithm
-Uses damped Newton's method with the following safeguards:
-1. If the Hessian is singular or near-singular, uses a regularized pseudo-inverse
-2. If a full Newton step increases ||∇f||, the damping factor is halved until
-   the step reduces the gradient norm or `min_damping` is reached
-3. Iterates are clamped to box constraints if provided
-
-# Example
-```julia
-f(x) = (x[1]^2 + x[2]^2 - 1)^2 + x[1]^2  # has saddle points
-result = refine_to_critical_point(f, [0.5, 0.8]; gradient_method=:forwarddiff)
-result.cp_type  # :min, :saddle, etc.
-result.converged  # true/false
-```
 """
 function refine_to_critical_point(
     objective,
@@ -103,6 +146,8 @@ function refine_to_critical_point(
     hessian_tol::Float64 = 1e-6,
     damping::Float64 = 1.0,
     min_damping::Float64 = 0.01,
+    patience::Int = 10,
+    min_improvement_ratio::Float64 = 0.99,
 )::CriticalPointRefinementResult
 
     n = length(initial_point)
@@ -127,7 +172,6 @@ function refine_to_critical_point(
     compute_hess = if gradient_method == :forwarddiff
         pt -> ForwardDiff.hessian(objective, pt)
     elseif gradient_method == :finitediff
-        # Finite-difference Hessian from finite-difference gradient
         pt -> FiniteDiff.finite_difference_hessian(objective, pt)
     else
         error("unreachable")
@@ -137,12 +181,21 @@ function refine_to_critical_point(
     grad = compute_grad(x)
     grad_norm = LinearAlgebra.norm(grad)
     initial_grad_norm = grad_norm
+    best_grad_norm = grad_norm
 
     converged = grad_norm < tol
     iterations = 0
+    early_exit = false
 
     while !converged && iterations < max_iterations
         iterations += 1
+
+        # Early exit check: bail if no progress
+        if !_should_continue(iterations, best_grad_norm, initial_grad_norm;
+                             patience=patience, min_improvement_ratio=min_improvement_ratio)
+            early_exit = true
+            break
+        end
 
         # Compute Hessian
         H = compute_hess(x)
@@ -159,7 +212,6 @@ function refine_to_critical_point(
         reg_threshold = max(1e-12, 1e-10 * abs_max_eig)
 
         # Compute step in eigenbasis: step = -V * diag(1/λ_i) * V' * grad
-        # (skip eigenvalues below threshold)
         Vt_grad = V' * grad
         step = zeros(n)
         for i in 1:n
@@ -186,6 +238,7 @@ function refine_to_critical_point(
         x = x_new
         grad = grad_new
         grad_norm = grad_norm_new
+        best_grad_norm = min(best_grad_norm, grad_norm)
         converged = grad_norm < tol
     end
 
@@ -202,6 +255,10 @@ function refine_to_critical_point(
     )
 end
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Batch refinement
+# ═══════════════════════════════════════════════════════════════════════════════
+
 """
     refine_to_critical_points(
         objective,
@@ -211,11 +268,9 @@ end
 
 Batch version of [`refine_to_critical_point`](@ref). Refines each point independently.
 
-# Arguments
-- `objective`: Callable objective function f(x::Vector{Float64}) -> Float64
-- `points::Vector{Vector{Float64}}`: Raw polynomial critical points
-
-All keyword arguments are forwarded to `refine_to_critical_point`.
+Prints a one-line summary per CP showing convergence status, iterations, timing,
+and classification. Most polynomial CPs are spurious and will be rejected early
+via the patience mechanism.
 
 # Returns
 - `Vector{CriticalPointRefinementResult}`: One result per input point.
@@ -225,12 +280,28 @@ function refine_to_critical_points(
     points::Vector{Vector{Float64}};
     kwargs...
 )::Vector{CriticalPointRefinementResult}
-    results = Vector{CriticalPointRefinementResult}(undef, length(points))
+    n_pts = length(points)
+    results = Vector{CriticalPointRefinementResult}(undef, n_pts)
+    t_total = time()
     for (i, pt) in enumerate(points)
+        t_start = time()
         results[i] = refine_to_critical_point(objective, pt; kwargs...)
+        r = results[i]
+        elapsed = time() - t_start
+        status = r.converged ? "converged" : "rejected"
+        @printf("    CP %2d/%d: %s in %3d iters (%.2fs)  |∇f|=%.2e → %.2e  f=%.4e  (%s)\n",
+            i, n_pts, status,
+            r.iterations, elapsed, r.initial_gradient_norm, r.gradient_norm,
+            r.objective_value, r.cp_type)
     end
+    n_conv = count(r -> r.converged, results)
+    @printf("    %d/%d converged in %.1fs\n", n_conv, n_pts, time() - t_total)
     return results
 end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Utilities
+# ═══════════════════════════════════════════════════════════════════════════════
 
 """
     _clamp_to_bounds!(x, lower_bounds, upper_bounds)
