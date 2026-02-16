@@ -26,7 +26,7 @@ Local refinement engine for critical points computed by globtimcore. This packag
 
 ### Run automated setup (develops all packages)
 ```
-julia setup_globaloptim.jl
+julia scripts/setup_globaloptim.jl
 ```
 
 
