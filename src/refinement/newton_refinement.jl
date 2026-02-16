@@ -102,6 +102,7 @@ end
         gradient_method::Symbol = :finitediff,
         tol::Float64 = 1e-8,
         accept_tol::Float64 = Inf,
+        f_accept_tol::Union{Nothing, Float64} = nothing,
         max_iterations::Int = 100,
         bounds = nothing,
         hessian_tol::Float64 = 1e-6,
@@ -125,10 +126,15 @@ that show no progress, avoiding wasted iterations on artifacts.
 # Keyword Arguments
 - `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff`)
 - `tol::Float64`: Convergence tolerance on ||∇f(x)|| (default: 1e-8)
-- `accept_tol::Float64`: Relaxed acceptance tolerance. CPs with `grad_norm < accept_tol` are
-  considered useful even if not strictly converged. Hessian classification is only computed for
-  converged or accepted CPs; rejected CPs get `cp_type=:unknown` and empty eigenvalues,
-  saving expensive Hessian evaluations on spurious CPs. (default: `Inf` = always classify)
+- `accept_tol::Float64`: Relaxed acceptance tolerance on gradient norm. CPs with
+  `grad_norm < accept_tol` are considered useful even if not strictly converged.
+  Hessian classification is only computed for converged or accepted CPs; rejected CPs
+  get `cp_type=:unknown` and empty eigenvalues, saving expensive Hessian evaluations
+  on spurious CPs. (default: `Inf` = always classify)
+- `f_accept_tol::Union{Nothing, Float64}`: Function-value acceptance tolerance. CPs with
+  `f(x) < f_accept_tol` are accepted regardless of gradient norm. This handles ODE
+  objectives where gradient norms are naturally large but a point in a flat valley near
+  the minimum is scientifically useful. (default: `nothing` = disabled)
 - `max_iterations::Int`: Maximum Newton iterations (default: 100)
 - `bounds`: Box constraints as Vector{Tuple{Float64,Float64}}. Iterates are clamped in-domain.
 - `hessian_tol::Float64`: Tolerance for Hessian eigenvalue classification (default: 1e-6)
@@ -140,8 +146,8 @@ that show no progress, avoiding wasted iterations on artifacts.
 
 # Returns
 - `CriticalPointRefinementResult`: Refined point with convergence info and CP classification.
-  For rejected CPs (not converged and `grad_norm >= accept_tol`), `cp_type` is `:unknown`
-  and `eigenvalues` is empty (Hessian computation skipped).
+  For rejected CPs (not converged, `grad_norm >= accept_tol`, and `f(x) >= f_accept_tol`),
+  `cp_type` is `:unknown` and `eigenvalues` is empty (Hessian computation skipped).
 """
 function refine_to_critical_point(
     objective,
@@ -149,6 +155,7 @@ function refine_to_critical_point(
     gradient_method::Symbol = :finitediff,
     tol::Float64 = 1e-8,
     accept_tol::Float64 = Inf,
+    f_accept_tol::Union{Nothing, Float64} = nothing,
     max_iterations::Int = 100,
     bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing,
     hessian_tol::Float64 = 1e-6,
@@ -253,9 +260,11 @@ function refine_to_critical_point(
     obj_value = objective(x)
 
     # Classify the result via Hessian eigenvalues — but only for useful CPs.
-    # Rejected CPs (not converged, gradient above accept_tol) get :unknown classification
-    # and empty eigenvalues, saving an expensive Hessian evaluation on spurious CPs.
-    is_useful = converged || grad_norm < accept_tol
+    # Rejected CPs (not converged, gradient above accept_tol, f(x) above f_accept_tol)
+    # get :unknown classification and empty eigenvalues, saving an expensive Hessian
+    # evaluation on spurious CPs.
+    f_accepted = f_accept_tol !== nothing && obj_value < f_accept_tol
+    is_useful = converged || grad_norm < accept_tol || f_accepted
     if is_useful
         H_final = compute_hess(x)
         eig_final = LinearAlgebra.eigvals(LinearAlgebra.Symmetric(H_final))
@@ -281,14 +290,16 @@ end
         objective,
         points::Vector{Vector{Float64}};
         accept_tol::Float64 = Inf,
+        f_accept_tol::Union{Nothing, Float64} = nothing,
         kwargs...
     ) -> Vector{CriticalPointRefinementResult}
 
 Batch version of [`refine_to_critical_point`](@ref). Refines each point independently.
 
-Prints a one-line summary per CP with 3-way status:
+Prints a one-line summary per CP with 4-way status:
 - `converged` — gradient norm below strict tolerance
 - `accepted`  — gradient norm below relaxed `accept_tol` (useful CP, Hessian computed)
+- `accepted*` — function value below `f_accept_tol` (valley CP, Hessian computed)
 - `rejected`  — spurious CP (Hessian skipped, `cp_type=:unknown`)
 
 Lines show ↓/↑ arrows indicating gradient improvement direction, and ETA is shown
@@ -301,6 +312,7 @@ function refine_to_critical_points(
     objective,
     points::Vector{Vector{Float64}};
     accept_tol::Float64 = Inf,
+    f_accept_tol::Union{Nothing, Float64} = nothing,
     kwargs...
 )::Vector{CriticalPointRefinementResult}
     n_pts = length(points)
@@ -310,16 +322,20 @@ function refine_to_critical_points(
 
     for (i, pt) in enumerate(points)
         t_start = time()
-        results[i] = refine_to_critical_point(objective, pt; accept_tol=accept_tol, kwargs...)
+        results[i] = refine_to_critical_point(objective, pt;
+            accept_tol=accept_tol, f_accept_tol=f_accept_tol, kwargs...)
         r = results[i]
         elapsed = time() - t_start
         cumulative_time += elapsed
 
-        # 3-way status label
+        # 4-way status label
+        is_f_accepted = f_accept_tol !== nothing && r.objective_value < f_accept_tol
         status = if r.converged
             "converged"
         elseif r.gradient_norm < accept_tol
             "accepted "
+        elseif is_f_accepted
+            "accepted*"
         else
             "rejected "
         end
@@ -327,8 +343,13 @@ function refine_to_critical_points(
         # Gradient direction arrow
         arrow = r.gradient_norm <= r.initial_gradient_norm ? "↓" : "↑"
 
-        # CP type — only show for converged/accepted (meaningful classification)
-        type_str = (r.converged || r.gradient_norm < accept_tol) ? "  ($(r.cp_type))" : ""
+        # CP type — show for any accepted CP (meaningful classification)
+        is_useful = r.converged || r.gradient_norm < accept_tol || is_f_accepted
+        type_str = is_useful ? "  ($(r.cp_type))" : ""
+
+        # Annotation for f-accepted CPs
+        f_str = is_f_accepted && !r.converged && r.gradient_norm >= accept_tol ?
+            @sprintf("  f<%.0e", f_accept_tol) : ""
 
         # ETA — show inline every 5th CP (after at least 5 have run)
         eta_str = ""
@@ -342,18 +363,26 @@ function refine_to_critical_points(
             end
         end
 
-        @printf("    CP %2d/%d: %s %3d iters (%5.1fs)  |∇f| %.2e %s %.2e  f=%.2e%s%s\n",
+        @printf("    CP %2d/%d: %s %3d iters (%5.1fs)  |∇f| %.2e %s %.2e  f=%.2e%s%s%s\n",
             i, n_pts, status,
             r.iterations, elapsed, r.initial_gradient_norm, arrow, r.gradient_norm,
-            r.objective_value, type_str, eta_str)
+            r.objective_value, type_str, f_str, eta_str)
     end
 
     # Summary line
     n_conv = count(r -> r.converged, results)
-    n_accepted = count(r -> !r.converged && r.gradient_norm < accept_tol, results)
-    n_rejected = n_pts - n_conv - n_accepted
-    @printf("    %d converged, %d accepted, %d rejected in %.1fs\n",
-        n_conv, n_accepted, n_rejected, time() - t_total)
+    n_grad_accepted = count(r -> !r.converged && r.gradient_norm < accept_tol, results)
+    n_f_accepted = count(r -> !r.converged && r.gradient_norm >= accept_tol &&
+                         f_accept_tol !== nothing && r.objective_value < f_accept_tol, results)
+    n_rejected = n_pts - n_conv - n_grad_accepted - n_f_accepted
+    println()
+    if f_accept_tol !== nothing && n_f_accepted > 0
+        @printf("    %d converged, %d grad-accepted, %d f-accepted (f<%.0e), %d rejected in %.1fs\n",
+            n_conv, n_grad_accepted, n_f_accepted, f_accept_tol, n_rejected, time() - t_total)
+    else
+        @printf("    %d converged, %d accepted, %d rejected in %.1fs\n",
+            n_conv, n_grad_accepted + n_f_accepted, n_rejected, time() - t_total)
+    end
     return results
 end
 

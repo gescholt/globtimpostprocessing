@@ -796,6 +796,58 @@ using LinearAlgebra
             @test result.cp_type in [:min, :max, :saddle, :degenerate]  # NOT :unknown
             @test !isempty(result.eigenvalues)
         end
+
+        @testset "f_accept_tol accepts CP with large gradient but small f(x)" begin
+            # Rosenbrock: f(1,1) = 0. From close start, Newton makes progress but
+            # may not converge in few iters. The point will have small f(x) though.
+            f_rosen(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
+
+            # From close start with few iters: gradient won't reach 1e-20 but f(x)
+            # should be small (< 1.0). Set accept_tol=1e-20 (impossible by gradient)
+            # but f_accept_tol=1.0 (accepts by function value).
+            result = refine_to_critical_point(f_rosen, [0.9, 0.81];
+                gradient_method=:forwarddiff, tol=1e-20, accept_tol=1e-20,
+                f_accept_tol=1.0, max_iterations=3)
+            @test !result.converged  # tol is impossibly tight
+            @test result.gradient_norm >= 1e-20  # not grad-accepted
+            @test result.objective_value < 1.0   # f-accepted
+            @test result.cp_type in [:min, :max, :saddle, :degenerate]  # Hessian computed
+            @test !isempty(result.eigenvalues)
+        end
+
+        @testset "f_accept_tol=nothing (default) rejects CP with large gradient" begin
+            f_rosen(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
+
+            # Same setup but without f_accept_tol — CP is rejected
+            result = refine_to_critical_point(f_rosen, [0.9, 0.81];
+                gradient_method=:forwarddiff, tol=1e-20, accept_tol=1e-20,
+                max_iterations=3)  # f_accept_tol defaults to nothing
+            @test !result.converged
+            @test result.gradient_norm >= 1e-20
+            @test result.cp_type == :unknown  # Hessian skipped
+            @test isempty(result.eigenvalues)
+        end
+
+        @testset "f_accept_tol and accept_tol are independent criteria" begin
+            f_rosen(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
+
+            # Case 1: accepted by gradient criterion (accept_tol=1e3), NOT by f_accept_tol
+            result1 = refine_to_critical_point(f_rosen, [0.9, 0.81];
+                gradient_method=:forwarddiff, tol=1e-20, accept_tol=1e3,
+                f_accept_tol=1e-30, max_iterations=3)
+            @test !result1.converged
+            @test result1.gradient_norm < 1e3  # grad-accepted
+            @test result1.cp_type in [:min, :max, :saddle, :degenerate]
+
+            # Case 2: accepted by f_accept_tol, NOT by gradient criterion
+            result2 = refine_to_critical_point(f_rosen, [0.9, 0.81];
+                gradient_method=:forwarddiff, tol=1e-20, accept_tol=1e-20,
+                f_accept_tol=1.0, max_iterations=3)
+            @test !result2.converged
+            @test result2.gradient_norm >= 1e-20  # not grad-accepted
+            @test result2.objective_value < 1.0   # f-accepted
+            @test result2.cp_type in [:min, :max, :saddle, :degenerate]
+        end
     end
 
     @testset "build_known_cps_from_refinement" begin
@@ -850,6 +902,28 @@ using LinearAlgebra
             @test_throws ErrorException build_known_cps_from_refinement(
                 f_quad, [[0.5, 0.3]], [(-1.0, 1.0)];  # 1D bounds, 2D points
                 gradient_method=:forwarddiff)
+        end
+
+        @testset "f_accept_tol includes CPs that gradient criterion rejects" begin
+            # Rosenbrock from far-ish starts with very tight gradient acceptance
+            # These won't converge in 5 iterations, so gradient criterion rejects them.
+            # But f(x) will be small enough for f_accept_tol to save them.
+            f_rosen(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
+            raw_points = [[0.8, 0.64], [1.2, 1.44]]
+            b2d = [(-2.0, 2.0), (-2.0, 2.0)]
+
+            # Without f_accept_tol: very tight accept_tol=1e-20 rejects everything
+            result_without = build_known_cps_from_refinement(f_rosen, raw_points, b2d;
+                gradient_method=:forwarddiff, accept_tol=1e-20,
+                max_iterations=5, dedup_fraction=0.01)
+            @test result_without === nothing
+
+            # With f_accept_tol: same tight gradient acceptance, but accept by f(x)
+            result_with = build_known_cps_from_refinement(f_rosen, raw_points, b2d;
+                gradient_method=:forwarddiff, accept_tol=1e-20,
+                f_accept_tol=1.0, max_iterations=5, dedup_fraction=0.01)
+            @test result_with !== nothing
+            @test length(result_with.points) >= 1
         end
     end
 

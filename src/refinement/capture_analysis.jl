@@ -594,6 +594,7 @@ end
         gradient_method::Symbol = :finitediff,
         tol::Float64 = 1e-8,
         accept_tol::Float64 = 1e-2,
+        f_accept_tol::Union{Nothing, Float64} = nothing,
         max_iterations::Int = 100,
         hessian_tol::Float64 = 1e-6,
         dedup_fraction::Float64 = 0.01,
@@ -616,7 +617,8 @@ convergence toward a true critical point.
    per CP) that avoids spending Newton iterations on CPs with large objective values
    that are clearly far from the global minimum.
 1. Refine each raw point via Newton's method on `∇f = 0` with early exit for spurious CPs
-2. Accept results where `||∇f|| < accept_tol` (relaxed) or `||∇f|| < tol` (strict convergence)
+2. Accept results where `||∇f|| < accept_tol` (gradient criterion) OR
+   `||∇f|| < tol` (strict convergence) OR `f(x) < f_accept_tol` (function-value criterion)
 3. Deduplicate: points within `dedup_fraction × domain_diameter` are merged
 4. Classify each unique point via Hessian eigenvalues
 5. Return `KnownCriticalPoints`, or `nothing` if no CPs survived filtering
@@ -629,9 +631,13 @@ convergence toward a true critical point.
 # Keyword Arguments
 - `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff`)
 - `tol::Float64`: Strict convergence tolerance on ||∇f(x)|| (default: 1e-8)
-- `accept_tol::Float64`: Relaxed acceptance tolerance (default: 1e-2). CPs with
+- `accept_tol::Float64`: Relaxed gradient-norm acceptance tolerance (default: 1e-2). CPs with
   `||∇f|| < accept_tol` are accepted even if they didn't reach `tol`. This accounts
   for gradient noise from finite-difference + ODE solver tolerances.
+- `f_accept_tol::Union{Nothing, Float64}`: Function-value acceptance tolerance (default: `nothing`
+  = disabled). CPs with `f(x) < f_accept_tol` are accepted regardless of gradient norm. This
+  handles ODE objectives where gradient norms are naturally large but a point in a flat valley
+  near the minimum is scientifically useful.
 - `max_iterations::Int`: Maximum Newton iterations per point (default: 100)
 - `hessian_tol::Float64`: Eigenvalue tolerance for CP classification (default: 1e-6)
 - `dedup_fraction::Float64`: Fraction of domain diameter for deduplication (default: 0.01)
@@ -650,6 +656,7 @@ function build_known_cps_from_refinement(
     gradient_method::Symbol = :finitediff,
     tol::Float64 = 1e-8,
     accept_tol::Float64 = 1e-2,
+    f_accept_tol::Union{Nothing, Float64} = nothing,
     max_iterations::Int = 100,
     hessian_tol::Float64 = 1e-6,
     dedup_fraction::Float64 = 0.01,
@@ -699,6 +706,7 @@ function build_known_cps_from_refinement(
     refinement_results = refine_to_critical_points(
         objective, raw_points;
         accept_tol = accept_tol,
+        f_accept_tol = f_accept_tol,
         gradient_method = gradient_method,
         tol = tol,
         max_iterations = max_iterations,
@@ -708,24 +716,42 @@ function build_known_cps_from_refinement(
         min_improvement_ratio = min_improvement_ratio,
     )
 
-    # Step 2: Accept CPs that converged strictly OR meet relaxed acceptance tolerance
-    accepted = filter(r -> r.converged || r.gradient_norm < accept_tol, refinement_results)
+    # Step 2: Accept CPs that converged strictly, meet gradient tolerance, or meet f-value tolerance
+    accepted = filter(r -> r.converged || r.gradient_norm < accept_tol ||
+                      (f_accept_tol !== nothing && r.objective_value < f_accept_tol),
+                      refinement_results)
 
     n_strict = count(r -> r.converged, refinement_results)
-    n_relaxed = length(accepted) - n_strict
+    n_grad_accepted = count(r -> !r.converged && r.gradient_norm < accept_tol, refinement_results)
+    n_f_accepted = count(r -> !r.converged && r.gradient_norm >= accept_tol &&
+                         f_accept_tol !== nothing && r.objective_value < f_accept_tol,
+                         refinement_results)
 
     if isempty(accepted)
-        best = minimum(r -> r.gradient_norm, refinement_results)
-        println("  No critical points found: $(length(raw_points)) polynomial CPs refined, " *
-                "0 converged (tol=$(@sprintf("%.0e", tol))), " *
-                "0 accepted (accept_tol=$(@sprintf("%.0e", accept_tol))). " *
-                "Best |∇f| achieved: $(@sprintf("%.2e", best)). " *
-                "All polynomial CPs were spurious in this domain.")
+        best_grad = minimum(r -> r.gradient_norm, refinement_results)
+        best_f = minimum(r -> r.objective_value, refinement_results)
+        msg = "  No critical points found: $(length(raw_points)) polynomial CPs refined, " *
+              "0 converged (tol=$(@sprintf("%.0e", tol))), " *
+              "0 grad-accepted (accept_tol=$(@sprintf("%.0e", accept_tol)))"
+        if f_accept_tol !== nothing
+            msg *= ", 0 f-accepted (f_accept_tol=$(@sprintf("%.0e", f_accept_tol)))"
+        end
+        msg *= ". Best |∇f|=$(@sprintf("%.2e", best_grad)), best f=$(@sprintf("%.2e", best_f))."
+        println(msg)
         return nothing
     end
 
-    if n_relaxed > 0
-        println("  $n_strict strictly converged, $n_relaxed accepted at relaxed tolerance (accept_tol=$accept_tol)")
+    # Report acceptance breakdown when there are non-strict acceptances
+    if n_grad_accepted > 0 || n_f_accepted > 0
+        parts = String[]
+        push!(parts, "$n_strict strictly converged")
+        if n_grad_accepted > 0
+            push!(parts, "$n_grad_accepted grad-accepted (|∇f|<$(@sprintf("%.0e", accept_tol)))")
+        end
+        if n_f_accepted > 0
+            push!(parts, "$n_f_accepted f-accepted (f<$(@sprintf("%.0e", f_accept_tol)))")
+        end
+        println("  ", join(parts, ", "))
     end
 
     # Step 3: Deduplicate — sort by gradient norm (best first), greedy keep
