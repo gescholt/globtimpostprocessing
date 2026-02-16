@@ -754,6 +754,48 @@ using LinearAlgebra
             @test result.gradient_norm < 1e-8
             @test result.cp_type in [:min, :max, :saddle]  # should find the nearby CP
         end
+
+        @testset "Hessian skip on rejected CPs (accept_tol)" begin
+            # Rosenbrock: f(x,y) = (1-x)^2 + 100(y-x^2)^2 — Newton doesn't converge in 2 iters from far away
+            f_rosen(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
+
+            # With max_iterations=2 and strict tol, should NOT converge from [5,5]
+            # accept_tol=1e-20 means the CP also won't be "accepted" → Hessian skipped
+            result = refine_to_critical_point(f_rosen, [5.0, 5.0];
+                gradient_method=:forwarddiff, tol=1e-12, accept_tol=1e-20,
+                max_iterations=2)
+            @test !result.converged
+            @test result.gradient_norm >= 1e-20  # not within accept_tol
+            @test result.cp_type == :unknown
+            @test isempty(result.eigenvalues)
+        end
+
+        @testset "Hessian computed for accepted (non-converged) CPs" begin
+            # Rosenbrock from a point that makes some progress but doesn't fully converge
+            f_rosen(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
+
+            # From close-ish start with few iters, won't reach tol=1e-20 but gradient
+            # should be moderate. Use generous accept_tol so it's "accepted".
+            result = refine_to_critical_point(f_rosen, [0.9, 0.81];
+                gradient_method=:forwarddiff, tol=1e-20, accept_tol=1e3,
+                max_iterations=3)
+            @test !result.converged  # tol is impossibly tight
+            @test result.gradient_norm < 1e3  # within accept_tol
+            @test result.cp_type in [:min, :max, :saddle, :degenerate]  # Hessian was computed
+            @test !isempty(result.eigenvalues)
+        end
+
+        @testset "accept_tol=Inf (default) always computes Hessian" begin
+            # Rosenbrock from far away — won't converge in 2 iters
+            f_rosen(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
+
+            # Default accept_tol=Inf means Hessian is always computed even on rejected CPs
+            result = refine_to_critical_point(f_rosen, [5.0, 5.0];
+                gradient_method=:forwarddiff, tol=1e-12, max_iterations=2)
+            @test !result.converged
+            @test result.cp_type in [:min, :max, :saddle, :degenerate]  # NOT :unknown
+            @test !isempty(result.eigenvalues)
+        end
     end
 
     @testset "build_known_cps_from_refinement" begin

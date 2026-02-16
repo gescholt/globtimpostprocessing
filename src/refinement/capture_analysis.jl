@@ -694,8 +694,11 @@ function build_known_cps_from_refinement(
     end
 
     # Step 1: Refine selected points via Newton on ∇f = 0 (with early exit for spurious CPs)
+    # Pass accept_tol so the batch function can label lines correctly and skip
+    # Hessian computation on rejected CPs (saves expensive evaluations on ODE objectives).
     refinement_results = refine_to_critical_points(
         objective, raw_points;
+        accept_tol = accept_tol,
         gradient_method = gradient_method,
         tol = tol,
         max_iterations = max_iterations,
@@ -713,15 +716,16 @@ function build_known_cps_from_refinement(
 
     if isempty(accepted)
         best = minimum(r -> r.gradient_norm, refinement_results)
-        @warn "No critical points of the true objective found. " *
-              "$(length(raw_points)) polynomial CPs refined: 0 converged (tol=$tol), " *
-              "0 accepted (accept_tol=$accept_tol). Best |∇f| achieved: $(@sprintf("%.2e", best)). " *
-              "All polynomial CPs were spurious in this domain."
+        println("  No critical points found: $(length(raw_points)) polynomial CPs refined, " *
+                "0 converged (tol=$(@sprintf("%.0e", tol))), " *
+                "0 accepted (accept_tol=$(@sprintf("%.0e", accept_tol))). " *
+                "Best |∇f| achieved: $(@sprintf("%.2e", best)). " *
+                "All polynomial CPs were spurious in this domain.")
         return nothing
     end
 
     if n_relaxed > 0
-        @info "$n_strict strictly converged, $n_relaxed accepted at relaxed tolerance (accept_tol=$accept_tol)"
+        println("  $n_strict strictly converged, $n_relaxed accepted at relaxed tolerance (accept_tol=$accept_tol)")
     end
 
     # Step 3: Deduplicate — sort by gradient norm (best first), greedy keep
@@ -746,6 +750,16 @@ function build_known_cps_from_refinement(
     points = [r.point for r in unique_results]
     values = [r.objective_value for r in unique_results]
     types = Symbol[r.cp_type == :degenerate ? :saddle : r.cp_type for r in unique_results]
+
+    n_deduped = length(accepted) - length(unique_results)
+    n_min = count(==(:min), types)
+    n_max = count(==(:max), types)
+    n_saddle = count(==(:saddle), types)
+    if n_deduped > 0
+        println("  After dedup: $(length(unique_results)) unique CPs ($n_deduped duplicates removed) — $n_min min, $n_max max, $n_saddle saddle")
+    else
+        println("  $(length(unique_results)) unique CPs — $n_min min, $n_max max, $n_saddle saddle")
+    end
 
     return KnownCriticalPoints(points, values, types, bounds)
 end
