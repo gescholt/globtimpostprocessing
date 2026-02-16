@@ -502,7 +502,7 @@ end
 
 """
     build_known_cps_from_2d_product(
-        objective_2d::Function,
+        objective_2d,
         points_2d::Vector{Vector{Float64}},
         bounds::Vector{Tuple{Float64,Float64}};
         hessian_tol::Float64 = 1e-6
@@ -521,7 +521,7 @@ classification of each 2D component, then combines types:
 - everything else → saddle
 
 # Arguments
-- `objective_2d::Function`: The 2D component function g(x) where f = g(x₁₂) + g(x₃₄)
+- `objective_2d`: The 2D component function g(x) where f = g(x₁₂) + g(x₃₄)
 - `points_2d::Vector{Vector{Float64}}`: Known 2D critical points of g
 - `bounds::Vector{Tuple{Float64,Float64}}`: Domain bounds as (lo, hi) tuples (must be 4D)
 - `hessian_tol::Float64`: Tolerance for eigenvalue sign classification (default: 1e-6)
@@ -540,7 +540,7 @@ known_4d = build_known_cps_from_2d_product(
 ```
 """
 function build_known_cps_from_2d_product(
-    objective_2d::Function,
+    objective_2d,
     points_2d::Vector{Vector{Float64}},
     bounds::Vector{Tuple{Float64,Float64}};
     hessian_tol::Float64 = 1e-6
@@ -588,7 +588,7 @@ end
 
 """
     build_known_cps_from_refinement(
-        objective::Function,
+        objective,
         raw_points::Vector{Vector{Float64}},
         bounds::Vector{Tuple{Float64,Float64}};
         gradient_method::Symbol = :finitediff,
@@ -615,7 +615,7 @@ refinement which only finds minima.
 5. Return `KnownCriticalPoints`
 
 # Arguments
-- `objective::Function`: Objective function f(x) -> Float64
+- `objective`: Objective function f(x::Vector{Float64}) -> Float64
 - `raw_points::Vector{Vector{Float64}}`: Raw polynomial CPs (typically from the highest degree)
 - `bounds::Vector{Tuple{Float64,Float64}}`: Domain bounds as (lo, hi) tuples
 
@@ -642,7 +642,7 @@ cr = compute_capture_analysis(known, degree_results[4].critical_points)
 ```
 """
 function build_known_cps_from_refinement(
-    objective::Function,
+    objective,
     raw_points::Vector{Vector{Float64}},
     bounds::Vector{Tuple{Float64,Float64}};
     gradient_method::Symbol = :finitediff,

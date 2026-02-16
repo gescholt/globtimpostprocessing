@@ -48,7 +48,7 @@ For each point x, computes ||∇f(x)||₂ (Euclidean norm of gradient).
 
 # Arguments
 - `points::Vector{Vector{Float64}}`: Critical points to evaluate
-- `objective::Function`: Objective function f(x::Vector{Float64}) -> Float64
+- `objective`: Objective function f(x::Vector{Float64}) -> Float64
 - `gradient_method::Symbol`: `:forwarddiff` (default) or `:finitediff`
 
 # Returns
@@ -104,7 +104,7 @@ Compute gradient norm at a single critical point.
 
 # Arguments
 - `point::Vector{Float64}`: Critical point to evaluate
-- `objective::Function`: Objective function f(x::Vector{Float64}) -> Float64
+- `objective`: Objective function f(x::Vector{Float64}) -> Float64
 - `gradient_method::Symbol`: `:forwarddiff` (default) or `:finitediff`
 
 # Returns
@@ -141,7 +141,7 @@ end
 """
     validate_critical_points(
         points::Vector{Vector{Float64}},
-        objective::Function;
+        objective;
         tolerance::Float64 = 1e-6,
         gradient_method::Symbol = :forwarddiff
     ) -> GradientValidationResult
@@ -153,7 +153,7 @@ gradient norms and classifies points as valid (norm < tolerance) or invalid.
 
 # Arguments
 - `points::Vector{Vector{Float64}}`: Critical points to validate
-- `objective::Function`: Objective function f(x::Vector{Float64}) -> Float64
+- `objective`: Objective function f(x::Vector{Float64}) -> Float64
 - `tolerance::Float64 = 1e-6`: Maximum gradient norm for valid critical point
 - `gradient_method::Symbol = :forwarddiff`: Gradient method (:forwarddiff or :finitediff)
 
@@ -224,7 +224,7 @@ end
 """
     add_gradient_validation!(
         comparison_df::DataFrame,
-        objective::Function;
+        objective;
         tolerance::Float64 = 1e-6,
         use_refined::Bool = true,
         gradient_method::Symbol = :forwarddiff
@@ -237,7 +237,7 @@ new columns for gradient norm and validity.
 
 # Arguments
 - `comparison_df::DataFrame`: Refinement comparison DataFrame (from save_refined_results)
-- `objective::Function`: Objective function f(x::Vector{Float64}) -> Float64
+- `objective`: Objective function f(x::Vector{Float64}) -> Float64
 - `tolerance::Float64 = 1e-6`: Tolerance for gradient norm validation
 - `use_refined::Bool = true`: Use refined points (true) or raw points (false)
 - `gradient_method::Symbol = :forwarddiff`: Gradient method (:forwarddiff or :finitediff)

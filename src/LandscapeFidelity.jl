@@ -133,7 +133,7 @@ end
 """
     check_objective_proximity(x_star::Vector{Float64},
                               x_min::Vector{Float64},
-                              objective::Function;
+                              objective;
                               tolerance::Float64=0.05,
                               abs_tolerance::Float64=1e-6) -> ObjectiveProximityResult
 
@@ -181,7 +181,7 @@ when optimizing to global minima (f ≈ 0).
 """
 function check_objective_proximity(x_star::Vector{Float64},
                                    x_min::Vector{Float64},
-                                   objective::Function;
+                                   objective;
                                    tolerance::Float64=0.05,
                                    abs_tolerance::Float64=1e-6)
     f_star = objective(x_star)
@@ -206,7 +206,7 @@ end
 
 """
     estimate_basin_radius(x_min::Vector{Float64},
-                         objective::Function,
+                         objective,
                          hessian_min::Matrix{Float64};
                          threshold_factor::Float64=0.1) -> Float64
 
@@ -246,8 +246,8 @@ r = estimate_basin_radius(x_min, f, H)
 - Larger threshold_factor → larger estimated basin
 """
 function estimate_basin_radius(x_min::Vector{Float64},
-                              objective::Function,
-                              hessian_min::Matrix{Float64};
+                               objective,
+                               hessian_min::Matrix{Float64};
                               threshold_factor::Float64=0.1)
     # Compute eigenvalues
     eigenvalues = eigvals(hessian_min)
@@ -276,7 +276,7 @@ end
 """
     check_hessian_basin(x_star::Vector{Float64},
                         x_min::Vector{Float64},
-                        objective::Function,
+                        objective,
                         hessian_min::Matrix{Float64};
                         threshold_factor::Float64=0.1) -> HessianBasinResult
 
@@ -323,9 +323,9 @@ scale-adaptive basin size. Points with metric < 1.0 are inside the basin.
 **Cons**: Requires Hessian computation (expensive)
 """
 function check_hessian_basin(x_star::Vector{Float64},
-                            x_min::Vector{Float64},
-                            objective::Function,
-                            hessian_min::Matrix{Float64};
+                             x_min::Vector{Float64},
+                             objective,
+                             hessian_min::Matrix{Float64};
                             threshold_factor::Float64=0.1)
     # Estimate basin radius
     r_basin = estimate_basin_radius(x_min, objective, hessian_min,
@@ -352,7 +352,7 @@ end
 """
     assess_landscape_fidelity(x_star::Vector{Float64},
                              x_min::Vector{Float64},
-                             objective::Function;
+                             objective;
                              hessian_min::Union{Matrix{Float64}, Nothing}=nothing,
                              obj_tolerance::Float64=0.05,
                              threshold_factor::Float64=0.1) -> LandscapeFidelityResult
@@ -413,8 +413,8 @@ println("Confidence: ", result.confidence)  # Higher with more criteria
 - `confidence = 0.0`: All criteria disagree → different basins
 """
 function assess_landscape_fidelity(x_star::Vector{Float64},
-                                  x_min::Vector{Float64},
-                                  objective::Function;
+                                   x_min::Vector{Float64},
+                                   objective;
                                   hessian_min::Union{Matrix{Float64}, Nothing}=nothing,
                                   obj_tolerance::Float64=0.05,
                                   threshold_factor::Float64=0.1)
@@ -454,7 +454,7 @@ end
 """
     batch_assess_fidelity(critical_points_df::DataFrame,
                          refined_points::Vector{Vector{Float64}},
-                         objective::Function;
+                         objective;
                          classification_col::Symbol=:point_classification,
                          hessian_min_list::Union{Vector{Matrix{Float64}}, Nothing}=nothing) -> DataFrame
 
@@ -499,8 +499,8 @@ println("Landscape fidelity: ", valid_captures / nrow(results))
 ```
 """
 function batch_assess_fidelity(critical_points_df::DataFrame,
-                              refined_points::Vector{Vector{Float64}},
-                              objective::Function;
+                               refined_points::Vector{Vector{Float64}},
+                               objective;
                               classification_col::Symbol=:point_classification,
                               hessian_min_list::Union{Vector{Matrix{Float64}}, Nothing}=nothing)
     # Prepare output columns
