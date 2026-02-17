@@ -1,8 +1,9 @@
 # ValleyWalking.jl
 # Trace positive-dimensional minima (valleys) using predictor-corrector methods
 
-using LinearAlgebra: norm, dot, eigen
+using LinearAlgebra: norm, dot, eigen, Symmetric, cond, pinv
 using ForwardDiff: gradient, hessian
+using Printf: @printf
 
 """
 Configuration for valley walking algorithms.
@@ -35,6 +36,7 @@ Result of tracing a valley from a starting point.
 - `path_negative`: Path traced in negative tangent direction
 - `arc_length`: Total arc length of both paths
 - `n_points`: Total number of points in both paths
+- `valley_dimension`: Number of near-zero Hessian eigenvalues (0 if not a valley)
 - `method`: Walking method used
 - `converged`: Whether the trace completed successfully
 """
@@ -44,53 +46,63 @@ struct ValleyTraceResult
     path_negative::Vector{Vector{Float64}}
     arc_length::Float64
     n_points::Int
+    valley_dimension::Int
     method::Symbol
     converged::Bool
 end
 
 """
-    detect_valley(f, point, config::ValleyWalkConfig) -> (is_valley, directions)
+    detect_valley(f, point, config::ValleyWalkConfig) -> (is_valley, directions, valley_dimension)
 
 Detect if a point lies on a positive-dimensional minimum (valley).
 
-Returns `(true, directions)` if the point is a valley point, where `directions`
-is a matrix whose columns are the valley tangent directions.
-Returns `(false, nothing)` otherwise.
+Returns `(true, directions, dim)` if the point is a valley point, where `directions`
+is a matrix whose columns are the valley tangent directions and `dim` is the
+number of near-zero Hessian eigenvalues (the valley dimension).
+Returns `(false, nothing, 0)` otherwise.
 """
 function detect_valley(f, point::AbstractVector, config::ValleyWalkConfig)
     grad = gradient(f, point)
     hess = hessian(f, point)
-    eigenvals = eigvals(hess)
+    eigendecomp = eigen(Symmetric(hess))
 
     grad_norm = norm(grad)
-    valley_dimension = sum(abs.(eigenvals) .< config.eigenvalue_threshold)
+    valley_mask = abs.(eigendecomp.values) .< config.eigenvalue_threshold
+    valley_dimension = sum(valley_mask)
 
     is_critical = grad_norm < config.gradient_tolerance
     is_valley = is_critical && (valley_dimension > 0)
 
     if is_valley
-        eigendecomp = eigen(hess)
-        valley_mask = abs.(eigendecomp.values) .< config.eigenvalue_threshold
         valley_directions = eigendecomp.vectors[:, valley_mask]
-        return true, valley_directions
+        return true, valley_directions, valley_dimension
     end
-    return false, nothing
+    return false, nothing, 0
 end
 
 """
     project_to_valley(f, point; max_iter=10, tol=1e-10) -> Vector
 
-Project a point back onto the valley (f(x) ≈ 0) using Newton-like iteration.
+Project a point onto the critical manifold (∇f(x) = 0) using Newton's method.
+
+Uses the full Newton step `x -= H \\ ∇f` to find the nearest critical point.
+This correctly handles valleys where the minimum value is nonzero (e.g. parameter
+estimation error functions with irreducible residual).
 """
 function project_to_valley(f, point::AbstractVector; max_iter::Int=10, tol::Float64=1e-10)
     x = Vector{Float64}(point)
     for _ in 1:max_iter
-        fval = f(x)
-        abs(fval) < tol && break
         g = gradient(f, x)
-        gnorm2 = dot(g, g)
-        gnorm2 < 1e-20 && break
-        x .-= (fval / gnorm2) * g
+        norm(g) < tol && break
+        H = hessian(f, x)
+        # Use Symmetric for numerical stability; fallback to pinv if singular
+        Hs = Symmetric(H)
+        cond_H = cond(Hs)
+        if cond_H < 1e12
+            x .-= Hs \ g
+        else
+            x .-= pinv(Hs) * g
+        end
     end
     return x
 end
@@ -208,18 +220,18 @@ First detects if the point is on a valley, then walks in both positive and
 negative tangent directions using the specified method.
 """
 function trace_valley(f, start_point::AbstractVector, config::ValleyWalkConfig=ValleyWalkConfig())
-    is_valley, directions = detect_valley(f, start_point, config)
+    is_valley, directions, vdim = detect_valley(f, start_point, config)
 
     if !is_valley
         return ValleyTraceResult(
             Vector{Float64}(start_point),
             [Vector{Float64}(start_point)],
             [Vector{Float64}(start_point)],
-            0.0, 1, config.method, false
+            0.0, 1, 0, config.method, false
         )
     end
 
-    # Use first valley direction
+    # Use first valley direction (traces a 1D curve even for higher-dim valleys)
     initial_dir = directions[:, 1]
 
     # Select walking method
@@ -242,7 +254,7 @@ function trace_valley(f, start_point::AbstractVector, config::ValleyWalkConfig=V
     return ValleyTraceResult(
         Vector{Float64}(start_point),
         path_pos, path_neg,
-        arc_len, n_points, config.method, true
+        arc_len, n_points, vdim, config.method, true
     )
 end
 
@@ -266,6 +278,76 @@ function trace_valleys_from_critical_points(f, df::DataFrame, config::ValleyWalk
         result = trace_valley(f, point, config)
         result.converged && push!(results, result)
     end
+
+    return results
+end
+
+"""
+    run_valley_analysis(objective, refinement_results; config) -> Vector{ValleyTraceResult}
+
+Run valley walking analysis on degenerate critical points from Newton CP discovery.
+
+Screens `refinement_results` for CPs with `cp_type == :degenerate` (near-zero Hessian
+eigenvalues indicating a positive-dimensional critical manifold), then traces along
+each valley using the configured walking method.
+
+Prints a terminal summary of discovered valleys. Returns the trace results for
+downstream use (e.g. plotting).
+
+# Arguments
+- `objective`: The objective function f(x)
+- `refinement_results::Vector{CriticalPointRefinementResult}`: Refined CPs from
+  `build_known_cps_from_refinement` (preserves `:degenerate` type and eigenvalues)
+- `config::ValleyWalkConfig`: Walking algorithm configuration (default: `ValleyWalkConfig()`)
+
+# Returns
+- `Vector{ValleyTraceResult}`: One result per degenerate CP that was successfully traced
+"""
+function run_valley_analysis(
+    objective,
+    refinement_results::Vector{CriticalPointRefinementResult};
+    config::ValleyWalkConfig = ValleyWalkConfig(),
+)
+    degenerate_cps = filter(r -> r.cp_type == :degenerate, refinement_results)
+    n_total = length(refinement_results)
+    n_degen = length(degenerate_cps)
+
+    println()
+    println("══ Valley Walking Analysis ════════════════════════════════════")
+
+    if n_degen == 0
+        println("  No degenerate CPs found (0 of $n_total have near-zero eigenvalues)")
+        println()
+        return ValleyTraceResult[]
+    end
+
+    println("  $n_degen degenerate CP$(n_degen > 1 ? "s" : "") detected (of $n_total total)")
+    println()
+
+    results = ValleyTraceResult[]
+    for (i, cp) in enumerate(degenerate_cps)
+        # Find the index in the original results for display
+        cp_idx = findfirst(r -> r === cp, refinement_results)
+
+        trace = trace_valley(objective, cp.point, config)
+
+        status = trace.converged ? "converged" : "not converged"
+        @printf("  CP %2d: dim=%d  arc_length=%.2f  points=%d  %s\n",
+            cp_idx, trace.valley_dimension, trace.arc_length, trace.n_points, status)
+
+        if trace.converged
+            push!(results, trace)
+        end
+    end
+
+    println()
+    n_traced = length(results)
+    if n_traced > 0
+        println("  $n_traced valley$(n_traced > 1 ? "s" : "") successfully traced")
+    else
+        println("  No valleys could be traced (CPs may not lie exactly on a valley manifold)")
+    end
+    println()
 
     return results
 end

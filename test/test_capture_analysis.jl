@@ -859,8 +859,11 @@ using LinearAlgebra
             raw_points = [[0.5, 0.3], [-0.2, 0.4], [0.1, -0.1], [-0.3, -0.2]]
             b2d = [(-1.0, 1.0), (-1.0, 1.0)]
 
-            known = build_known_cps_from_refinement(f_quad, raw_points, b2d;
+            result = build_known_cps_from_refinement(f_quad, raw_points, b2d;
                 gradient_method=:forwarddiff, dedup_fraction=0.01)
+            @test result !== nothing
+            known = result.known_cps
+            @test result.refinement_results isa Vector
 
             # All 4 starts should converge to the same minimum at origin → 1 unique CP
             @test length(known.points) == 1
@@ -881,8 +884,10 @@ using LinearAlgebra
             ]
             b2d = [(-2.0, 2.0), (-2.0, 2.0)]
 
-            known = build_known_cps_from_refinement(f_two_min, raw_points, b2d;
+            result = build_known_cps_from_refinement(f_two_min, raw_points, b2d;
                 gradient_method=:forwarddiff, dedup_fraction=0.01)
+            @test result !== nothing
+            known = result.known_cps
 
             # Should find 3 distinct CPs: two minima and one saddle
             @test length(known.points) == 3
@@ -923,7 +928,8 @@ using LinearAlgebra
                 gradient_method=:forwarddiff, accept_tol=1e-20,
                 f_accept_tol=1.0, max_iterations=5, dedup_fraction=0.01)
             @test result_with !== nothing
-            @test length(result_with.points) >= 1
+            @test length(result_with.known_cps.points) >= 1
+            @test result_with.refinement_results isa Vector
         end
     end
 

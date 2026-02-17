@@ -601,7 +601,7 @@ end
         patience::Int = 10,
         min_improvement_ratio::Float64 = 0.99,
         top_k::Union{Int, Nothing} = nothing,
-    ) -> Union{KnownCriticalPoints, Nothing}
+    ) -> Union{NamedTuple{(:known_cps, :refinement_results)}, Nothing}
 
 Build a reference set of known critical points by refining raw polynomial critical
 points to true critical points of `f` using Newton's method on `∇f = 0`.
@@ -647,7 +647,9 @@ convergence toward a true critical point.
   Evaluates `f` once per raw CP (cheap), then discards the rest. `nothing` = refine all (default).
 
 # Returns
-- `KnownCriticalPoints` if any CPs survived, `nothing` otherwise.
+- `(known_cps=KnownCriticalPoints, refinement_results=Vector{CriticalPointRefinementResult})`
+  if any CPs survived, `nothing` otherwise. The `refinement_results` preserve the original
+  `cp_type` (including `:degenerate`) and `eigenvalues` for downstream analysis like valley walking.
 """
 function build_known_cps_from_refinement(
     objective,
@@ -663,7 +665,7 @@ function build_known_cps_from_refinement(
     patience::Int = 10,
     min_improvement_ratio::Float64 = 0.99,
     top_k::Union{Int, Nothing} = nothing,
-)::Union{KnownCriticalPoints, Nothing}
+)
     isempty(raw_points) && error("raw_points must be non-empty")
     lb, ub = split_bounds(bounds)
     n = length(bounds)
@@ -787,7 +789,8 @@ function build_known_cps_from_refinement(
         println("  $(length(unique_results)) unique CPs — $n_min min, $n_max max, $n_saddle saddle")
     end
 
-    return KnownCriticalPoints(points, values, types, bounds)
+    known_cps = KnownCriticalPoints(points, values, types, bounds)
+    return (known_cps = known_cps, refinement_results = unique_results)
 end
 
 # ─── Degree Convergence Summary and Verdict ─────────────────────────────────

@@ -120,6 +120,11 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         include("test_subdivision_analysis.jl")
     end
 
+    # Run Valley Walking tests (February 2026)
+    @testset "Valley Walking" begin
+        include("test_valley_walking.jl")
+    end
+
     # Aqua.jl quality assurance tests
     include("test_aqua.jl")
 end
