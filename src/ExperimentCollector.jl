@@ -263,8 +263,8 @@ function detect_directory_structure(root_path::String)::StructureType
                 if has_exp_subdirs && exp_count >= 1
                     hierarchical_indicators += 1
                 end
-            catch
-                # Ignore errors reading subdirectories
+            catch e
+                @debug "Error reading subdirectory" entry exception=(e, catch_backtrace())
                 continue
             end
         end

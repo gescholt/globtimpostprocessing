@@ -236,10 +236,9 @@ function load_from_results_summary(dir_path::String, results_file::String)
         for key in keys(results_summary)
             # Extract degree number from "degree_N" keys
             degree_str = replace(string(key), "degree_" => "")
-            try
-                push!(extracted_degrees, parse(Int, degree_str))
-            catch
-                # Skip non-numeric keys
+            d = tryparse(Int, degree_str)
+            if d !== nothing
+                push!(extracted_degrees, d)
             end
         end
         degrees_processed = sort(extracted_degrees)

@@ -247,11 +247,8 @@ function _results_dict_to_dataframe(results_summary::AbstractDict)::DataFrame
 
         # Extract degree from key (e.g., "degree_4" → 4)
         degree_str = replace(string(key), "degree_" => "")
-        degree = try
-            parse(Int, degree_str)
-        catch
-            continue
-        end
+        degree = tryparse(Int, degree_str)
+        degree === nothing && continue
 
         row = Dict{String, Any}()
         row["degree"] = degree

@@ -241,7 +241,8 @@ function check_remote_experiment_complete(session_name::String, config::Collecto
     check_cmd = "ssh $(config.cluster_host) 'grep -q \"$completion_marker\" \"$log_path\" 2>/dev/null'"
     log_check = try
         success(pipeline(Cmd(["sh", "-c", check_cmd]), stderr=devnull))
-    catch
+    catch e
+        @debug "SSH log check failed" session_name exception=(e, catch_backtrace())
         false
     end
 
@@ -254,7 +255,8 @@ function check_remote_experiment_complete(session_name::String, config::Collecto
     test_cmd = "ssh $(config.cluster_host) 'test -f \"$results_path\" 2>/dev/null'"
     results_check = try
         success(pipeline(Cmd(["sh", "-c", test_cmd]), stderr=devnull))
-    catch
+    catch e
+        @debug "SSH results check failed" session_name exception=(e, catch_backtrace())
         false
     end
 

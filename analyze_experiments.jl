@@ -72,7 +72,8 @@ function get_user_choice(prompt::String, max_value::Int)
             else
                 println("$(RED)Please enter a number between 1 and $max_value$(RESET)")
             end
-        catch
+        catch e
+            @debug "Input parse failed" exception=(e, catch_backtrace())
             println("$(RED)Invalid input. Please enter a number or 'q' to quit$(RESET)")
         end
     end
@@ -241,8 +242,8 @@ function display_experiment_metadata(exp_path::String)
             println("  $(YELLOW)No metadata available (old format)$(RESET)")
             println()
         end
-    catch
-        # Silently skip if metadata not available
+    catch e
+        @debug "Could not display metadata" exception=(e, catch_backtrace())
     end
 end
 
@@ -904,7 +905,8 @@ function analyze_campaign_wide(experiments::Vector{String}, campaign_path::Strin
                             best_recovery = max(best_recovery, stats["num_recoveries"])
                             best_min_dist = min(best_min_dist, stats["min_distance"])
                         end
-                    catch
+                    catch e
+                        @debug "Failed to process CSV" exception=(e, catch_backtrace())
                         continue
                     end
                 end

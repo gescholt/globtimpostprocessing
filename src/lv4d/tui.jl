@@ -752,7 +752,8 @@ function _tui_select_seed_range()::Vector{Int}
                 println("$(TUI_YELLOW)Invalid format. Using seed=1.$(TUI_RESET)")
                 return [1]
             end
-        catch
+        catch e
+            @debug "Could not parse seed input" exception=(e, catch_backtrace())
             println("$(TUI_YELLOW)Could not parse input. Using seed=1.$(TUI_RESET)")
             return [1]
         end

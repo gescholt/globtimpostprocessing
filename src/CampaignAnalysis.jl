@@ -896,8 +896,8 @@ function print_parameter_recovery_table(campaign::CampaignResults)
                 try
                     df = CSV.read(csv_file, DataFrame)
                     cp_by_degree[degree] = df
-                catch
-                    # Skip files that can't be loaded
+                catch e
+                    @warn "Failed to load CSV" csv_file exception=(e, catch_backtrace())
                 end
             end
         end

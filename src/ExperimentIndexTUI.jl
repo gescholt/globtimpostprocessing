@@ -583,7 +583,8 @@ function _idx_select_target_degree_range()::Union{Tuple{Int, Int}, Nothing}
         try
             parts = split(strip(input), ":")
             return (parse(Int, parts[1]), parse(Int, parts[2]))
-        catch
+        catch e
+            @debug "Could not parse degree range input" input exception=(e, catch_backtrace())
             println("$(IDX_YELLOW)Invalid format. Using 4-12.$(IDX_RESET)")
             return (4, 12)
         end

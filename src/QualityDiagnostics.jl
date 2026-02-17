@@ -72,8 +72,9 @@ function load_quality_thresholds(config_path::String=joinpath(@__DIR__, "..", "q
                 else
                     parse(Int, value)
                 end
-            catch
-                value  # Keep as string if parsing fails
+            catch e
+                @debug "Config value parse failed, keeping as string" value exception=(e, catch_backtrace())
+                value
             end
 
             thresholds[current_section][key] = parsed_value

@@ -117,8 +117,8 @@ function find_tracking_file(tracking_dir::String, batch_id_or_issue::String)
                     return tracking_file
                 end
             end
-        catch
-            # Skip invalid JSON files
+        catch e
+            @debug "Invalid tracking JSON" tracking_file exception=(e, catch_backtrace())
             continue
         end
     end
@@ -174,8 +174,8 @@ function check_experiment_complete(experiment_dir::String)
             if occursin("✨ Experiment complete!", log_content)
                 return true
             end
-        catch
-            # Log file exists but can't read - not complete
+        catch e
+            @debug "Could not read experiment log" log_file exception=(e, catch_backtrace())
         end
     end
 

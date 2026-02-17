@@ -34,7 +34,8 @@ try
     using ForwardDiff
     global HAS_FORWARDDIFF = true
     println("✓ ForwardDiff available - can compute Hessians automatically")
-catch
+catch e
+    @debug "ForwardDiff not available" exception=(e, catch_backtrace())
     global HAS_FORWARDDIFF = false
     println("✗ ForwardDiff not available - install with: using Pkg; Pkg.add(\"ForwardDiff\")")
 end

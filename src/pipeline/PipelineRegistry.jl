@@ -150,11 +150,12 @@ function ExperimentParams(d::AbstractDict)
     if timestamp !== nothing && timestamp isa String
         try
             timestamp = DateTime(timestamp)
-        catch
-            # Try alternative format
+        catch e1
+            @debug "Standard DateTime parse failed, trying alternative" exception=(e1, catch_backtrace())
             try
                 timestamp = DateTime(timestamp, "yyyymmdd_HHMMSS")
-            catch
+            catch e2
+                @debug "Could not parse timestamp" timestamp exception=(e2, catch_backtrace())
                 timestamp = nothing
             end
         end
@@ -601,7 +602,8 @@ function extract_params_from_name(name::String; objective::String="auto")::Union
             timestamp_str = m.captures[6]
             timestamp = try
                 DateTime(timestamp_str, "yyyymmdd_HHMMSS")
-            catch
+            catch e
+                @debug "Could not parse timestamp from dirname" timestamp_str exception=(e, catch_backtrace())
                 nothing
             end
 

@@ -54,7 +54,8 @@ function parse_completion_marker(experiment_dir::String)::Union{Dict{String, Any
                     if key == "completed_at"
                         try
                             metadata[key] = DateTime(value)
-                        catch
+                        catch e
+                            @debug "Could not parse DateTime" value exception=(e, catch_backtrace())
                             metadata[key] = value
                         end
                     elseif value in ["true", "false"]
@@ -80,7 +81,8 @@ function parse_completion_marker(experiment_dir::String)::Union{Dict{String, Any
     # Try to get completion time from directory mtime
     try
         metadata["completed_at"] = DateTime(Dates.unix2datetime(mtime(experiment_dir)))
-    catch
+    catch e
+        @debug "Could not get mtime for completion timestamp" experiment_dir exception=(e, catch_backtrace())
         metadata["completed_at"] = now()
     end
 
@@ -92,8 +94,8 @@ function parse_completion_marker(experiment_dir::String)::Union{Dict{String, Any
             metadata["GN"] = get(config, "GN", nothing)
             metadata["domain"] = get(config, "domain_range", nothing)
             metadata["seed"] = get(config, "seed", nothing)
-        catch
-            # Ignore parse errors
+        catch e
+            @warn "Failed to parse experiment config" config_path exception=(e, catch_backtrace())
         end
     end
 
@@ -211,8 +213,8 @@ function discover_experiment_type(experiment_dir::String)::Symbol
                 elseif contains(obj_name, "deuflhard")
                     return :deuflhard
                 end
-            catch
-                # Ignore parse errors
+            catch e
+                @debug "Could not detect experiment type from config" config_path exception=(e, catch_backtrace())
             end
         end
         return :unknown
