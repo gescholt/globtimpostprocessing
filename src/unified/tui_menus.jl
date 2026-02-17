@@ -177,7 +177,7 @@ end
 Enum-like struct for results source selection.
 """
 struct ResultsSource
-    type::Symbol  # :recent, :path, :registry
+    type::Symbol  # :recent, :path
     value::String
 end
 
@@ -189,24 +189,21 @@ Show menu to select results source.
 function select_results_source(results_root::String)::Union{ResultsSource, Nothing}
     options = [
         "Browse recent experiments",
-        "Enter path manually",
-        "Pipeline registry (pending)"
+        "Enter path manually"
     ]
 
-    menu = RadioMenu(options, pagesize=3)
+    menu = RadioMenu(options, pagesize=2)
     choice = request("Select results source:", menu)
 
     choice == -1 && return nothing
 
     if choice == 1
         return ResultsSource(:recent, results_root)
-    elseif choice == 2
+    else
         print("Enter experiment path: ")
         path = strip(readline())
         isempty(path) && return nothing
         return ResultsSource(:path, path)
-    else
-        return ResultsSource(:registry, results_root)
     end
 end
 

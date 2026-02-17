@@ -15,7 +15,7 @@ Interactive unified post-processing TUI.
 
 Launches an interactive terminal interface where you can:
 1. Select experiment type (LV4D, Deuflhard, etc.) or auto-detect
-2. Select results source (browse recent, enter path, pipeline registry)
+2. Select results source (browse recent, enter path)
 3. Select analysis mode (type-specific options)
 4. Configure parameters through cascading menus
 5. Run analysis and get results
@@ -51,7 +51,7 @@ postprocess()
     │     → LV4D / Deuflhard / Auto-detect
     │
     ├── Step 2: Select results source
-    │     → Browse recent / Enter path / Pipeline registry
+    │     → Browse recent / Enter path
     │
     ├── Step 3: Select analysis mode (type-dispatched)
     │     LV4D: quality / sweep / convergence / compare / coverage
@@ -113,53 +113,7 @@ function _resolve_experiment_path(source::ResultsSource, root::String,
             return nothing
         end
         return path
-    elseif source.type == :registry
-        # Delegate to pipeline registry TUI
-        return _select_from_pipeline_registry(root)
     else
-        return nothing
-    end
-end
-
-"""
-    _select_from_pipeline_registry(root::String) -> Union{String, Nothing}
-
-Select experiment from pipeline registry.
-"""
-function _select_from_pipeline_registry(root::String)::Union{String, Nothing}
-    try
-        Pipeline = Main.GlobtimPostProcessing.Pipeline
-        registry = Pipeline.load_pipeline_registry(results_root=root)
-
-        # Scan for new experiments
-        new_count = Pipeline.scan_for_experiments!(registry)
-        if new_count > 0
-            tui_success("Found $new_count new experiments")
-        end
-
-        # Get pending experiments
-        pending = Pipeline.get_pending_experiments(registry)
-
-        if isempty(pending)
-            tui_warning("No pending experiments in pipeline registry")
-            return nothing
-        end
-
-        # Build options
-        options = map(pending[1:min(15, length(pending))]) do entry
-            age = time() - Dates.datetime2unix(entry.discovered_at)
-            age_str = _format_age(age)
-            "$(entry.name) ($age_str ago)"
-        end
-
-        menu = RadioMenu(options, pagesize=min(12, length(options)))
-        choice = request("Select pending experiment:", menu)
-
-        choice == -1 && return nothing
-        return pending[choice].path
-    catch e
-        @debug "Pipeline registry not available" exception=e
-        tui_warning("Pipeline registry not available")
         return nothing
     end
 end

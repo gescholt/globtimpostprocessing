@@ -76,8 +76,7 @@ const ANALYSIS_TYPES = [
     :convergence => "Log-log convergence rate",
     :compare => "Method comparison (log vs standard)",
     :subdivision => "Single vs subdivision comparison",
-    :coverage => "Coverage analysis & gap detection",
-    :pending => "Analyze pending experiments (pipeline)"
+    :coverage => "Coverage analysis & gap detection"
 ]
 
 function _tui_select_analysis_type()::Union{Symbol, Nothing}

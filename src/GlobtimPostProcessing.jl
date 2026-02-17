@@ -148,18 +148,7 @@ export trace_valley, trace_valleys_from_critical_points
 export walk_newton_projection, walk_predictor_corrector
 export run_valley_analysis
 
-# Experiment parameter index exports (January 2026)
-# Note: Consolidated into Pipeline.PipelineRegistry - re-exported from Pipeline module
-export ExperimentParams, ExperimentEntry, ParameterCoverage
-export extract_params_from_name, compute_params_hash, params_hash
-export has_experiment_with_params, get_experiments_by_params
-export get_experiments_for_params, get_parameter_coverage
-export print_coverage_matrix, print_query_results
-export get_unique_params, list_unique_params, get_missing_params
 
-# Experiment parameter index TUI
-export experiments  # Interactive TUI for parameter index
-export select_experiments  # Interactive selection returning ExperimentFilter
 
 # Subdivision tree analysis exports
 export load_subdivision_tree, analyze_subdivision_tree, SubdivisionTreeStats
@@ -253,21 +242,6 @@ include("experiment_display.jl")
 
 # Valley walking (positive-dimensional minima tracing)
 include("ValleyWalking.jl")
-
-# Pipeline module (experiment discovery and orchestration - GC-08)
-# Contains the canonical experiment registry (PipelineRegistry) with parameter indexing
-include("pipeline/Pipeline.jl")
-
-# Re-export parameter index symbols from Pipeline module
-using .Pipeline: ExperimentParams, ExperimentEntry, ParameterCoverage
-using .Pipeline: extract_params_from_name, compute_params_hash, params_hash
-using .Pipeline: has_experiment_with_params, get_experiments_by_params
-using .Pipeline: get_experiments_for_params, get_parameter_coverage
-using .Pipeline: print_coverage_matrix, print_query_results
-using .Pipeline: get_unique_params, list_unique_params, get_missing_params
-
-# Experiment parameter index TUI
-include("ExperimentIndexTUI.jl")
 
 # Subdivision tree analysis (adaptive subdivision postprocessing - January 2026)
 include("SubdivisionTreeAnalysis.jl")
