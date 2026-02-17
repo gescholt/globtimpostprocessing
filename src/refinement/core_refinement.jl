@@ -51,6 +51,8 @@ Tier 1 Diagnostics (zero-cost, always available):
 - `iteration_limit_reached::Bool`: Hit max iteration limit
 - `convergence_reason::Symbol`: Primary stopping reason (:x_tol, :f_tol, :g_tol, :iterations, :timeout, :error)
 """
+
+import Logging
 struct RefinementResult
     # Original fields (backward compatibility)
     refined::Vector{Float64}
@@ -179,16 +181,19 @@ function refine_critical_point(
         )
 
         # Choose bounded or unbounded optimization
+        # Suppress Fminbox "Initial position on boundary" warnings — these are expected
+        # when clamping points to bounds. A batch summary is printed instead.
         result = if lb !== nothing && ub !== nothing
-            # Use starting_point (already clamped above)
-            Optim.optimize(
-                objective_func,
-                lb,
-                ub,
-                starting_point,
-                Optim.Fminbox(method),
-                opt_options
-            )
+            Logging.with_logger(Logging.NullLogger()) do
+                Optim.optimize(
+                    objective_func,
+                    lb,
+                    ub,
+                    starting_point,
+                    Optim.Fminbox(method),
+                    opt_options
+                )
+            end
         else
             Optim.optimize(
                 objective_func,
@@ -374,11 +379,23 @@ function refine_critical_points_batch(
     n_converged = 0
     n_timeout = 0
     n_failed = 0
+    n_boundary = 0
+
+    # Pre-compute bound vectors for boundary detection
+    lb_vec = bounds !== nothing ? [b[1] for b in bounds] : nothing
+    ub_vec = bounds !== nothing ? [b[2] for b in bounds] : nothing
 
     # Create progress bar (only if show_progress is true)
     prog = show_progress ? Progress(n_points; desc="Refining critical points ", showspeed=true) : nothing
 
     for pt in points
+        # Count points that land on the domain boundary after clamping
+        if lb_vec !== nothing && ub_vec !== nothing
+            clamped = clamp.(pt, lb_vec, ub_vec)
+            if any(clamped .== lb_vec) || any(clamped .== ub_vec)
+                n_boundary += 1
+            end
+        end
         result = refine_critical_point(
             objective_func, pt;
             method=method,
@@ -417,6 +434,9 @@ function refine_critical_points_batch(
             push!(summary_parts, "$n_failed failed")
         end
         println("Refinement complete: ", join(summary_parts, ", "))
+        if n_boundary > 0
+            println("  Note: $n_boundary/$n_points initial points were on domain boundary (nudged inward by Fminbox)")
+        end
     end
 
     return refined_results
