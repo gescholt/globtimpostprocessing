@@ -194,6 +194,12 @@ function refine_to_critical_point(
 
     # Initial gradient
     grad = compute_grad(x)
+    if !all(isfinite, grad)
+        # Objective blows up at this point (e.g. ODE divergence near boundary)
+        return CriticalPointRefinementResult(
+            x, Inf, NaN, false, 0, :unknown, Float64[], Inf,
+        )
+    end
     grad_norm = LinearAlgebra.norm(grad)
     initial_grad_norm = grad_norm
     best_grad_norm = grad_norm
@@ -214,6 +220,13 @@ function refine_to_critical_point(
 
         # Compute Hessian
         H = compute_hess(x)
+
+        # Guard against Inf/NaN in Hessian (e.g. ODE blowup near domain boundary)
+        if !all(isfinite, H)
+            early_exit = true
+            break
+        end
+
         H_sym = LinearAlgebra.Symmetric(H)
 
         # Solve Newton step: H * step = -grad
@@ -267,9 +280,14 @@ function refine_to_critical_point(
     is_useful = converged || grad_norm < accept_tol || f_accepted
     if is_useful
         H_final = compute_hess(x)
-        eig_final = LinearAlgebra.eigvals(LinearAlgebra.Symmetric(H_final))
-        cp_type = _classify_eigenvalues(eig_final, hessian_tol)
-        eigenvalues = collect(eig_final)
+        if all(isfinite, H_final)
+            eig_final = LinearAlgebra.eigvals(LinearAlgebra.Symmetric(H_final))
+            cp_type = _classify_eigenvalues(eig_final, hessian_tol)
+            eigenvalues = collect(eig_final)
+        else
+            cp_type = :unknown
+            eigenvalues = Float64[]
+        end
     else
         cp_type = :unknown
         eigenvalues = Float64[]
