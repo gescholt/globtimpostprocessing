@@ -108,9 +108,7 @@ end
 
 Find the results directory using environment variable or default locations.
 
-Checks in order:
-1. GLOBTIM_RESULTS_ROOT environment variable
-2. Relative paths from common locations
+Checks the GLOBTIM_RESULTS_ROOT environment variable.
 """
 function find_unified_results_root()::String
     # Check environment variable first
@@ -119,20 +117,7 @@ function find_unified_results_root()::String
         return results_root
     end
 
-    # Try common relative paths
-    possible_roots = [
-        joinpath(dirname(dirname(dirname(@__DIR__))), "globtim_results"),
-        joinpath(dirname(dirname(@__DIR__)), "globtim_results"),
-        expanduser("~/GlobalOptim/globtim_results")
-    ]
-
-    for root in possible_roots
-        if isdir(root)
-            return root
-        end
-    end
-
-    error("Could not find results directory. Set GLOBTIM_RESULTS_ROOT environment variable.")
+    error("Could not find results directory. Set the GLOBTIM_RESULTS_ROOT environment variable or pass the path as an argument.")
 end
 
 # ============================================================================

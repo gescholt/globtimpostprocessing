@@ -3,7 +3,7 @@
 ## Run the Interactive Demo
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 
 # Run without arguments - it will find campaigns and let you choose
 julia --project=. examples/test_minimal_l2_plot.jl
@@ -132,7 +132,7 @@ ENV["BROWSER"] = "firefox"  # or "chrome", "safari"
 Make sure the package environment is instantiated:
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 

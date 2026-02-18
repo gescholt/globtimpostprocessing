@@ -25,7 +25,7 @@ Testing revealed **2 critical bugs** that prevent the code from being production
 ERROR: UndefVarError: `distinct_minima_indices` not defined in `GlobtimPostProcessing`
 Stacktrace:
   [1] top-level scope
-    @ ~/GlobalOptim/globtimpostprocessing/src/CriticalPointClassification.jl:225
+    @ globtimpostprocessing/src/CriticalPointClassification.jl:225
 ```
 
 ### Analysis
@@ -267,7 +267,7 @@ ObjectiveProximityResult(true, 0.245, 0.0346, 0.141, 2.0)
 - **Julia Version**: 1.12
 - **Package State**: Branch `claude/classify-critical-points-01X8GGvTCxt6G6teFHGaDwGA`
 - **Dependencies**: All installed via `Pkg.instantiate()`
-- **Working Directory**: `/Users/ghscholt/GlobalOptim/globtimpostprocessing`
+- **Working Directory**: `/path/to/globtimpostprocessing`
 
 ---
 

@@ -36,13 +36,13 @@ using GlobtimPostProcessing
 
 # Load and refine with default config (highest degree)
 refined = refine_experiment_results(
-    "../globtim_results/lv4d_exp_20251122_143022",
+    "/path/to/experiment_dir",
     objective_func
 )
 
 # Refine a specific degree
 refined = refine_experiment_results(
-    "../globtim_results/lv4d_exp_20251122_143022",
+    "/path/to/experiment_dir",
     objective_func,
     ode_refinement_config();
     degree=8

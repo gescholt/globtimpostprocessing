@@ -24,12 +24,6 @@ Local refinement engine for critical points computed by globtimcore. This packag
 - **Campaign Analysis**: Aggregate and compare results across multiple experiments
 - **Label-Driven Processing**: Automatically discovers available data from experiment metadata
 
-### Run automated setup (develops all packages)
-```
-julia scripts/setup_globaloptim.jl
-```
-
-
 ## Quick Start
 
 ### Refine Critical Points
@@ -317,19 +311,52 @@ Pkg.test()
 
 ```
 src/
-├── GlobtimPostProcessing.jl   # Main module
-├── ResultsLoader.jl           # Data loading
-├── StatisticsCompute.jl       # Statistics computation
-├── QualityDiagnostics.jl      # Quality assessment
-├── ParameterRecovery.jl       # Parameter recovery analysis
-├── CriticalPointClassification.jl
-├── LandscapeFidelity.jl
-└── refinement/
-    ├── api.jl                 # High-level refinement API
-    ├── core_refinement.jl     # Optim.jl integration
-    ├── gradient_validation.jl # Gradient norm validation
-    ├── config.jl              # Configuration structs
-    └── io.jl                  # CSV/JSON I/O
+├── GlobtimPostProcessing.jl       # Main module
+├── display_helpers.jl             # Shared formatting: fmt_sci, fmt_time, fmt_pct, print_section
+├── ResultsLoader.jl               # Data loading
+├── LabelDispatcher.jl             # Label-driven processing dispatch
+├── StatisticsCompute.jl           # Statistics computation
+├── ReportGenerator.jl             # Report generation
+├── TableFormatting.jl             # Terminal-friendly table formatting
+├── CampaignAnalysis.jl            # Campaign-level analysis
+├── BatchProcessing.jl             # Batch processing functionality
+├── ParameterRecovery.jl           # Parameter recovery analysis
+├── QualityDiagnostics.jl         # Quality assessment
+├── CriticalPointClassification.jl # Hessian-based critical point classification
+├── LandscapeFidelity.jl          # Polynomial vs objective basin assessment
+├── experiment_display.jl          # Pipeline orchestration + display functions
+├── ValleyWalking.jl               # Positive-dimensional minima tracing
+├── SubdivisionTreeAnalysis.jl     # Adaptive subdivision postprocessing
+├── EnhancedAnalysis.jl            # Statistical tables and validation
+├── refinement/
+│   ├── config.jl                  # RefinementConfig struct + bounds helpers
+│   ├── core_refinement.jl         # Optim.jl integration
+│   ├── gradient_validation.jl     # Gradient norm validation
+│   ├── newton_refinement.jl       # Newton-based critical point refinement
+│   ├── capture_analysis.jl        # Capture analysis for known critical points
+│   ├── io.jl                      # CSV/JSON I/O
+│   └── api.jl                     # High-level refinement API
+├── unified/
+│   ├── UnifiedPipeline.jl         # Unified pipeline module
+│   ├── experiment_types.jl        # Experiment type definitions
+│   ├── base_data.jl               # Base experiment data structures
+│   ├── loaders.jl                 # Type-aware experiment loaders
+│   ├── tui_main.jl                # Main TUI entry point
+│   └── tui_menus.jl               # TUI menu definitions
+└── lv4d/
+    ├── LV4DAnalysis.jl            # LV4D analysis module
+    ├── common.jl                  # Shared utilities
+    ├── data_loading.jl            # LV4D data loading
+    ├── query.jl                   # Experiment querying
+    ├── sweep.jl                   # Parameter sweep analysis
+    ├── convergence.jl             # Convergence analysis
+    ├── coverage.jl                # Coverage analysis
+    ├── gradients.jl               # Gradient analysis
+    ├── minima.jl                  # Minima analysis
+    ├── quality.jl                 # Quality assessment
+    ├── comparison.jl              # Experiment comparison
+    ├── interactive.jl             # Interactive analysis
+    └── tui.jl                     # LV4D TUI interface
 ```
 
 ## License

@@ -534,7 +534,7 @@ function load_all_critical_points(path::String) -> Dict{Int, DataFrame}
 
 ### Test Dataset
 
-**Path**: `/Users/ghscholt/GlobalOptim/globtimcore/experiments/daisy_ex3_4d_study/configs_20251006_160051/hpc_results`
+**Path**: `/path/to/globtimcore/experiments/daisy_ex3_4d_study/configs_20251006_160051/hpc_results`
 
 **Contents**:
 - `lotka_volterra_4d_exp1_range0.4_20251006_160126/` (degrees 4-12)

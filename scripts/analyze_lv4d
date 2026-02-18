@@ -235,10 +235,8 @@ function run_compare(config)
     path = config[:path]
     if path === nothing
         # Interactive selection of comparison experiments
-        # Search in multiple potential locations
-        # find_results_root() = ~/GlobalOptim/globtim_results/lotka_volterra_4d
-        # We need ~/GlobalOptim to find globtim/local_results/
-        global_optim_root = dirname(dirname(find_results_root()))  # ~/GlobalOptim
+        # Search in multiple potential locations relative to results root
+        global_optim_root = dirname(dirname(find_results_root()))
         results_roots = [
             find_results_root(),  # globtim_results/lotka_volterra_4d
             joinpath(global_optim_root, "local_results", "lotka_volterra_4d"),  # local_results/

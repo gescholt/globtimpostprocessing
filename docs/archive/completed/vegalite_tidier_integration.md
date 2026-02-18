@@ -74,7 +74,7 @@ Interactive Browser Visualization
 
 **Test Command:**
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 julia --project=. examples/test_minimal_l2_plot.jl \
     ../globtimcore/experiments/lotka_volterra_4d_study/configs_20251006_160051/hpc_results
 ```

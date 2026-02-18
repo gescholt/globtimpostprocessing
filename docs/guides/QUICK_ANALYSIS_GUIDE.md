@@ -7,7 +7,7 @@
 ### 1. Chebyshev vs Legendre Comparison (PRIORITY)
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 
 julia --project=. compare_basis_functions.jl \
   collected_experiments_20251014_090544/lv4d_basis_comparison_chebyshev_deg4-6_domain0.3_GN16_20251013_172835 \

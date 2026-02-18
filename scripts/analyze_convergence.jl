@@ -7,7 +7,19 @@ using JSON
 using Statistics
 using Printf
 
-const RESULTS_DIR = joinpath(dirname(dirname(@__DIR__)), "globtim_results", "lotka_volterra_4d")
+const RESULTS_DIR = let
+    root = get(ENV, "GLOBTIM_RESULTS_ROOT", nothing)
+    if root === nothing
+        error("GLOBTIM_RESULTS_ROOT environment variable is not set. " *
+              "Set it to the path containing your globtim_results, e.g.: " *
+              "export GLOBTIM_RESULTS_ROOT=/path/to/globtim_results")
+    end
+    lv4d = joinpath(root, "lotka_volterra_4d")
+    if !isdir(lv4d)
+        error("LV4D results directory not found: $lv4d")
+    end
+    lv4d
+end
 
 # Collect data from all lv4d_GN8_deg8-8 experiments
 function collect_data()

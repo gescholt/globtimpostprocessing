@@ -212,20 +212,7 @@ function find_results_root()::String
         end
     end
 
-    # Try relative to script location (assumes we're in GlobalOptim)
-    possible_roots = [
-        joinpath(dirname(dirname(dirname(@__DIR__))), "globtim_results", "lotka_volterra_4d"),
-        joinpath(dirname(dirname(@__DIR__)), "globtim_results", "lotka_volterra_4d"),
-        expanduser("~/GlobalOptim/globtim_results/lotka_volterra_4d")
-    ]
-
-    for root in possible_roots
-        if isdir(root)
-            return root
-        end
-    end
-
-    error("Could not find LV4D results directory. Set GLOBTIM_RESULTS_ROOT environment variable.")
+    error("Could not find LV4D results directory. Set the GLOBTIM_RESULTS_ROOT environment variable or pass the path as an argument.")
 end
 
 """
@@ -233,10 +220,7 @@ end
 
 Find all LV4D results directories (for merged experiment lists).
 
-Searches multiple locations including:
-- GLOBTIM_RESULTS_ROOT environment variable
-- globtim_results/lotka_volterra_4d (main results)
-- globtim/globtim_results/lotka_volterra_4d (local dev results)
+Searches the GLOBTIM_RESULTS_ROOT environment variable for results directories.
 """
 function find_all_results_roots()::Vector{String}
     roots = String[]
@@ -248,18 +232,8 @@ function find_all_results_roots()::Vector{String}
         isdir(lv4d_dir) && push!(roots, lv4d_dir)
     end
 
-    # Try relative paths (from package location)
-    possible_roots = [
-        joinpath(dirname(dirname(dirname(@__DIR__))), "globtim_results", "lotka_volterra_4d"),
-        joinpath(dirname(dirname(dirname(@__DIR__))), "globtim", "globtim_results", "lotka_volterra_4d"),
-        expanduser("~/GlobalOptim/globtim_results/lotka_volterra_4d"),
-        expanduser("~/GlobalOptim/globtim/globtim_results/lotka_volterra_4d")
-    ]
-
-    for root in possible_roots
-        if isdir(root) && root ∉ roots
-            push!(roots, root)
-        end
+    if isempty(roots)
+        error("Could not find any LV4D results directories. Set the GLOBTIM_RESULTS_ROOT environment variable or pass the path as an argument.")
     end
 
     return roots

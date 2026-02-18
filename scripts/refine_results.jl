@@ -1,4 +1,13 @@
 #!/usr/bin/env julia
+#=
+ENVIRONMENT NOTE: This is a standalone entry-point script, NOT part of the
+GlobtimPostProcessing package test suite. It requires `Globtim` and `ArgParse`
+to be available in the active environment. Run it from a shared monorepo
+environment that has all packages developed, e.g.:
+    julia --project=@monorepo scripts/refine_results.jl ...
+Do NOT run this from the globtimpostprocessing package environment — those
+dependencies are intentionally not declared in its Project.toml.
+=#
 """
 PE-05: Local Refinement from Polynomial Critical Points
 
@@ -9,21 +18,19 @@ Question: Do polynomial critical points (which are saddles of f) lead to
 actual minima that are closer to p_true?
 
 Usage:
-    julia --project=../../.. experiments/lv4d_2025/refine_results.jl \\
+    julia --project=. scripts/refine_results.jl \\
         --experiment-dir /path/to/lv4d_results
 
-Or use defaults (most recent experiment matching pattern):
-    julia --project=../../.. experiments/lv4d_2025/refine_results.jl --seed 1 --domain 0.08
+Or use defaults (most recent experiment matching pattern, requires GLOBTIM_RESULTS_ROOT):
+    export GLOBTIM_RESULTS_ROOT=/path/to/globtim_results
+    julia --project=. scripts/refine_results.jl --seed 1 --domain 0.08
 """
 
 const SCRIPT_DIR = @__DIR__
-const PROJECT_ROOT = abspath(joinpath(SCRIPT_DIR, "..", ".."))
-const POSTPROC_ROOT = abspath(joinpath(PROJECT_ROOT, "..", "globtimpostprocessing"))
+const POSTPROC_ROOT = dirname(SCRIPT_DIR)  # scripts/ -> globtimpostprocessing/
 
-# Stack environments: globtimpostprocessing on top of globtim
 using Pkg
 pushfirst!(LOAD_PATH, POSTPROC_ROOT)
-pushfirst!(LOAD_PATH, PROJECT_ROOT)
 Pkg.activate(POSTPROC_ROOT)
 
 using GlobtimPostProcessing
@@ -76,8 +83,16 @@ function run_refinement(args)
     if args["experiment-dir"] !== nothing
         experiment_dir = args["experiment-dir"]
     else
-        results_root = joinpath(PROJECT_ROOT, "globtim_results", "lotka_volterra_4d")
-        experiment_dir = find_experiment_dir(results_root, args["seed"], args["domain"])
+        results_root = get(ENV, "GLOBTIM_RESULTS_ROOT", nothing)
+        if results_root === nothing
+            error("No --experiment-dir provided and GLOBTIM_RESULTS_ROOT environment variable is not set. " *
+                  "Either pass --experiment-dir /path/to/experiment or set GLOBTIM_RESULTS_ROOT.")
+        end
+        lv4d_root = joinpath(results_root, "lotka_volterra_4d")
+        if !isdir(lv4d_root)
+            error("LV4D results directory not found: $lv4d_root")
+        end
+        experiment_dir = find_experiment_dir(lv4d_root, args["seed"], args["domain"])
     end
 
     println()

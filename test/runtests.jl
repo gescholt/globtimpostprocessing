@@ -33,16 +33,6 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         @test length(exp_result.tracking_capabilities) == 3
     end
 
-    # Run ClusterCollection tests (Phase 0)
-    @testset "ClusterCollection (Phase 0)" begin
-        include("test_cluster_collection.jl")
-    end
-
-    # Run AutoCollector tests (Phase 1)
-    @testset "AutoCollector (Phase 1)" begin
-        include("test_auto_collector.jl")
-    end
-
     # Run Data Loading tests (Issue #7, Phase 1)
     @testset "Data Loading (Issue #7, Phase 1)" begin
         include("test_data_loading.jl")

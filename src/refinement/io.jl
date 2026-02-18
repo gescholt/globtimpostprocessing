@@ -43,10 +43,10 @@ Searches for `critical_points_raw_deg_X.csv` (new format) or falls back to
 # Examples
 ```julia
 # Load highest degree
-raw_data = load_raw_critical_points("../globtim_results/lv4d_exp_20251122")
+raw_data = load_raw_critical_points("/path/to/experiment_dir")
 
 # Load specific degree
-raw_data = load_raw_critical_points("../globtim_results/lv4d_exp_20251122", degree=12)
+raw_data = load_raw_critical_points("/path/to/experiment_dir", degree=12)
 
 println("Loaded ", raw_data.n_points, " points at degree ", raw_data.degree)
 ```

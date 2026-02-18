@@ -3,8 +3,10 @@
 Deuflhard 4D Minimal Example
 Following standard notebook patterns for critical point computation
 
-NOTE: This test uses analyze_critical_points from Globtim for raw critical point
-processing, then can use GlobtimPostProcessing for further refinement and analysis.
+NOTE: This is a standalone validation script, NOT part of the package test suite.
+It requires `Globtim` and `StaticArrays` to be available in the active environment
+(e.g., via a shared monorepo environment). Do NOT run from the globtimpostprocessing
+package environment — Globtim is not declared in its Project.toml.
 =#
 
 using Globtim

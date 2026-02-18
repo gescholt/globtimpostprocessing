@@ -1,4 +1,10 @@
 #!/usr/bin/env julia
+#=
+ENVIRONMENT NOTE: This is a standalone integration test that depends on experiment
+data in the sibling `globtim/experiments/` directory. It assumes the monorepo layout
+where globtimpostprocessing/ and globtim/ are siblings. It is NOT part of the package
+test suite (not run by `Pkg.test()`).
+=#
 """
 test_csv_data_loading.jl
 
@@ -25,8 +31,8 @@ using CSV
 using DataFrames
 using JSON3
 
-# Test configuration
-const TEST_CAMPAIGN = "../globtim/experiments/lotka_volterra_4d_study/configs_20251006_160051/hpc_results"
+# Test configuration — assumes monorepo layout (globtimpostprocessing/ and globtim/ are siblings)
+const TEST_CAMPAIGN = joinpath(@__DIR__, "..", "..", "globtim", "experiments", "lotka_volterra_4d_study", "configs_20251006_160051", "hpc_results")
 const TEST_EXPERIMENT = "lotka_volterra_4d_exp1_range0.4_20251006_160126"
 
 @testset "CSV Data Loading Tests" begin

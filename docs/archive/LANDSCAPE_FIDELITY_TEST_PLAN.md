@@ -101,14 +101,14 @@ println("Landscape fidelity: $(valid_basins)/$(total_minima) = $(100*valid_basin
 **Objective**: Verify new code compiles and exports work
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 git checkout claude/classify-critical-points-01X8GGvTCxt6G6teFHGaDwGA
 ```
 
 ```julia
 # In Julia REPL
 using Pkg
-Pkg.activate("/Users/ghscholt/GlobalOptim/globtimpostprocessing")
+Pkg.activate("/path/to/globtimpostprocessing")
 Pkg.instantiate()  # Install dependencies
 
 # Test import
@@ -195,7 +195,7 @@ demo_4_batch_processing()
 
 **Prerequisites**:
 - Need a completed experiment with `critical_points_deg_N.csv`
-- Example: `/Users/ghscholt/globtim_results/lotka_volterra_4d_test/`
+- Example: `/path/to/globtim_results/lotka_volterra_4d_test/`
 
 ```julia
 using Globtim
@@ -204,7 +204,7 @@ using Optim
 using ForwardDiff
 
 # Load real experiment
-experiment_path = "/Users/ghscholt/globtim_results/lotka_volterra_4d_test/"
+experiment_path = "/path/to/globtim_results/lotka_volterra_4d_test/"
 result = load_experiment_results(experiment_path)
 
 # Classify critical points
@@ -270,7 +270,7 @@ using Optim
 using ForwardDiff
 
 # Load experiment
-experiment_path = "/Users/ghscholt/globtim_results/lotka_volterra_4d_test/"
+experiment_path = "/path/to/globtim_results/lotka_volterra_4d_test/"
 result = load_experiment_results(experiment_path)
 classify_all_critical_points!(result.critical_points)
 

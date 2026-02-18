@@ -174,20 +174,7 @@ function find_results_root()
         return ENV["GLOBTIM_RESULTS_ROOT"]
     end
 
-    # Search relative to script location
-    candidates = [
-        joinpath(dirname(POSTPROC_ROOT), "globtim_results", "lotka_volterra_4d"),
-        joinpath(dirname(dirname(POSTPROC_ROOT)), "globtim_results", "lotka_volterra_4d"),
-        joinpath(homedir(), "GlobalOptim", "globtim_results", "lotka_volterra_4d"),
-    ]
-
-    for c in candidates
-        if isdir(c)
-            return dirname(c)  # Return results root, not LV4D subdir
-        end
-    end
-
-    error("Could not find results directory. Set GLOBTIM_RESULTS_ROOT or use --results-dir")
+    error("Could not find results directory. Set the GLOBTIM_RESULTS_ROOT environment variable or use --results-dir.")
 end
 
 # ============================================================================

@@ -17,7 +17,7 @@ This document outlines the analysis routines to run on collected experiments and
 
 **Primary Analysis Script**:
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 julia --project=. analyze_collected_campaign.jl \
   collected_experiments_20251014_090544/lv4d_deg18_domain0.3_GN16_20251013_131227/
 ```
@@ -225,7 +225,7 @@ Compare solution counts:
 Create a dedicated comparison script:
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 ```
 
 **Option 1: Quick manual comparison**

@@ -139,7 +139,7 @@ Use this checklist to verify Phase 1 is working correctly:
 
 ```julia
 using Pkg
-Pkg.activate("/Users/ghscholt/GlobalOptim/globtimpostprocessing")
+Pkg.activate("/path/to/globtimpostprocessing")
 using GlobtimPostProcessing
 
 # Test 1: Module loads
@@ -229,8 +229,8 @@ None. Phase 1 implementation is complete and stable.
 ## Contact
 
 For questions about Phase 1 implementation, see:
-- `/Users/ghscholt/GlobalOptim/docs/API_DESIGN_REFINEMENT.md` (full design spec)
-- `/Users/ghscholt/GlobalOptim/docs/REFINEMENT_MIGRATION_COORDINATION.md` (coordination across repos)
+- `docs/API_DESIGN_REFINEMENT.md` (full design spec)
+- `docs/REFINEMENT_MIGRATION_COORDINATION.md` (coordination across repos)
 
 ---
 

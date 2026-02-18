@@ -1,4 +1,13 @@
 #!/usr/bin/env julia
+#=
+ENVIRONMENT NOTE: This is a standalone entry-point script, NOT part of the
+GlobtimPostProcessing package test suite. It requires `Globtim` and `ArgParse`
+to be available in the active environment. Run it from a shared monorepo
+environment that has all packages developed, e.g.:
+    julia --project=@monorepo scripts/refine_subdivision_results.jl ...
+Do NOT run this from the globtimpostprocessing package environment — those
+dependencies are intentionally not declared in its Project.toml.
+=#
 """
 PE-05b: Multi-Start Refinement from Subdivision Results
 
@@ -14,18 +23,14 @@ Usage:
 """
 
 const SCRIPT_DIR = @__DIR__
-const PROJECT_ROOT = abspath(joinpath(SCRIPT_DIR, "..", ".."))
-const POSTPROC_ROOT = abspath(joinpath(PROJECT_ROOT, "..", "globtimpostprocessing"))
+const POSTPROC_ROOT = dirname(SCRIPT_DIR)  # scripts/ -> globtimpostprocessing/
 
-# Activate globtim first (for Globtim package), then add globtimpostprocessing to LOAD_PATH
 using Pkg
-Pkg.activate(PROJECT_ROOT)
+Pkg.activate(POSTPROC_ROOT)
 Pkg.instantiate()
 
-# Add globtimpostprocessing to LOAD_PATH so we can use its refinement functions
-push!(LOAD_PATH, POSTPROC_ROOT)
+pushfirst!(LOAD_PATH, POSTPROC_ROOT)
 
-using Globtim
 using GlobtimPostProcessing
 using JSON
 using CSV
@@ -66,7 +71,7 @@ end
 function run_multistart_refinement(args)
     experiment_dir = args["experiment-dir"]
     if !isabspath(experiment_dir)
-        experiment_dir = joinpath(PROJECT_ROOT, experiment_dir)
+        experiment_dir = abspath(experiment_dir)
     end
 
     degree = args["degree"]

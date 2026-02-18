@@ -15,7 +15,7 @@ We've implemented a simple, test-driven approach starting with L2 error visualiz
 ### Usage
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 
 # Test with a campaign directory
 julia --project=. examples/test_minimal_l2_plot.jl \

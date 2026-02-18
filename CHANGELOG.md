@@ -253,7 +253,7 @@ VegaLite = "112f6efa-9a02-5b7d-90c0-432ed331239a"  # v3.3.0
 To test the new VegaLite L2 visualization:
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 
 # Run with your campaign data
 julia --project=. examples/test_minimal_l2_plot.jl \

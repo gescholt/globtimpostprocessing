@@ -1061,38 +1061,13 @@ function main()
             end
             results_root
         else
-            # Smart search for globtim_results in GlobalOptim hierarchy
-            candidates = [
-                joinpath(homedir(), "GlobalOptim", "globtim_results"),
-                joinpath(dirname(@__DIR__), "globtim_results"),  # ../globtim_results
-                joinpath(pwd(), "globtim_results"),              # ./globtim_results
-                # Also try finding GlobalOptim parent
-                joinpath(dirname(dirname(@__DIR__)), "globtim_results")
-            ]
+            error("""
+                GLOBTIM_RESULTS_ROOT environment variable is not set.
 
-            results_root = nothing
-            for candidate in candidates
-                if isdir(candidate)
-                    results_root = candidate
-                    break
-                end
-            end
-
-            if isnothing(results_root)
-                error("""
-                    Could not find globtim_results directory!
-
-                    Searched locations:
-                    $(join(["  - " * c for c in candidates], "\n"))
-
-                    Solutions:
-                    1. Set GLOBTIM_RESULTS_ROOT: export GLOBTIM_RESULTS_ROOT=~/GlobalOptim/globtim_results
-                    2. Use --path: julia analyze_experiments.jl --path /path/to/results
-                    3. Run from GlobalOptim directory with globtim_results/ subdirectory
-                    """)
-            end
-
-            results_root
+                Solutions:
+                1. Set GLOBTIM_RESULTS_ROOT: export GLOBTIM_RESULTS_ROOT=/path/to/globtim_results
+                2. Use --path: julia analyze_experiments.jl --path /path/to/results
+                """)
         end
     end
 

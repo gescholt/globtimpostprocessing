@@ -78,7 +78,7 @@ The loader function `load_critical_points_for_degree()` supports both formats au
 To regenerate test fixtures with the latest globtimcore version:
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimcore/test/fixtures
+cd /path/to/globtimcore/test/fixtures
 julia --project=../.. generate_postprocessing_fixtures.jl
 ```
 

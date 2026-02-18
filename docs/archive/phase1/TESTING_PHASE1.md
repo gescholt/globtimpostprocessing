@@ -69,7 +69,7 @@ Created `test/test_refinement_phase1.jl` - comprehensive tests that work **witho
 ## Running Tests Locally
 
 ```bash
-cd /Users/ghscholt/GlobalOptim/globtimpostprocessing
+cd /path/to/globtimpostprocessing
 
 # Pull latest changes
 git pull origin claude/implement-phase1-refinement-01MzzUq9MbY3b8Wn2RsjfEKE
