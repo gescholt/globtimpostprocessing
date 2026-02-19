@@ -51,22 +51,6 @@ end
 # Implement get_base protocol
 UnifiedPipeline.get_base(data::LV4DExperimentData) = data.base
 
-# Backward compatibility accessors
-"""Get experiment directory path (backward compatible with data.dir)."""
-Base.getproperty(data::LV4DExperimentData, sym::Symbol) = begin
-    if sym === :dir
-        return data.base.path
-    elseif sym === :degree_results
-        return data.base.degree_results
-    elseif sym === :critical_points
-        return data.base.critical_points
-    else
-        return getfield(data, sym)
-    end
-end
-
-Base.propertynames(::LV4DExperimentData) = (:base, :params, :p_true, :p_center, :domain_size, :dim, :dir, :degree_results, :critical_points)
-
 """
     LV4DSweepData
 
@@ -299,7 +283,7 @@ function _parse_results_summary(results::Vector, params::ExperimentParams,
             hessian_minima = get(r, "hessian_minima", 0),
             hessian_saddle = get(r, "hessian_saddle", 0),
             hessian_degenerate = get(r, "hessian_degenerate", 0),
-            computation_time = get(r, "computation_time", NaN),
+            computation_time = get(r, "total_computation_time", NaN),
             experiment_dir = basename(get(config, "experiment_dir", ""))
         )
         push!(rows, row)

@@ -218,7 +218,7 @@ function _results_array_to_dataframe(results::Vector)::DataFrame
         row["L2_norm"] = _extract_l2_norm(r)
         row["critical_points"] = get(r, "critical_points", get(r, "total_critical_points", 0))
         row["condition_number"] = _parse_condition_number(get(r, "condition_number", NaN))
-        row["computation_time"] = get(r, "computation_time", NaN)
+        row["computation_time"] = get(r, "total_computation_time", NaN)
 
         # Optional fields
         if haskey(r, "gradient_valid_rate")

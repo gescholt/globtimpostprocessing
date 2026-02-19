@@ -226,7 +226,7 @@ function _load_experiment_results(exp_dir::String)::Union{DataFrame, Nothing}
                 hessian_minima = get(r, "hessian_minima", 0),
                 hessian_saddle = get(r, "hessian_saddle", 0),
                 hessian_degenerate = get(r, "hessian_degenerate", 0),
-                computation_time = get(r, "computation_time", NaN),
+                computation_time = get(r, "total_computation_time", NaN),
                 experiment_dir = dirname
             )
             push!(rows, row)

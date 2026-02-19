@@ -67,23 +67,17 @@ end
 Detect the CSV schema version from column names.
 
 Returns one of:
-- `:v1_1_0` - Schema v1.1.0 with refinement data (theta1_raw,...,theta4_raw,theta1,...,theta4,objective_raw,objective,l2_approx_error,refinement_improvement)
 - `:phase2` - Phase 2 format (index, p1, p2, ..., objective)
-- `:phase1` - Phase 1/legacy format (x1, x2, ..., z)
 
 # Throws
-- `ErrorException` if column names don't match any known schema
+- `ErrorException` if column names don't match the expected schema
 """
 function detect_csv_schema(df::DataFrame)
     col_names = names(df)
-    if "theta1_raw" in col_names
-        return :v1_1_0
-    elseif "p1" in col_names
+    if "p1" in col_names
         return :phase2
-    elseif "x1" in col_names
-        return :phase1
     else
-        error("Unrecognized CSV schema. Columns: $(col_names)")
+        error("Unrecognized CSV schema. Expected columns including 'p1', got: $(col_names)")
     end
 end
 
@@ -92,14 +86,7 @@ end
 
 Load critical points CSV for a specific polynomial degree.
 
-Supports three file formats (tried in order):
-- Phase 2: `critical_points_raw_deg_X.csv` with columns (index, p1, p2, ..., objective)
-- Phase 1: `critical_points_deg_X.csv` with columns (x1, x2, ..., z) or Schema v1.1.0 columns
-
-Schema v1.1.0 format has 12 columns:
-  theta1_raw,...,theta4_raw,theta1,...,theta4,objective_raw,objective,l2_approx_error,refinement_improvement
-
-Auto-detection uses column names to determine the schema.
+Loads `critical_points_raw_deg_X.csv` with columns (index, p1, p2, ..., objective).
 
 # Arguments
 - `experiment_path`: Path to experiment directory
@@ -109,24 +96,14 @@ Auto-detection uses column names to determine the schema.
 - DataFrame with columns from CSV file
 
 # Throws
-- `ErrorException` if CSV file doesn't exist (neither format)
+- `ErrorException` if CSV file doesn't exist
 """
 function load_critical_points_for_degree(experiment_path::String, degree::Int)
-    # Try Phase 2 format first (preferred)
-    csv_file_raw = joinpath(experiment_path, "critical_points_raw_deg_$(degree).csv")
-    if isfile(csv_file_raw)
-        return CSV.read(csv_file_raw, DataFrame)
+    csv_file = joinpath(experiment_path, "critical_points_raw_deg_$(degree).csv")
+    if !isfile(csv_file)
+        error("Critical points file not found: $csv_file")
     end
-
-    # Fall back to Phase 1 / v1.1.0 format
-    csv_file_legacy = joinpath(experiment_path, "critical_points_deg_$(degree).csv")
-    if isfile(csv_file_legacy)
-        return CSV.read(csv_file_legacy, DataFrame)
-    end
-
-    error("Critical points file not found for degree $degree. Tried:\n" *
-          "  Phase 2: $csv_file_raw\n" *
-          "  Phase 1: $csv_file_legacy")
+    return CSV.read(csv_file, DataFrame)
 end
 
 """
@@ -134,52 +111,16 @@ end
 
 Determine the column prefix for parameter coordinates in a DataFrame.
 
-For Schema v1.1.0, prefers refined coordinates (theta1, theta2, ...) over raw
-(theta1_raw, theta2_raw, ...). Returns the prefix and whether refinement data is available.
-
 # Returns
-- `(col_prefix, has_refinement)`: Column prefix string and whether v1.1.0 refinement is present
-
-# Column resolution order:
-1. v1.1.0 refined: `theta1`, `theta2`, ... (preferred)
-2. Phase 2: `p1`, `p2`, ...
-3. Phase 1: `x1`, `x2`, ...
-4. v1.1.0 raw only: `theta1_raw`, `theta2_raw`, ... (if refined not available)
+- `(col_prefix, has_refinement)`: Column prefix ("p") and false (no refinement)
 """
 function get_coordinate_columns(df::DataFrame, dim::Int)
-    schema = detect_csv_schema(df)
-
-    if schema == :v1_1_0
-        # Prefer refined coordinates (theta1, theta2, ...) if available
-        if hasproperty(df, :theta1)
-            return ("theta", true)
-        else
-            # Only raw coordinates available
-            return ("theta_raw", true)  # has_refinement=true but using raw prefix pattern
-        end
-    elseif schema == :phase2
-        return ("p", false)
-    elseif schema == :phase1
-        return ("x", false)
-    else
-        error("Unrecognized CSV schema in DataFrame")
-    end
+    detect_csv_schema(df)  # errors if not :phase2
+    return ("p", false)
 end
 
-"""
-    _extract_coordinate(row, prefix::String, i::Int) -> Float64
-
-Extract a coordinate value from a DataFrame row given a column prefix and index.
-
-Handles the special case of v1.1.0 raw columns where prefix is "theta_raw"
-and columns are named `theta1_raw`, `theta2_raw`, etc. (not `theta_raw1`, `theta_raw2`).
-"""
 function _extract_coordinate(row, prefix::String, i::Int)
-    if prefix == "theta_raw"
-        return row[Symbol("theta$(i)_raw")]
-    else
-        return row[Symbol("$(prefix)$i")]
-    end
+    return row[Symbol("$(prefix)$i")]
 end
 
 """
@@ -197,10 +138,7 @@ For each critical point (row in df), computes distance to p_true and aggregates:
 - Number of recoveries (points within threshold)
 - All individual distances
 
-Supports all CSV schemas:
-- Schema v1.1.0: Uses refined coordinates (theta1,...) when available, raw (theta1_raw,...) otherwise
-- Phase 2: Uses p1, p2, ... columns
-- Phase 1: Uses x1, x2, ... columns
+Expects Phase 2 CSV format with p1, p2, ... columns.
 
 # Arguments
 - `df`: DataFrame with parameter coordinate columns
@@ -335,27 +273,13 @@ end
 
 Extract true parameter values from an experiment config dict.
 
-Supports two config formats:
-- Flat format: `config["p_true"]` (legacy/Phase 2)
-- Nested format: `config["model_config"]["true_parameters"]` (Schema v1.1.0+)
-
 # Returns
 - `Vector{Float64}` of true parameters, or `nothing` if not found
 """
 function extract_true_parameters(config::AbstractDict)
-    # Check flat format first (legacy/Phase 2)
     if haskey(config, "p_true") && !isnothing(config["p_true"])
         return Float64.(config["p_true"])
     end
-
-    # Check nested format (Schema v1.1.0+)
-    if haskey(config, "model_config")
-        mc = config["model_config"]
-        if mc isa AbstractDict && haskey(mc, "true_parameters") && !isnothing(mc["true_parameters"])
-            return Float64.(mc["true_parameters"])
-        end
-    end
-
     return nothing
 end
 

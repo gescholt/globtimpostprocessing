@@ -139,7 +139,7 @@ function analyze_comparison(data::ComparisonData; metric::Symbol=:best_dist_to_t
     println("\n" * "="^70)
     println("Log vs Standard Comparison Analysis")
     println("="^70)
-    println("Results: $(basename(data.dir))")
+    println("Results: $(basename(data.base.path))")
     println("Total runs: $(nrow(df))")
     println("Methods: $(join(data.methods, ", "))")
     println("Domains: $(data.domains)")
@@ -147,7 +147,7 @@ function analyze_comparison(data::ComparisonData; metric::Symbol=:best_dist_to_t
     println("Metric: $metric")
 
     # Load config for context if available
-    config_path = joinpath(data.dir, "experiment_config.json")
+    config_path = joinpath(data.base.path, "experiment_config.json")
     if isfile(config_path)
         config = JSON.parsefile(config_path)
         haskey(config, "GN") && println("GN: $(config["GN"])")

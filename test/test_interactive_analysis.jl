@@ -39,7 +39,7 @@ include("../analyze_experiments.jl")
                         "2" => Dict(
                             "critical_points" => 5,
                             "best_objective" => 1.234,
-                            "computation_time" => 10.5
+                            "total_computation_time" => 10.5
                         )
                     )
                 )

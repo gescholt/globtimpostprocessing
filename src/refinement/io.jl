@@ -30,8 +30,7 @@ end
 
 Load raw critical points from globtim experiment output directory.
 
-Searches for `critical_points_raw_deg_X.csv` (new format) or falls back to
-`critical_points_deg_X.csv` (old format for backward compatibility).
+Searches for `critical_points_raw_deg_X.csv`.
 
 # Arguments
 - `experiment_dir::String`: Path to globtim output directory
@@ -58,29 +57,14 @@ function load_raw_critical_points(
     experiment_dir::String;
     degree::Union{Int,Nothing} = nothing
 )
-    # Search for critical points CSV files
     raw_pattern = r"critical_points_raw_deg_(\d+)\.csv"
-    legacy_pattern = r"critical_points_deg_(\d+)\.csv"
 
     # Get all CSV files in directory
     csv_files = filter(f -> endswith(f, ".csv"), readdir(experiment_dir))
-
-    # Find raw critical points files (new format)
     raw_files = filter(f -> occursin(raw_pattern, f), csv_files)
 
-    # Fall back to legacy format if no raw files found
     if isempty(raw_files)
-        raw_files = filter(f -> occursin(legacy_pattern, f), csv_files)
-        pattern = legacy_pattern
-        is_legacy = true
-    else
-        pattern = raw_pattern
-        is_legacy = false
-    end
-
-    # Error if no files found
-    if isempty(raw_files)
-        error("No critical points CSV files found in $experiment_dir")
+        error("No critical_points_raw_deg_*.csv files found in $experiment_dir")
     end
 
     # Parse degrees from filenames
@@ -88,7 +72,7 @@ function load_raw_critical_points(
     degree_to_file = Dict{Int, String}()
 
     for file in raw_files
-        m = match(pattern, file)
+        m = match(raw_pattern, file)
         if m !== nothing
             deg = parse(Int, m.captures[1])
             push!(available_degrees, deg)

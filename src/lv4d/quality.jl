@@ -35,11 +35,11 @@ Analyze critical point quality for a single experiment.
 function analyze_quality(data::LV4DExperimentData)
     # --- Header ---
     println()
-    println("CRITICAL POINT ANALYSIS: $(basename(data.dir))")
-    println("─" ^ min(70, 26 + length(basename(data.dir))))
+    println("CRITICAL POINT ANALYSIS: $(basename(data.base.path))")
+    println("─" ^ min(70, 26 + length(basename(data.base.path))))
 
     # Extract config from directory name
-    params = parse_experiment_name(basename(data.dir))
+    params = parse_experiment_name(basename(data.base.path))
     if params !== nothing
         if params.degree_min == params.degree_max
             @printf("Config: GN=%d, degree=%d, domain=%.2e\n", params.GN, params.degree_min, params.domain)

@@ -83,8 +83,7 @@ Dispatch statistics computation based on tracking label.
 - `Dict{String, Any}`: Computed statistics specific to the label
 """
 function compute_statistics_for_label(label::String, result::ExperimentResult)
-    # Old label names (for backwards compatibility)
-    if label == "polynomial_quality" || label == "approximation_quality"
+    if label == "approximation_quality"
         return compute_approximation_quality_statistics(result)
     elseif label == "convergence_tracking"
         return compute_convergence_statistics(result)
@@ -92,15 +91,14 @@ function compute_statistics_for_label(label::String, result::ExperimentResult)
         return compute_hessian_statistics(result)
     elseif label == "gradient_norms"
         return compute_gradient_norm_statistics(result)
-    elseif label == "distance_to_solutions" || label == "distance_to_true_parameters"
+    elseif label == "distance_to_true_parameters"
         return compute_distance_statistics(result)
     elseif label == "sparsification_tracking"
         return compute_sparsification_statistics(result)
     elseif label == "performance_metrics"
         return compute_performance_statistics(result)
-    elseif label == "critical_point_statistics" || label == "critical_point_count" || label == "refined_critical_points"
+    elseif label == "critical_point_statistics"
         return compute_critical_point_statistics(result)
-    # New label names from results_summary format
     elseif label == "parameter_recovery"
         return compute_parameter_recovery_statistics(result)
     elseif label == "numerical_stability"
@@ -112,8 +110,7 @@ function compute_statistics_for_label(label::String, result::ExperimentResult)
     elseif label == "optimization_quality"
         return compute_optimization_quality_statistics(result)
     else
-        @warn "Unknown tracking label: $label"
-        return Dict{String, Any}("label" => label, "available" => false, "error" => "unknown_label")
+        error("Unknown tracking label: $label")
     end
 end
 
@@ -134,27 +131,14 @@ function create_critical_points_aggregated_stats(all_stats::Dict, result::Experi
     raw = Int[]
     degrees = Int[]
 
-    # Handle both old dict format (degree_N => data) and new array format
-    if results_summary isa AbstractVector
-        # New format: array of objects with "degree" and "critical_points" fields
-        for degree_data in results_summary
-            if haskey(degree_data, "degree")
-                push!(degrees, degree_data["degree"])
-                # Try both "critical_points" (new) and "critical_points_refined" (old)
-                cp_count = get(degree_data, "critical_points",
-                              get(degree_data, "critical_points_refined", 0))
-                push!(refined, cp_count)
-                push!(raw, get(degree_data, "critical_points_raw", cp_count))
-            end
-        end
-    else
-        # Old format: dict with "degree_N" keys
-        for (degree_key, degree_data) in results_summary
-            deg = parse(Int, replace(degree_key, "degree_" => ""))
-            push!(degrees, deg)
-            # Try multiple possible field names for backwards compatibility
-            cp_count = get(degree_data, "critical_points",
-                          get(degree_data, "critical_points_refined", 0))
+    if !(results_summary isa AbstractVector)
+        error("results_summary must be an array of degree result objects, got $(typeof(results_summary))")
+    end
+
+    for degree_data in results_summary
+        if haskey(degree_data, "degree")
+            push!(degrees, degree_data["degree"])
+            cp_count = get(degree_data, "critical_points", 0)
             push!(refined, cp_count)
             push!(raw, get(degree_data, "critical_points_raw", cp_count))
         end
@@ -200,8 +184,7 @@ function create_timing_aggregated_stats(all_stats::Dict, result::ExperimentResul
                     "polynomial_construction_time" => get(degree_data, "polynomial_construction_time", 0.0),
                     "critical_point_solving_time" => get(degree_data, "critical_point_solving_time", 0.0),
                     "refinement_time" => get(degree_data, "refinement_time", 0.0),
-                    "total_computation_time" => get(degree_data, "total_computation_time",
-                                                   get(degree_data, "computation_time", 0.0))
+                    "total_computation_time" => get(degree_data, "total_computation_time", 0.0)
                 )
             end
         end
@@ -213,8 +196,7 @@ function create_timing_aggregated_stats(all_stats::Dict, result::ExperimentResul
                 "polynomial_construction_time" => get(degree_data, "polynomial_construction_time", 0.0),
                 "critical_point_solving_time" => get(degree_data, "critical_point_solving_time", 0.0),
                 "refinement_time" => get(degree_data, "refinement_time", 0.0),
-                "total_computation_time" => get(degree_data, "total_computation_time",
-                                               get(degree_data, "computation_time", 0.0))
+                "total_computation_time" => get(degree_data, "total_computation_time", 0.0)
             )
         end
     end

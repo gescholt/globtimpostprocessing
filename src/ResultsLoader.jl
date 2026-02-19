@@ -59,9 +59,7 @@ function is_single_experiment(path::String)
     end
 
     files = readdir(path)
-    # Support both new format (critical_points_raw_deg_X.csv) and legacy (critical_points_deg_X.csv)
-    has_csv = any(f -> endswith(f, ".csv") &&
-        (startswith(f, "critical_points_raw_deg_") || startswith(f, "critical_points_deg_")), files)
+    has_csv = any(f -> startswith(f, "critical_points_raw_deg_") && endswith(f, ".csv"), files)
     has_results = "results_summary.json" in files || "results_summary.jld2" in files
 
     return has_csv || has_results
@@ -161,32 +159,13 @@ Tries loading strategies:
 2. experiment_result_*.json (alternative format)
 """
 function load_from_directory(dir_path::String)
-    # Look for results_summary.json first (primary format)
     results_file = joinpath(dir_path, "results_summary.json")
 
-    if isfile(results_file)
-        # Try to load from results_summary, but catch JSON parse errors
-        try
-            return load_from_results_summary(dir_path, results_file)
-        catch e
-            # JSON.jl throws ErrorException for parse errors, not a specific ParseError type
-            if e isa ErrorException || e isa ArgumentError
-                @warn "Failed to parse results_summary.json (possibly truncated), trying CSV fallback" exception=e
-                # Fall through to CSV fallback
-            else
-                rethrow(e)
-            end
-        end
+    if !isfile(results_file)
+        error("No results_summary.json found in $dir_path")
     end
 
-    # Fall back to experiment_result_*.json format
-    result_files = filter(f -> occursin(r"experiment_result_.*\.json", f), readdir(dir_path))
-
-    if !isempty(result_files)
-        return load_from_experiment_result(dir_path, joinpath(dir_path, result_files[1]))
-    end
-
-    error("No recognized result files found in $dir_path")
+    return load_from_results_summary(dir_path, results_file)
 end
 
 """
@@ -385,7 +364,7 @@ end
 """
     load_critical_points_from_csvs(dir_path::String, data::AbstractDict) -> Union{DataFrame, Nothing}
 
-Load critical points from CSV files (critical_points_deg_N.csv).
+Load critical points from CSV files (critical_points_raw_deg_N.csv).
 """
 function load_critical_points_from_csvs(dir_path::String, data::AbstractDict)
     results_summary = get(data, "results_summary", Dict())
@@ -400,10 +379,7 @@ function load_critical_points_from_csvs(dir_path::String, data::AbstractDict)
         degree_str = replace(string(degree_key), "degree_" => "")
         degree = parse(Int, degree_str)
 
-        # Try new format first (Phase 2), fall back to legacy format
-        csv_file_raw = joinpath(dir_path, "critical_points_raw_deg_$(degree).csv")
-        csv_file_legacy = joinpath(dir_path, "critical_points_deg_$(degree).csv")
-        csv_file = isfile(csv_file_raw) ? csv_file_raw : csv_file_legacy
+        csv_file = joinpath(dir_path, "critical_points_raw_deg_$(degree).csv")
 
         if !isfile(csv_file)
             continue
