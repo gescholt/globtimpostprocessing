@@ -1,7 +1,7 @@
 name = "GlobtimPostProcessing"
 uuid = "b470b6bb-4443-493e-998d-c7c5e1aa9116"
 license = "GPL-3.0"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Georgy Scholten <scholtengeorgy@gmail.com>"]
 
 [deps]
