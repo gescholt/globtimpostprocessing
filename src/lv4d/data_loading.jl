@@ -8,6 +8,9 @@ Provides consistent loading of experiment configs, results, and critical points.
 using ..UnifiedPipeline: BaseExperimentData, ExperimentType, LV4DType, LV4D
 using ..UnifiedPipeline: get_base, experiment_id, experiment_type, experiment_path
 
+# Import canonical config loader from parent module
+using ..: load_experiment_config
+
 # ============================================================================
 # Data Structures
 # ============================================================================
@@ -75,11 +78,10 @@ end
     load_experiment_config_json(experiment_dir::String) -> Dict{String, Any}
 
 Load experiment_config.json from an experiment directory.
+Delegates to the canonical `load_experiment_config` from the parent module.
 """
 function load_experiment_config_json(experiment_dir::String)::Dict{String, Any}
-    config_path = joinpath(experiment_dir, "experiment_config.json")
-    isfile(config_path) || error("experiment_config.json not found in $experiment_dir")
-    return JSON.parsefile(config_path)
+    return load_experiment_config(experiment_dir)
 end
 
 """
@@ -100,30 +102,14 @@ end
 """
     load_critical_points_csv(experiment_dir::String) -> DataFrame
 
-Load and combine all critical_points_deg_*.csv files from an experiment directory.
+Load and combine all critical_points CSV files from an experiment directory.
+Handles both `critical_points_deg_N.csv` and `critical_points_raw_deg_N.csv` naming conventions.
 Adds a `degree` column based on filename.
+Returns an empty DataFrame if no files are found.
 """
 function load_critical_points_csv(experiment_dir::String)::DataFrame
-    csv_files = filter(readdir(experiment_dir)) do f
-        startswith(f, "critical_points_deg_") && endswith(f, ".csv")
-    end
-
-    if isempty(csv_files)
-        return DataFrame()
-    end
-
-    dfs = DataFrame[]
-    for csv_file in csv_files
-        m = match(r"critical_points_deg_(\d+)\.csv", csv_file)
-        m === nothing && continue
-
-        degree = parse(Int, m.captures[1])
-        df = CSV.read(joinpath(experiment_dir, csv_file), DataFrame)
-        df[!, :degree] .= degree
-        push!(dfs, df)
-    end
-
-    return isempty(dfs) ? DataFrame() : vcat(dfs...)
+    result = UnifiedPipeline._load_critical_points(experiment_dir)
+    return result === nothing ? DataFrame() : result
 end
 
 """
@@ -138,14 +124,14 @@ function load_critical_point_metrics(experiment_dir::String)::Union{DataFrame, N
     params === nothing && return nothing
 
     csv_files = filter(readdir(experiment_dir)) do f
-        startswith(f, "critical_points_deg_") && endswith(f, ".csv")
+        (startswith(f, "critical_points_deg_") || startswith(f, "critical_points_raw_deg_")) && endswith(f, ".csv")
     end
 
     isempty(csv_files) && return nothing
 
     rows = DataFrame[]
     for csv_file in csv_files
-        m = match(r"critical_points_deg_(\d+)\.csv", csv_file)
+        m = match(r"critical_points(?:_raw)?_deg_(\d+)\.csv", csv_file)
         m === nothing && continue
         degree = parse(Int, m.captures[1])
 

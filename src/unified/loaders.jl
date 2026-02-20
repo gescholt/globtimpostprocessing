@@ -149,6 +149,11 @@ end
     _load_config_safe(path::String) -> Dict{String, Any}
 
 Load experiment_config.json if it exists, return empty Dict otherwise.
+
+Intentionally permissive: the unified pipeline supports experiment directories that
+do not have a config file (e.g. legacy or third-party output). Callers must check
+whether the returned dict is empty before accessing keys. For contexts where a
+missing config is an error, use `load_experiment_config` from the parent module instead.
 """
 function _load_config_safe(path::String)::Dict{String, Any}
     config_path = joinpath(path, "experiment_config.json")

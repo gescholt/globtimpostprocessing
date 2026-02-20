@@ -364,37 +364,13 @@ end
 """
     load_critical_points_from_csvs(dir_path::String, data::AbstractDict) -> Union{DataFrame, Nothing}
 
-Load critical points from CSV files (critical_points_raw_deg_N.csv).
+Load critical points from CSV files in an experiment directory.
+Delegates to `UnifiedPipeline._load_critical_points` which handles both
+`critical_points_deg_N.csv` and `critical_points_raw_deg_N.csv` naming conventions.
+The `data` argument is accepted for API compatibility but is not used.
 """
 function load_critical_points_from_csvs(dir_path::String, data::AbstractDict)
-    results_summary = get(data, "results_summary", Dict())
-
-    if isempty(results_summary)
-        return nothing
-    end
-
-    all_points = DataFrame[]
-
-    for degree_key in keys(results_summary)
-        degree_str = replace(string(degree_key), "degree_" => "")
-        degree = parse(Int, degree_str)
-
-        csv_file = joinpath(dir_path, "critical_points_raw_deg_$(degree).csv")
-
-        if !isfile(csv_file)
-            continue
-        end
-
-        try
-            df = CSV.read(csv_file, DataFrame, header=true)
-            df[!, :degree] = fill(degree, nrow(df))
-            push!(all_points, df)
-        catch e
-            @warn "Failed to load critical points for degree $degree" exception=e
-        end
-    end
-
-    return isempty(all_points) ? nothing : vcat(all_points...)
+    return UnifiedPipeline._load_critical_points(dir_path)
 end
 
 """

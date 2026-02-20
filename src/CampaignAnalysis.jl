@@ -866,7 +866,7 @@ function print_parameter_recovery_table(campaign::CampaignResults)
             continue
         end
 
-        config = JSON.parsefile(config_file)
+        config = load_experiment_config(exp_path)
 
         # Get true parameters
         if !haskey(config, "p_true")
@@ -874,25 +874,15 @@ function print_parameter_recovery_table(campaign::CampaignResults)
         end
         p_true = collect(config["p_true"])
 
-        csv_files = filter(f -> startswith(basename(f), "critical_points_raw_deg_"),
-                          readdir(exp_path, join=true))
+        all_cp = load_critical_points_from_csvs(exp_path, config)
 
-        if isempty(csv_files)
+        if all_cp === nothing || nrow(all_cp) == 0
             continue
         end
 
         cp_by_degree = Dict{Int, DataFrame}()
-        for csv_file in csv_files
-            m = match(r"deg_(\d+)\.csv", basename(csv_file))
-            if m !== nothing
-                degree = parse(Int, m[1])
-                try
-                    df = CSV.read(csv_file, DataFrame)
-                    cp_by_degree[degree] = df
-                catch e
-                    @warn "Failed to load CSV" csv_file exception=(e, catch_backtrace())
-                end
-            end
+        for deg in unique(all_cp.degree)
+            cp_by_degree[deg] = filter(row -> row.degree == deg, all_cp)
         end
 
         if !isempty(cp_by_degree)
@@ -911,13 +901,6 @@ function print_parameter_recovery_table(campaign::CampaignResults)
 
     println("\n📉 PARAMETER RECOVERY CONVERGENCE")
     println("="^80)
-
-    # Helper function to compute parameter distance
-    function param_distance(cp_row, p_true)
-        n_params = length(p_true)
-        p_found = [cp_row[Symbol("x$i")] for i in 1:n_params]
-        return norm(p_found .- p_true)
-    end
 
     # Collect all degrees
     all_degrees = Set{Int}()
@@ -947,7 +930,8 @@ function print_parameter_recovery_table(campaign::CampaignResults)
             if haskey(exp.cp_by_degree, deg)
                 df = exp.cp_by_degree[deg]
                 if nrow(df) > 0
-                    distances = [param_distance(row, exp.p_true) for row in eachrow(df)]
+                    n_params = length(exp.p_true)
+                    distances = [param_distance([row[Symbol("p$i")] for i in 1:n_params], exp.p_true) for row in eachrow(df)]
                     min_dist = minimum(distances)
                     @printf(" | %15.6e", min_dist)
                 else
@@ -980,13 +964,13 @@ function print_parameter_recovery_table(campaign::CampaignResults)
             end
 
             # Find best point for this degree
-            distances = [param_distance(row, exp.p_true) for row in eachrow(df)]
+            n_params = length(exp.p_true)
+            distances = [param_distance([row[Symbol("p$i")] for i in 1:n_params], exp.p_true) for row in eachrow(df)]
             best_idx = argmin(distances)
             best_row = df[best_idx, :]
             best_dist = distances[best_idx]
 
-            n_params = length(exp.p_true)
-            p_found = [best_row[Symbol("x$i")] for i in 1:n_params]
+            p_found = [best_row[Symbol("p$i")] for i in 1:n_params]
 
             println("\nDegree $deg:")
             println("  Best distance: $(round(best_dist, sigdigits=6))")
