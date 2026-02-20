@@ -53,6 +53,19 @@ end
 # Implement get_base protocol
 UnifiedPipeline.get_base(data::LV4DExperimentData) = data.base
 
+# Backward-compatibility property forwarding: data.dir, data.degree_results, data.critical_points
+function Base.getproperty(data::LV4DExperimentData, name::Symbol)
+    if name === :dir
+        return data.base.path
+    elseif name === :degree_results
+        return data.base.degree_results
+    elseif name === :critical_points
+        return data.base.critical_points
+    else
+        return getfield(data, name)
+    end
+end
+
 """
     LV4DSweepData
 

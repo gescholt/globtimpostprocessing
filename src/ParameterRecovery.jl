@@ -277,8 +277,25 @@ Extract true parameter values from an experiment config dict.
 - `Vector{Float64}` of true parameters, or `nothing` if not found
 """
 function extract_true_parameters(config::AbstractDict)
+    # Flat format: top-level p_true key
     if haskey(config, "p_true") && !isnothing(config["p_true"])
         return Float64.(config["p_true"])
+    end
+    # Nested format (Schema v1.1.0+): model_config.true_parameters
+    model_config = get(config, "model_config", nothing)
+    if model_config isa AbstractDict
+        tp = get(model_config, "true_parameters", nothing)
+        if !isnothing(tp)
+            return Float64.(tp)
+        end
+    end
+    # Legacy nested format: system_info.true_parameters
+    system_info = get(config, "system_info", nothing)
+    if system_info isa AbstractDict
+        tp = get(system_info, "true_parameters", nothing)
+        if !isnothing(tp)
+            return Float64.(tp)
+        end
     end
     return nothing
 end
