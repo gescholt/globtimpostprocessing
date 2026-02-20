@@ -45,6 +45,9 @@ using UnicodePlots
 # Import unified pipeline module (must be included before this module)
 using ..UnifiedPipeline
 
+# Import canonical loaders from parent module (GlobtimPostProcessing)
+import ..load_experiment_config
+
 # Import parent module types (but NOT from REPL for terminal menus)
 # We'll handle the interactive menu differently for CLI vs REPL usage
 

@@ -332,7 +332,7 @@ function _load_critical_points(path::String)::Union{DataFrame, Nothing}
         end
     end
 
-    return isempty(dfs) ? nothing : vcat(dfs...)
+    return isempty(dfs) ? nothing : vcat(dfs..., cols=:union)
 end
 
 # ============================================================================

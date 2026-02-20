@@ -7,9 +7,8 @@ Provides consistent loading of experiment configs, results, and critical points.
 # Import unified pipeline types
 using ..UnifiedPipeline: BaseExperimentData, ExperimentType, LV4DType, LV4D
 using ..UnifiedPipeline: get_base, experiment_id, experiment_type, experiment_path
-
-# Import canonical config loader from parent module
-using ..: load_experiment_config
+# Note: load_experiment_config is available from the parent module (GlobtimPostProcessing)
+# because ParameterRecovery.jl is included before LV4DAnalysis.jl.
 
 # ============================================================================
 # Data Structures

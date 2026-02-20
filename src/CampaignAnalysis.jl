@@ -974,7 +974,9 @@ function print_parameter_recovery_table(campaign::CampaignResults)
 
             println("\nDegree $deg:")
             println("  Best distance: $(round(best_dist, sigdigits=6))")
-            println("  Objective value: $(round(best_row.z, sigdigits=6))")
+            obj_val = hasproperty(best_row, :objective) ? best_row.objective :
+                      hasproperty(best_row, :z)         ? best_row.z         : NaN
+            println("  Objective value: $(round(obj_val, sigdigits=6))")
             println("  Parameters found: [$(join([round(p, sigdigits=6) for p in p_found], ", "))]")
             println("  True parameters:  [$(join([round(p, sigdigits=6) for p in exp.p_true], ", "))]")
 

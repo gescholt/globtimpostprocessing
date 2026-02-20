@@ -95,6 +95,11 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         include("test_unified_pipeline.jl")
     end
 
+    # Run Loader Consolidation tests (tibf — February 2026)
+    @testset "Loader Consolidation" begin
+        include("test_loader_consolidation.jl")
+    end
+
     # Run LV4D TUI tests (January 2026 - domain filter fix)
     @testset "LV4D TUI" begin
         include("test_lv4d_tui.jl")
