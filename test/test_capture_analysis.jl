@@ -873,8 +873,9 @@ using LinearAlgebra
             @test known.domain_diameter ≈ norm(ub .- lb)
         end
 
-        @testset "Dedup separates distinct CPs" begin
+        @testset "Dedup separates distinct CPs (Newton)" begin
             # f(x) = (x₁² - 1)² + x₂² → minima at (±1, 0), saddle at (0, 0)
+            # Must use :critical_point to find saddles — :minimum only finds minima
             f_two_min(x) = (x[1]^2 - 1)^2 + x[2]^2
 
             raw_points = [
@@ -885,6 +886,7 @@ using LinearAlgebra
             b2d = [(-2.0, 2.0), (-2.0, 2.0)]
 
             result = build_known_cps_from_refinement(f_two_min, raw_points, b2d;
+                refinement_goal=:critical_point,
                 gradient_method=:forwarddiff, dedup_fraction=0.01)
             @test result !== nothing
             known = result.known_cps
@@ -909,27 +911,78 @@ using LinearAlgebra
                 gradient_method=:forwarddiff)
         end
 
-        @testset "f_accept_tol includes CPs that gradient criterion rejects" begin
+        @testset "f_accept_tol includes CPs that gradient criterion rejects (Newton)" begin
             # Rosenbrock from far-ish starts with very tight gradient acceptance
-            # These won't converge in 5 iterations, so gradient criterion rejects them.
+            # These won't converge in 5 Newton iterations, so gradient criterion rejects them.
             # But f(x) will be small enough for f_accept_tol to save them.
+            # Uses :critical_point explicitly since this tests Newton-specific acceptance behavior.
             f_rosen(x) = (1 - x[1])^2 + 100 * (x[2] - x[1]^2)^2
             raw_points = [[0.8, 0.64], [1.2, 1.44]]
             b2d = [(-2.0, 2.0), (-2.0, 2.0)]
 
             # Without f_accept_tol: very tight accept_tol=1e-20 rejects everything
             result_without = build_known_cps_from_refinement(f_rosen, raw_points, b2d;
+                refinement_goal=:critical_point,
                 gradient_method=:forwarddiff, accept_tol=1e-20,
                 max_iterations=5, dedup_fraction=0.01)
             @test result_without === nothing
 
             # With f_accept_tol: same tight gradient acceptance, but accept by f(x)
             result_with = build_known_cps_from_refinement(f_rosen, raw_points, b2d;
+                refinement_goal=:critical_point,
                 gradient_method=:forwarddiff, accept_tol=1e-20,
                 f_accept_tol=1.0, max_iterations=5, dedup_fraction=0.01)
             @test result_with !== nothing
             @test length(result_with.known_cps.points) >= 1
             @test result_with.refinement_results isa Vector
+        end
+
+        @testset "refinement_goal=:minimum uses NelderMead, finds minima" begin
+            raw_points = [[0.5, 0.3], [-0.2, 0.4], [0.1, -0.1], [-0.3, -0.2]]
+            b2d = [(-1.0, 1.0), (-1.0, 1.0)]
+
+            result = build_known_cps_from_refinement(f_quad, raw_points, b2d;
+                refinement_goal=:minimum,
+                gradient_method=:forwarddiff, dedup_fraction=0.01)
+            @test result !== nothing
+            known = result.known_cps
+            @test result.refinement_results isa Vector
+
+            # All 4 starts should converge to the same minimum at origin → 1 unique CP
+            @test length(known.points) == 1
+            @test known.types[1] == :min
+            @test norm(known.points[1]) < 1e-4
+
+            # Verify all_refinement_results are CriticalPointRefinementResult
+            @test result.all_refinement_results isa Vector{CriticalPointRefinementResult}
+            @test length(result.all_refinement_results) == 4
+            for r in result.all_refinement_results
+                @test r.point isa Vector{Float64}
+                @test r.cp_type == :min
+                @test r.objective_value < 1e-6
+            end
+        end
+
+        @testset "refinement_goal=:critical_point preserves Newton behavior" begin
+            # Same test as Basic, but with explicit refinement_goal=:critical_point
+            raw_points = [[0.5, 0.3], [-0.2, 0.4], [0.1, -0.1], [-0.3, -0.2]]
+            b2d = [(-1.0, 1.0), (-1.0, 1.0)]
+
+            result = build_known_cps_from_refinement(f_quad, raw_points, b2d;
+                refinement_goal=:critical_point,
+                gradient_method=:forwarddiff, dedup_fraction=0.01)
+            @test result !== nothing
+            known = result.known_cps
+            @test length(known.points) == 1
+            @test known.types[1] == :min
+            @test norm(known.points[1]) < 1e-4
+        end
+
+        @testset "refinement_goal validation" begin
+            raw_points = [[0.5, 0.3]]
+            b2d = [(-1.0, 1.0), (-1.0, 1.0)]
+            @test_throws ErrorException build_known_cps_from_refinement(f_quad, raw_points, b2d;
+                refinement_goal=:invalid_goal, gradient_method=:forwarddiff)
         end
     end
 

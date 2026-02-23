@@ -591,32 +591,41 @@ end
         objective,
         raw_points::Vector{Vector{Float64}},
         bounds::Vector{Tuple{Float64,Float64}};
+        refinement_goal::Symbol = :minimum,
         gradient_method::Symbol = :finitediff,
         tol::Float64 = 1e-8,
         accept_tol::Float64 = 1e-2,
         f_accept_tol::Union{Nothing, Float64} = nothing,
         max_iterations::Int = 100,
+        max_time_per_point::Float64 = 60.0,
         hessian_tol::Float64 = 1e-6,
         dedup_fraction::Float64 = 0.01,
         patience::Int = 10,
         min_improvement_ratio::Float64 = 0.99,
         top_k::Union{Int, Nothing} = nothing,
-    ) -> Union{NamedTuple{(:known_cps, :refinement_results)}, Nothing}
+    ) -> Union{NamedTuple{(:known_cps, :refinement_results, :all_refinement_results, :refined_raw_points)}, Nothing}
 
 Build a reference set of known critical points by refining raw polynomial critical
-points to true critical points of `f` using Newton's method on `∇f = 0`.
+points to true critical points of `f`.
+
+Two refinement strategies are available, controlled by `refinement_goal`:
+
+- `:minimum` (default) — Minimizes `f(x)` using gradient-free NelderMead (via Optim.jl).
+  Robust for ODE objectives with indefinite Hessians. Only finds minima.
+- `:critical_point` — Solves `∇f(x) = 0` using trust-region Newton's method.
+  Finds critical points of ALL types (minima, maxima, saddle points), but can converge
+  to saddles instead of the nearest minimum when the Hessian is indefinite.
 
 Most polynomial CPs are **spurious** — artifacts of the approximation that do not
-correspond to real critical points of the objective. This function uses early exit
-(patience) to cheaply reject spurious CPs and only accepts those that show genuine
-convergence toward a true critical point.
+correspond to real critical points of the objective. Both strategies use early exit
+mechanisms to cheaply discard spurious CPs.
 
 # Workflow
 0. (Optional) Pre-filter: evaluate `f(x)` at all raw CPs and keep only the `top_k`
    with smallest objective value. This is a cheap pre-filter (one function evaluation
-   per CP) that avoids spending Newton iterations on CPs with large objective values
+   per CP) that avoids spending refinement iterations on CPs with large objective values
    that are clearly far from the global minimum.
-1. Refine each raw point via Newton's method on `∇f = 0` with early exit for spurious CPs
+1. Refine each raw point using the selected strategy
 2. Accept results where `||∇f|| < accept_tol` (gradient criterion) OR
    `||∇f|| < tol` (strict convergence) OR `f(x) < f_accept_tol` (function-value criterion)
 3. Deduplicate: points within `dedup_fraction × domain_diameter` are merged
@@ -629,7 +638,9 @@ convergence toward a true critical point.
 - `bounds::Vector{Tuple{Float64,Float64}}`: Domain bounds as (lo, hi) tuples
 
 # Keyword Arguments
-- `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff`)
+- `refinement_goal::Symbol`: `:minimum` (f-minimization, default) or `:critical_point` (∇f=0)
+- `gradient_method::Symbol`: `:forwarddiff` or `:finitediff` (default: `:finitediff`).
+  Used by `:critical_point` for iteration; used by `:minimum` for post-hoc classification.
 - `tol::Float64`: Strict convergence tolerance on ||∇f(x)|| (default: 1e-8)
 - `accept_tol::Float64`: Relaxed gradient-norm acceptance tolerance (default: 1e-2). CPs with
   `||∇f|| < accept_tol` are accepted even if they didn't reach `tol`. This accounts
@@ -638,35 +649,48 @@ convergence toward a true critical point.
   = disabled). CPs with `f(x) < f_accept_tol` are accepted regardless of gradient norm. This
   handles ODE objectives where gradient norms are naturally large but a point in a flat valley
   near the minimum is scientifically useful.
-- `max_iterations::Int`: Maximum Newton iterations per point (default: 100)
+- `max_iterations::Int`: Maximum iterations per point (default: 100)
+- `max_time_per_point::Float64`: Timeout per point in seconds, used only for `:minimum` mode
+  (default: 60.0)
 - `hessian_tol::Float64`: Eigenvalue tolerance for CP classification (default: 1e-6)
 - `dedup_fraction::Float64`: Fraction of domain diameter for deduplication (default: 0.01)
-- `patience::Int`: Early exit check interval (default: 10)
-- `min_improvement_ratio::Float64`: Early exit threshold (default: 0.99 = 1% improvement required)
+- `patience::Int`: Early exit check interval, used only for `:critical_point` mode (default: 10)
+- `min_improvement_ratio::Float64`: Early exit threshold, used only for `:critical_point` mode
+  (default: 0.99 = 1% improvement required)
 - `top_k::Union{Int, Nothing}`: If set, only refine the `top_k` CPs with smallest `f(x)`.
   Evaluates `f` once per raw CP (cheap), then discards the rest. `nothing` = refine all (default).
 
 # Returns
-- `(known_cps=KnownCriticalPoints, refinement_results=Vector{CriticalPointRefinementResult})`
-  if any CPs survived, `nothing` otherwise. The `refinement_results` preserve the original
-  `cp_type` (including `:degenerate`) and `eigenvalues` for downstream analysis like valley walking.
+- Named tuple with fields, or `nothing` if no CPs survived:
+  - `known_cps::KnownCriticalPoints` — deduplicated accepted CPs
+  - `refinement_results::Vector{CriticalPointRefinementResult}` — deduplicated accepted results
+    (preserves `:degenerate` type and eigenvalues for valley walking)
+  - `all_refinement_results::Vector{CriticalPointRefinementResult}` — full 1:1 results for every
+    raw input point (including rejected CPs), aligned with `refined_raw_points`
+  - `refined_raw_points::Vector{Vector{Float64}}` — the raw starting points passed to refinement
+    (after `top_k` pre-filtering if used), aligned 1:1 with `all_refinement_results`
 """
 function build_known_cps_from_refinement(
     objective,
     raw_points::Vector{Vector{Float64}},
     bounds::Vector{Tuple{Float64,Float64}};
+    refinement_goal::Symbol = :minimum,
     gradient_method::Symbol = :finitediff,
     tol::Float64 = 1e-8,
     accept_tol::Float64 = 1e-2,
     f_accept_tol::Union{Nothing, Float64} = nothing,
     max_iterations::Int = 100,
+    max_time_per_point::Float64 = 60.0,
     hessian_tol::Float64 = 1e-6,
     dedup_fraction::Float64 = 0.01,
     patience::Int = 10,
     min_improvement_ratio::Float64 = 0.99,
     top_k::Union{Int, Nothing} = nothing,
+    trace::Bool = false,
 )
     isempty(raw_points) && error("raw_points must be non-empty")
+    refinement_goal in (:minimum, :critical_point) ||
+        error("refinement_goal must be :minimum or :critical_point, got :$refinement_goal")
     lb, ub = split_bounds(bounds)
     n = length(bounds)
     for (i, pt) in enumerate(raw_points)
@@ -678,7 +702,7 @@ function build_known_cps_from_refinement(
     dedup_tol = dedup_fraction * domain_diameter
 
     # Step 0 (optional): Pre-filter by objective value — keep only top_k CPs with smallest f(x)
-    # This is a cheap pre-filter (one f evaluation per CP) that avoids spending Newton
+    # This is a cheap pre-filter (one f evaluation per CP) that avoids spending refinement
     # iterations on CPs with large objective values far from any minimum.
     if top_k !== nothing
         top_k > 0 || error("top_k must be positive, got $top_k")
@@ -702,21 +726,52 @@ function build_known_cps_from_refinement(
         end
     end
 
-    # Step 1: Refine selected points via Newton on ∇f = 0 (with early exit for spurious CPs)
-    # Pass accept_tol so the batch function can label lines correctly and skip
-    # Hessian computation on rejected CPs (saves expensive evaluations on ODE objectives).
-    refinement_results = refine_to_critical_points(
-        objective, raw_points;
-        accept_tol = accept_tol,
-        f_accept_tol = f_accept_tol,
-        gradient_method = gradient_method,
-        tol = tol,
-        max_iterations = max_iterations,
-        bounds = bounds,
-        hessian_tol = hessian_tol,
-        patience = patience,
-        min_improvement_ratio = min_improvement_ratio,
-    )
+    # Snapshot the (possibly pre-filtered) raw points for downstream diagnostics.
+    # After top_k filtering, raw_points may be a subset of the original input.
+    # Indices align 1:1 with the refinement_results vector below.
+    refined_raw_points = copy(raw_points)
+
+    # Step 1: Refine selected points
+    refinement_results = if refinement_goal == :critical_point
+        # Trust-region Newton on ∇f = 0 — finds all CP types (min, max, saddle)
+        # Pass accept_tol so the batch function can label lines correctly and skip
+        # Hessian computation on rejected CPs (saves expensive evaluations on ODE objectives).
+        refine_to_critical_points(
+            objective, raw_points;
+            accept_tol = accept_tol,
+            f_accept_tol = f_accept_tol,
+            gradient_method = gradient_method,
+            tol = tol,
+            max_iterations = max_iterations,
+            bounds = bounds,
+            hessian_tol = hessian_tol,
+            patience = patience,
+            min_improvement_ratio = min_improvement_ratio,
+            trace = trace,
+        )
+    else  # :minimum
+        # NelderMead f-minimization — gradient-free, robust for ODE objectives
+        # with indefinite Hessians. Only finds minima.
+        nm_results = refine_critical_points_batch(
+            objective, raw_points;
+            method = Optim.NelderMead(),
+            bounds = bounds,
+            max_time = max_time_per_point,
+            max_iterations = max_iterations,
+        )
+        # Wrap NelderMead results into CriticalPointRefinementResult for uniform downstream API.
+        # Post-hoc gradient + Hessian evaluation at each refined point for classification.
+        # Pass initial_point for 2-point trace (start → end) trajectory visualization.
+        CriticalPointRefinementResult[
+            _wrap_neldermead_as_cpresult(r, objective;
+                gradient_method = gradient_method,
+                hessian_tol = hessian_tol,
+                bounds = bounds,
+                initial_point = rp,
+            )
+            for (r, rp) in zip(nm_results, raw_points)
+        ]
+    end
 
     # Step 2: Accept CPs that converged strictly, meet gradient tolerance, or meet f-value tolerance
     accepted = filter(r -> r.converged || r.gradient_norm < accept_tol ||
@@ -790,7 +845,8 @@ function build_known_cps_from_refinement(
     end
 
     known_cps = KnownCriticalPoints(points, values, types, bounds)
-    return (known_cps = known_cps, refinement_results = unique_results)
+    return (known_cps = known_cps, refinement_results = unique_results,
+            all_refinement_results = refinement_results, refined_raw_points = refined_raw_points)
 end
 
 # ─── Degree Convergence Summary and Verdict ─────────────────────────────────
