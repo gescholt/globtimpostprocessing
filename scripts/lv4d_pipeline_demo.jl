@@ -32,12 +32,12 @@ function main(exp_path::String = DEFAULT_EXP)
 
     data = load_lv4d_experiment(exp_path)
 
-    @printf("Directory: %s\n", basename(data.dir))
+    @printf("Directory: %s\n", basename(experiment_path(data)))
     @printf("True params: [%s]\n", join([@sprintf("%.4f", p) for p in data.p_true], ", "))
     @printf("Domain center: [%s]\n", join([@sprintf("%.4f", p) for p in data.p_center], ", "))
     @printf("Domain size: %.2e\n", data.domain_size)
     @printf("Dimension: %d\n", data.dim)
-    @printf("Degrees analyzed: %s\n", join(sort(unique(data.degree_results.degree)), ", "))
+    @printf("Degrees analyzed: %s\n", join(sort(unique(degree_results(data).degree)), ", "))
     println()
 
     # =========================================================================

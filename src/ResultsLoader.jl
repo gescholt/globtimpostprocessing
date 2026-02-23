@@ -353,6 +353,10 @@ function discover_tracking_labels(data::AbstractDict)
     if model_config isa AbstractDict && haskey(model_config, "true_parameters")
         has_true_params = true
     end
+    # Also check flat p_true format (SciML / dynamic objectives)
+    if haskey(data, "p_true") && !isnothing(data["p_true"])
+        has_true_params = true
+    end
     if has_true_params
         push!(tracking_capabilities, "distance_to_true_parameters")
         push!(enabled_tracking, "distance_to_true_parameters")

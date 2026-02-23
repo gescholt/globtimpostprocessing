@@ -135,6 +135,12 @@ function _extract_true_params_from_metadata(metadata::AbstractDict)
         end
     end
 
+    # Check flat p_true format (SciML / dynamic objectives)
+    tp = get(metadata, "p_true", nothing)
+    if tp !== nothing
+        return tp
+    end
+
     return nothing
 end
 

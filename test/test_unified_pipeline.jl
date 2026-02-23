@@ -157,10 +157,10 @@ const GENERIC_FIXTURE = joinpath(TEST_FIXTURES, "generic_minimal")
             @test data.domain_size == 0.1
             @test data.dim == 4
 
-            # Test backward compatibility accessors
-            @test data.dir == lv4d_test_dir
-            @test data.degree_results === data.base.degree_results
-            @test data.critical_points === data.base.critical_points
+            # Test unified accessors (via get_base protocol)
+            @test experiment_path(data) == lv4d_test_dir
+            @test degree_results(data) === data.base.degree_results
+            @test critical_points(data) === data.base.critical_points
 
             # Test critical points
             @test has_critical_points(data)
