@@ -200,7 +200,7 @@ using Globtim, GlobtimPostProcessing
 # Run experiment (globtim)
 raw = Globtim.run_standard_experiment(
     objective_function = my_objective, objective_name = "my_problem",
-    problem_params = nothing, bounds = bounds,
+    bounds = bounds,
     experiment_config = config, output_dir = "results/my_experiment"
 )
 
