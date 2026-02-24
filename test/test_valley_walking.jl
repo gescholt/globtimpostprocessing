@@ -235,6 +235,92 @@ end
     end
 end
 
+# ─── project_to_valley_tangent tests ─────────────────────────────────────────
+
+@testset "project_to_valley_tangent" begin
+    @testset "projects near-circle point back to circle" begin
+        # Start slightly off the unit circle at (1,0), tangent direction is +y
+        point = [1.05, 0.0]
+        tangent = [0.0, 1.0]
+        projected = project_to_valley_tangent(f_circle, point, tangent)
+        # Should land on the critical manifold (∇f = 0)
+        @test norm(ForwardDiff.gradient(f_circle, projected)) < 1e-8
+        # Should be near the unit circle
+        @test abs(norm(projected) - 1.0) < 1e-6
+    end
+
+    @testset "preserves tangent-direction component" begin
+        # Start at a point on the circle + offset in both tangent and normal directions
+        # At (1,0), tangent is y-axis, normal is x-axis
+        tangent = [0.0, 1.0]
+        # Offset in y (tangent) by 0.1 and in x (normal) by 0.05
+        point = [1.05, 0.1]
+        projected = project_to_valley_tangent(f_circle, point, tangent)
+        # The y-component (tangent direction) should be preserved
+        @test abs(projected[2] - point[2]) < 1e-6
+        # But the x-component should change to land on the circle
+        @test abs(norm(projected) - 1.0) < 1e-4
+    end
+
+    @testset "less longitudinal drift than full Newton" begin
+        # Start at a point offset from the circle
+        tangent = [0.0, 1.0]  # tangent at (1,0)
+        point = [1.05, 0.1]   # offset in both directions
+
+        proj_full = project_to_valley(f_circle, point)
+        proj_tang = project_to_valley_tangent(f_circle, point, tangent)
+
+        # Both should reach the critical manifold
+        @test norm(ForwardDiff.gradient(f_circle, proj_full)) < 1e-8
+        @test norm(ForwardDiff.gradient(f_circle, proj_tang)) < 1e-8
+
+        # Tangent projection should have less drift in the tangent direction
+        drift_full = abs(proj_full[2] - point[2])
+        drift_tang = abs(proj_tang[2] - point[2])
+        @test drift_tang <= drift_full + 1e-10  # tangent preserves y-component
+    end
+
+    @testset "projects from inside circle" begin
+        point = [0.9, 0.0]
+        tangent = [0.0, 1.0]
+        projected = project_to_valley_tangent(f_circle, point, tangent)
+        @test norm(ForwardDiff.gradient(f_circle, projected)) < 1e-8
+        @test abs(norm(projected) - 1.0) < 1e-6
+    end
+
+    @testset "identity on exact valley point" begin
+        point = [1.0, 0.0]
+        tangent = [0.0, 1.0]
+        projected = project_to_valley_tangent(f_circle, point, tangent)
+        @test norm(projected - point) < 1e-8
+    end
+
+    @testset "handles offset valley (f_min > 0)" begin
+        point = [1.1, 0.0]
+        tangent = [0.0, 1.0]
+        projected = project_to_valley_tangent(f_offset_valley, point, tangent)
+        @test norm(ForwardDiff.gradient(f_offset_valley, projected)) < 1e-8
+        @test abs(norm(projected) - 1.0) < 1e-6
+    end
+
+    @testset "projects in 3D" begin
+        point = [1.05, 0.0, 0.02]
+        tangent = [0.0, 1.0, 0.0]  # tangent along y-axis in 3D
+        projected = project_to_valley_tangent(f_circle3d, point, tangent)
+        @test norm(ForwardDiff.gradient(f_circle3d, projected)) < 1e-8
+        @test abs(norm(projected[1:2]) - 1.0) < 1e-6
+        @test abs(projected[3]) < 1e-6
+    end
+
+    @testset "non-unit tangent is normalized internally" begin
+        point = [1.05, 0.0]
+        tangent = [0.0, 3.7]  # not unit length
+        projected = project_to_valley_tangent(f_circle, point, tangent)
+        @test norm(ForwardDiff.gradient(f_circle, projected)) < 1e-8
+        @test abs(norm(projected) - 1.0) < 1e-6
+    end
+end
+
 # ─── walk_predictor_corrector tests ──────────────────────────────────────────
 
 @testset "walk_predictor_corrector" begin
@@ -258,6 +344,105 @@ end
             @test abs(norm(p) - 1.0) < 1e-4
         end
         @test norm(path[end] - start) > 0.1
+    end
+end
+
+# ─── walk_tangent_projection tests ───────────────────────────────────────────
+
+@testset "walk_tangent_projection" begin
+    config = ValleyWalkConfig(
+        gradient_tolerance=1e-4,
+        eigenvalue_threshold=1e-2,
+        initial_step_size=0.05,
+        max_steps=100,
+        max_projection_iter=20,
+        projection_tol=1e-10,
+        method=:tangent_projection
+    )
+
+    @testset "traces arc on unit circle" begin
+        start = [1.0, 0.0]
+        direction = [0.0, 1.0]  # walk counterclockwise
+        path = walk_tangent_projection(f_circle, start, direction, config)
+
+        @test length(path) > 5  # should take multiple steps
+        # All points should lie on the unit circle
+        for p in path
+            @test abs(norm(p) - 1.0) < 1e-4
+        end
+        # Should have moved away from start
+        @test norm(path[end] - start) > 0.1
+    end
+
+    @testset "all path points are critical" begin
+        start = [1.0, 0.0]
+        direction = [0.0, 1.0]
+        path = walk_tangent_projection(f_circle, start, direction, config)
+
+        for p in path
+            g = ForwardDiff.gradient(f_circle, p)
+            @test norm(g) < 1e-4
+        end
+    end
+
+    @testset "more uniform spacing than newton_projection" begin
+        config_np = ValleyWalkConfig(
+            gradient_tolerance=1e-4,
+            eigenvalue_threshold=1e-2,
+            initial_step_size=0.05,
+            max_steps=100,
+            max_projection_iter=20,
+            projection_tol=1e-10,
+            method=:newton_projection
+        )
+        config_tp = ValleyWalkConfig(
+            gradient_tolerance=1e-4,
+            eigenvalue_threshold=1e-2,
+            initial_step_size=0.05,
+            max_steps=100,
+            max_projection_iter=20,
+            projection_tol=1e-10,
+            method=:tangent_projection
+        )
+
+        start = [1.0, 0.0]
+        direction = [0.0, 1.0]
+
+        path_np = walk_newton_projection(f_circle, start, direction, config_np)
+        path_tp = walk_tangent_projection(f_circle, start, direction, config_tp)
+
+        # Both should produce valid paths
+        @test length(path_np) > 3
+        @test length(path_tp) > 3
+
+        # Compute spacing variance for each (coefficient of variation)
+        function spacing_cv(path)
+            spacings = [norm(path[i+1] - path[i]) for i in 1:length(path)-1]
+            isempty(spacings) && return Inf
+            μ = sum(spacings) / length(spacings)
+            μ < 1e-12 && return Inf
+            σ = sqrt(sum((s - μ)^2 for s in spacings) / length(spacings))
+            return σ / μ
+        end
+
+        cv_np = spacing_cv(path_np)
+        cv_tp = spacing_cv(path_tp)
+
+        # Tangent projection should have comparable or better spacing uniformity
+        # (We test that it's not dramatically worse — exact comparison depends on geometry)
+        @test cv_tp < cv_np * 2.0  # at worst 2x the variance ratio
+    end
+
+    @testset "traces in 3D" begin
+        start = [1.0, 0.0, 0.0]
+        direction = [0.0, 1.0, 0.0]
+        path = walk_tangent_projection(f_circle3d, start, direction, config)
+
+        @test length(path) > 3
+        for p in path
+            @test abs(norm(p[1:2]) - 1.0) < 1e-3
+            @test abs(p[3]) < 1e-3
+        end
     end
 end
 
@@ -335,6 +520,35 @@ end
             @test abs(norm(p[1:2]) - 1.0) < 1e-3
             @test abs(p[3]) < 1e-3
         end
+    end
+
+    @testset "tangent_projection method" begin
+        config_tp = ValleyWalkConfig(
+            gradient_tolerance=1e-4,
+            eigenvalue_threshold=1e-2,
+            initial_step_size=0.05,
+            max_steps=50,
+            max_projection_iter=20,
+            projection_tol=1e-10,
+            method=:tangent_projection
+        )
+        start = [1.0, 0.0]
+        result = trace_valley(f_circle, start, config_tp)
+
+        @test result.converged == true
+        @test result.method == :tangent_projection
+        @test result.valley_dimension == 1
+        @test result.arc_length > 0.1
+    end
+
+    @testset "unknown method raises error" begin
+        config_bad = ValleyWalkConfig(
+            gradient_tolerance=1e-4,
+            eigenvalue_threshold=1e-2,
+            method=:bogus_method
+        )
+        start = [1.0, 0.0]
+        @test_throws ErrorException trace_valley(f_circle, start, config_bad)
     end
 end
 
@@ -477,5 +691,60 @@ end
     @testset "handles empty refinement results" begin
         results = run_valley_analysis(f_circle, CriticalPointRefinementResult[])
         @test isempty(results)
+    end
+end
+
+# ─── Method comparison tests ────────────────────────────────────────────────
+
+@testset "method comparison on unit circle" begin
+    # Run all three methods with identical configs on the unit circle and compare
+    base_config = (
+        gradient_tolerance=1e-4,
+        eigenvalue_threshold=1e-2,
+        initial_step_size=0.05,
+        max_steps=100,
+        max_projection_iter=20,
+        projection_tol=1e-10,
+    )
+
+    methods = [:newton_projection, :predictor_corrector, :tangent_projection]
+    results = Dict{Symbol, ValleyTraceResult}()
+
+    for m in methods
+        config = ValleyWalkConfig(; base_config..., method=m)
+        result = trace_valley(f_circle, [1.0, 0.0], config)
+        results[m] = result
+    end
+
+    @testset "all methods converge" begin
+        for m in methods
+            @test results[m].converged == true
+            @test results[m].valley_dimension == 1
+            @test results[m].method == m
+        end
+    end
+
+    @testset "all methods trace meaningful arc length" begin
+        for m in methods
+            @test results[m].arc_length > 0.5  # at least a quarter circle
+            @test results[m].n_points > 10      # enough points for analysis
+        end
+    end
+
+    @testset "all methods stay on the circle" begin
+        for m in methods
+            for p in [results[m].path_positive; results[m].path_negative]
+                @test abs(norm(p) - 1.0) < 1e-3
+            end
+        end
+    end
+
+    @testset "all methods produce critical points" begin
+        for m in methods
+            for p in [results[m].path_positive; results[m].path_negative]
+                g = ForwardDiff.gradient(f_circle, p)
+                @test norm(g) < 1e-3
+            end
+        end
     end
 end

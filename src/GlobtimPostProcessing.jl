@@ -143,9 +143,9 @@ export CaptureVerdict, compute_capture_verdict, print_capture_verdict
 
 # Valley walking exports (positive-dimensional minima tracing)
 export ValleyWalkConfig, ValleyTraceResult
-export detect_valley, project_to_valley, get_valley_tangent
+export detect_valley, project_to_valley, project_to_valley_tangent, get_valley_tangent
 export trace_valley, trace_valleys_from_critical_points
-export walk_newton_projection, walk_predictor_corrector
+export walk_newton_projection, walk_predictor_corrector, walk_tangent_projection
 export run_valley_analysis
 
 

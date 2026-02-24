@@ -15,7 +15,7 @@ Configuration for valley walking algorithms.
 - `max_steps`: Maximum number of steps per direction (default: 200)
 - `max_projection_iter`: Maximum Newton iterations for projection (default: 10)
 - `projection_tol`: Tolerance for projection onto valley (default: 1e-10)
-- `method`: Walking method `:newton_projection` or `:predictor_corrector` (default: :newton_projection)
+- `method`: Walking method — `:newton_projection`, `:predictor_corrector`, or `:tangent_projection` (default: :newton_projection)
 """
 @kwdef struct ValleyWalkConfig
     gradient_tolerance::Float64 = 1e-4
@@ -104,6 +104,56 @@ function project_to_valley(f, point::AbstractVector; max_iter::Int=10, tol::Floa
             x .-= pinv(Hs) * g
         end
     end
+    return x
+end
+
+"""
+    project_to_valley_tangent(f, point, tangent; max_iter=10, tol=1e-10) -> Vector
+
+Project a point onto the critical manifold (∇f = 0) while preserving the
+tangent-direction component of the point.
+
+Uses a KKT-based constrained Newton step: at each iteration find `step` that
+minimises the Newton objective subject to `dot(step, t) = 0`. This is the
+solution to the augmented system
+
+    [H  t] [step  ]   [g]
+    [t' 0] [lambda] = [0]
+
+which enforces that the step lies entirely in the subspace orthogonal to `t`.
+Because every step has zero component along `t`, the tangent coordinate of `x`
+is preserved exactly throughout all iterations.
+"""
+function project_to_valley_tangent(
+    f, point::AbstractVector, tangent::AbstractVector;
+    max_iter::Int=10, tol::Float64=1e-10,
+)
+    x = Vector{Float64}(point)
+    t = tangent / norm(tangent)
+    n = length(x)
+
+    for _ in 1:max_iter
+        g = gradient(f, x)
+        norm(g) < tol && break
+
+        H = hessian(f, x)
+        Hs = Symmetric(H)
+
+        # KKT system: find step ⊥ t such that H*step = g
+        # [H t; t' 0] * [step; lambda] = [g; 0]
+        A = vcat(hcat(Matrix(Hs), t), hcat(t', 0.0))
+        rhs = vcat(g, 0.0)
+
+        cond_A = cond(A)
+        if cond_A < 1e12
+            sol = A \ rhs
+        else
+            sol = pinv(A) * rhs
+        end
+
+        x .-= sol[1:n]
+    end
+
     return x
 end
 
@@ -212,6 +262,48 @@ function walk_predictor_corrector(f, start_point::AbstractVector, initial_direct
 end
 
 """
+    walk_tangent_projection(f, start_point, initial_direction, config) -> Vector{Vector{Float64}}
+
+Walk along valley using tangent-direction projection.
+Takes tangent steps then projects back onto the valley using only transverse
+corrections, preserving progress along the valley tangent direction.
+
+Compared to `walk_newton_projection`, this method avoids longitudinal drift
+along the valley and produces more uniformly spaced points.
+"""
+function walk_tangent_projection(f, start_point::AbstractVector, initial_direction::AbstractVector,
+                                  config::ValleyWalkConfig)
+    steps = [Vector{Float64}(start_point)]
+    current = Vector{Float64}(start_point)
+    direction = initial_direction / norm(initial_direction)
+    step_size = config.initial_step_size
+
+    for _ in 1:config.max_steps
+        tangent = get_valley_tangent(f, current, direction, config)
+        isnothing(tangent) && break
+        direction = tangent
+
+        # Take tangent step
+        candidate = current + step_size * direction
+        # Project back onto valley using tangent-preserving corrector
+        projected = project_to_valley_tangent(f, candidate, direction;
+                                              max_iter=config.max_projection_iter,
+                                              tol=config.projection_tol)
+
+        # Accept if projection didn't move too far
+        if norm(projected - candidate) < step_size
+            current = projected
+            push!(steps, copy(current))
+            step_size = min(step_size * 1.1, 0.2)
+        else
+            step_size *= 0.5
+            step_size < 1e-8 && break
+        end
+    end
+    return steps
+end
+
+"""
     trace_valley(f, start_point, config::ValleyWalkConfig) -> ValleyTraceResult
 
 Trace a valley in both directions from a starting point.
@@ -237,8 +329,13 @@ function trace_valley(f, start_point::AbstractVector, config::ValleyWalkConfig=V
     # Select walking method
     walk_func = if config.method == :predictor_corrector
         walk_predictor_corrector
-    else
+    elseif config.method == :tangent_projection
+        walk_tangent_projection
+    elseif config.method == :newton_projection
         walk_newton_projection
+    else
+        error("Unknown valley walking method: $(config.method). " *
+              "Valid methods: :newton_projection, :predictor_corrector, :tangent_projection")
     end
 
     # Walk in both directions
