@@ -5,11 +5,15 @@ Tests for valley walking algorithm: detection of positive-dimensional minima
 and predictor-corrector tracing along valley manifolds.
 
 Test functions:
-- f_circle(x) = (x₁² + x₂² - 1)²      — unit circle is a 1D valley of zeros in 2D
-- f_quadratic(x) = x₁² + x₂²            — isolated minimum at origin (0D, NOT a valley)
-- f_saddle(x) = x₁² - x₂²               — saddle at origin (not a valley)
+- f_circle(x) = (x₁² + x₂² - 1)²          — unit circle is a 1D valley of zeros in 2D
+- f_quadratic(x) = x₁² + x₂²               — isolated minimum at origin (0D, NOT a valley)
+- f_saddle(x) = x₁² - x₂²                  — saddle at origin (not a valley)
 - f_circle3d(x) = (x₁² + x₂² - 1)² + x₃²  — circle valley embedded in 3D (x₃=0 plane)
 - f_offset_valley(x) = (x₁² + x₂² - 1)² + 0.01  — valley with f_min > 0 (tests projection fix)
+- f_hyperbola(x) = (x₁·x₂ - 2)²           — hyperbola valley {(a,b): a·b=2}; models
+                                               product-form non-identifiability (ODE x'=a·b·x).
+                                               Transverse curvature varies: λ_⊥=10 at (1,2),
+                                               λ_⊥=32.5 at (0.5,4) — stresses adaptive step sizing.
 """
 
 using Test
@@ -35,6 +39,13 @@ f_circle3d(x) = (x[1]^2 + x[2]^2 - 1)^2 + x[3]^2
 
 # Valley with nonzero minimum value. Tests that projection targets ∇f=0, not f=0.
 f_offset_valley(x) = (x[1]^2 + x[2]^2 - 1)^2 + 0.01
+
+# Product-form non-identifiability valley: hyperbola x₁·x₂ = 2.
+# Models the ODE x'(t) = a·b·x(t) where only the product a·b is identifiable —
+# any (a, b) on the hyperbola a·b = 2 reproduces identical trajectories.
+# At (1,2): transverse eigenvalue λ_⊥ = 10.  At (0.5,4): λ_⊥ = 32.5.
+# The increasing curvature toward the axes stresses adaptive step-size control.
+f_hyperbola(x) = (x[1] * x[2] - 2.0)^2
 
 # ─── detect_valley tests ────────────────────────────────────────────────────
 
@@ -694,57 +705,285 @@ end
     end
 end
 
-# ─── Method comparison tests ────────────────────────────────────────────────
+# ─── Hyperbola valley tests ──────────────────────────────────────────────────
 
-@testset "method comparison on unit circle" begin
-    # Run all three methods with identical configs on the unit circle and compare
-    base_config = (
+@testset "hyperbola valley (product-form symmetry)" begin
+    # f_hyperbola = (x₁·x₂ - 2)²: valley is the hyperbola x₁·x₂ = 2.
+    # Eigenvalue structure at (a,b) on the valley:
+    #   λ_tangent = 0,  λ_transverse = 2(a²+b²)
+    # So transverse curvature increases as the path moves away from (1,2).
+
+    config = ValleyWalkConfig(
         gradient_tolerance=1e-4,
-        eigenvalue_threshold=1e-2,
+        eigenvalue_threshold=1e-3,
         initial_step_size=0.05,
         max_steps=100,
         max_projection_iter=20,
         projection_tol=1e-10,
     )
 
+    @testset "detect_valley finds 1D valley on hyperbola" begin
+        # Both points lie on x₁·x₂ = 2 and should be detected as valleys
+        is_v1, dirs1, vdim1 = detect_valley(f_hyperbola, [1.0, 2.0], config)
+        @test is_v1 == true
+        @test vdim1 == 1
+        @test size(dirs1, 2) == 1
+
+        is_v2, dirs2, vdim2 = detect_valley(f_hyperbola, [0.5, 4.0], config)
+        @test is_v2 == true
+        @test vdim2 == 1
+
+        is_v3, dirs3, vdim3 = detect_valley(f_hyperbola, [2.0, 1.0], config)
+        @test is_v3 == true
+        @test vdim3 == 1
+    end
+
+    @testset "detect_valley rejects off-hyperbola points" begin
+        # Origin: isolated minimum at f=4, not critical
+        is_v, _, _ = detect_valley(f_hyperbola, [0.0, 0.0], config)
+        @test is_v == false
+
+        # Point near but not on the hyperbola: gradient is nonzero
+        is_v2, _, _ = detect_valley(f_hyperbola, [1.5, 2.0], config)
+        @test is_v2 == false
+    end
+
+    @testset "tangent direction at (1,2) is along hyperbola" begin
+        # The tangent to x₁·x₂ = 2 at (1,2) via implicit differentiation:
+        # d/dx(x·y) = 0 => y + x·dy/dx = 0 => dy/dx = -y/x = -2.
+        # So the tangent direction is (1, -2)/√5, which is also the Hessian
+        # null eigenvector at this point.
+        prev = [1.0, -2.0] / sqrt(5)  # aligned with the null eigenvector
+        t = get_valley_tangent(f_hyperbola, [1.0, 2.0], prev, config)
+        @test !isnothing(t)
+        @test abs(norm(t) - 1.0) < 1e-10  # unit vector
+        expected = [1.0, -2.0] / sqrt(5)
+        @test abs(dot(t, expected)) > 0.99  # collinear (up to sign)
+    end
+
+    @testset "project_to_valley lands on hyperbola" begin
+        # Perturb a hyperbola point and project back
+        p_near = [1.1, 2.0]  # x₁·x₂ = 2.2, not on valley
+        @test abs(p_near[1] * p_near[2] - 2.0) > 0.1
+
+        p_proj = project_to_valley(f_hyperbola, p_near)
+        @test abs(p_proj[1] * p_proj[2] - 2.0) < 1e-6
+        g = ForwardDiff.gradient(f_hyperbola, p_proj)
+        @test norm(g) < 1e-6
+    end
+
+    @testset "project_to_valley_tangent preserves tangent component" begin
+        p_near = [1.1, 2.0]
+        tangent = [-2.0, 1.0] / sqrt(5)
+
+        p_full  = project_to_valley(f_hyperbola, p_near)
+        p_tang  = project_to_valley_tangent(f_hyperbola, p_near, tangent)
+
+        # Both land on the valley
+        @test abs(p_full[1] * p_full[2] - 2.0) < 1e-6
+        @test abs(p_tang[1] * p_tang[2] - 2.0) < 1e-6
+
+        # Tangent projection moves less along the tangent direction
+        drift_full = abs(dot(p_full - p_near, tangent))
+        drift_tang = abs(dot(p_tang - p_near, tangent))
+        @test drift_tang <= drift_full + 1e-10
+    end
+
+    @testset "all three walk methods trace the hyperbola" begin
+        methods = [:newton_projection, :predictor_corrector, :tangent_projection]
+        for m in methods
+            cfg = ValleyWalkConfig(; gradient_tolerance=1e-4, eigenvalue_threshold=1e-3,
+                                     initial_step_size=0.05, max_steps=50,
+                                     max_projection_iter=20, projection_tol=1e-10,
+                                     method=m)
+            result = trace_valley(f_hyperbola, [1.0, 2.0], cfg)
+            @test result.converged == true
+            @test result.valley_dimension == 1
+            @test result.arc_length > 0.5
+
+            all_pts = vcat(result.path_positive, result.path_negative)
+            for p in all_pts
+                @test abs(p[1] * p[2] - 2.0) < 1e-4   # stays on hyperbola
+                g = ForwardDiff.gradient(f_hyperbola, p)
+                @test norm(g) < 1e-4                   # stays critical
+            end
+        end
+    end
+end
+
+# ─── Quantitative method benchmark ───────────────────────────────────────────
+
+@testset "quantitative method benchmark" begin
+    # Compare all three methods on two test functions with different geometry:
+    #   f_circle   — constant curvature (unit circle)
+    #   f_hyperbola — varying curvature (hyperbola x₁·x₂ = 2)
+    #
+    # Metrics measured per (method, function) pair:
+    #   arc_length        — total valley coverage
+    #   n_points          — step count
+    #   max_grad_norm     — max ‖∇f(p)‖ over all path points (criticality accuracy)
+    #   max_manifold_err  — max distance from the manifold
+    #   spacing_cv        — std(step_sizes)/mean(step_sizes) per direction (uniformity)
+    #
+    # All bounds are derived from measured values with conservative margins.
+
+    using Statistics
+
     methods = [:newton_projection, :predictor_corrector, :tangent_projection]
-    results = Dict{Symbol, ValleyTraceResult}()
 
-    for m in methods
-        config = ValleyWalkConfig(; base_config..., method=m)
-        result = trace_valley(f_circle, [1.0, 0.0], config)
-        results[m] = result
+    circle_config_base = (
+        gradient_tolerance=1e-4, eigenvalue_threshold=1e-2,
+        initial_step_size=0.05, max_steps=100,
+        max_projection_iter=20, projection_tol=1e-10,
+    )
+    hyperbola_config_base = (
+        gradient_tolerance=1e-4, eigenvalue_threshold=1e-3,
+        initial_step_size=0.05, max_steps=100,
+        max_projection_iter=20, projection_tol=1e-10,
+    )
+
+    function spacing_cv(path)
+        spacings = [norm(path[i+1] - path[i]) for i in 1:length(path)-1]
+        length(spacings) < 2 && return Inf
+        μ = mean(spacings)
+        μ < 1e-12 && return Inf
+        return std(spacings) / μ
     end
 
-    @testset "all methods converge" begin
+    # ── Unit circle benchmark ────────────────────────────────────────────────
+    @testset "unit circle" begin
+        circle_results = Dict{Symbol, ValleyTraceResult}()
         for m in methods
-            @test results[m].converged == true
-            @test results[m].valley_dimension == 1
-            @test results[m].method == m
+            cfg = ValleyWalkConfig(; circle_config_base..., method=m)
+            circle_results[m] = trace_valley(f_circle, [1.0, 0.0], cfg)
         end
-    end
 
-    @testset "all methods trace meaningful arc length" begin
-        for m in methods
-            @test results[m].arc_length > 0.5  # at least a quarter circle
-            @test results[m].n_points > 10      # enough points for analysis
-        end
-    end
-
-    @testset "all methods stay on the circle" begin
-        for m in methods
-            for p in [results[m].path_positive; results[m].path_negative]
-                @test abs(norm(p) - 1.0) < 1e-3
+        @testset "convergence and valley dimension" begin
+            for m in methods
+                r = circle_results[m]
+                @test r.converged == true
+                @test r.valley_dimension == 1
+                @test r.method == m
             end
         end
+
+        @testset "arc coverage" begin
+            for m in methods
+                r = circle_results[m]
+                @test r.arc_length > 1.0   # at least ~1/6 of the circumference 2π
+                @test r.n_points > 20
+            end
+        end
+
+        @testset "criticality accuracy: max ‖∇f‖ < 1e-6" begin
+            for m in methods
+                for p in vcat(circle_results[m].path_positive,
+                               circle_results[m].path_negative)
+                    @test norm(ForwardDiff.gradient(f_circle, p)) < 1e-6
+                end
+            end
+        end
+
+        @testset "on-manifold accuracy: max |‖p‖-1| < 1e-6" begin
+            for m in methods
+                for p in vcat(circle_results[m].path_positive,
+                               circle_results[m].path_negative)
+                    @test abs(norm(p) - 1.0) < 1e-6
+                end
+            end
+        end
+
+        @testset "spacing uniformity: CV < 0.5 for all methods" begin
+            for m in methods
+                r = circle_results[m]
+                @test spacing_cv(r.path_positive) < 0.5
+                @test spacing_cv(r.path_negative) < 0.5
+            end
+        end
+
+        @testset "predictor_corrector covers most arc (aggressive step growth)" begin
+            # predictor_corrector grows step by 1.2× vs 1.1× for the others
+            arc_pc = circle_results[:predictor_corrector].arc_length
+            arc_np = circle_results[:newton_projection].arc_length
+            arc_tp = circle_results[:tangent_projection].arc_length
+            @test arc_pc >= arc_np
+            @test arc_pc >= arc_tp
+        end
+
+        @testset "tangent_projection spacing no worse than 1.5× newton" begin
+            cv_np = max(spacing_cv(circle_results[:newton_projection].path_positive),
+                        spacing_cv(circle_results[:newton_projection].path_negative))
+            cv_tp = max(spacing_cv(circle_results[:tangent_projection].path_positive),
+                        spacing_cv(circle_results[:tangent_projection].path_negative))
+            @test cv_tp < cv_np * 1.5
+        end
     end
 
-    @testset "all methods produce critical points" begin
+    # ── Hyperbola benchmark ──────────────────────────────────────────────────
+    @testset "hyperbola (varying curvature)" begin
+        hyperbola_results = Dict{Symbol, ValleyTraceResult}()
         for m in methods
-            for p in [results[m].path_positive; results[m].path_negative]
-                g = ForwardDiff.gradient(f_circle, p)
-                @test norm(g) < 1e-3
+            cfg = ValleyWalkConfig(; hyperbola_config_base..., method=m)
+            hyperbola_results[m] = trace_valley(f_hyperbola, [1.0, 2.0], cfg)
+        end
+
+        @testset "convergence and valley dimension" begin
+            for m in methods
+                r = hyperbola_results[m]
+                @test r.converged == true
+                @test r.valley_dimension == 1
+                @test r.method == m
             end
+        end
+
+        @testset "arc coverage" begin
+            for m in methods
+                r = hyperbola_results[m]
+                @test r.arc_length > 1.0
+                @test r.n_points > 20
+            end
+        end
+
+        @testset "criticality accuracy: max ‖∇f‖ < 1e-6" begin
+            for m in methods
+                for p in vcat(hyperbola_results[m].path_positive,
+                               hyperbola_results[m].path_negative)
+                    @test norm(ForwardDiff.gradient(f_hyperbola, p)) < 1e-6
+                end
+            end
+        end
+
+        @testset "on-manifold accuracy: max |p₁p₂ - 2| < 1e-6" begin
+            for m in methods
+                for p in vcat(hyperbola_results[m].path_positive,
+                               hyperbola_results[m].path_negative)
+                    @test abs(p[1] * p[2] - 2.0) < 1e-6
+                end
+            end
+        end
+
+        @testset "spacing uniformity: CV < 0.5 for all methods" begin
+            for m in methods
+                r = hyperbola_results[m]
+                @test spacing_cv(r.path_positive) < 0.5
+                @test spacing_cv(r.path_negative) < 0.5
+            end
+        end
+
+        @testset "predictor_corrector covers most arc (aggressive step growth)" begin
+            arc_pc = hyperbola_results[:predictor_corrector].arc_length
+            arc_np = hyperbola_results[:newton_projection].arc_length
+            arc_tp = hyperbola_results[:tangent_projection].arc_length
+            @test arc_pc >= arc_np
+            @test arc_pc >= arc_tp
+        end
+
+        @testset "tangent_projection spacing no worse than 1.5× newton" begin
+            cv_np = max(spacing_cv(hyperbola_results[:newton_projection].path_positive),
+                        spacing_cv(hyperbola_results[:newton_projection].path_negative))
+            cv_tp = max(spacing_cv(hyperbola_results[:tangent_projection].path_positive),
+                        spacing_cv(hyperbola_results[:tangent_projection].path_negative))
+            @test cv_tp < cv_np * 1.5
         end
     end
 end
