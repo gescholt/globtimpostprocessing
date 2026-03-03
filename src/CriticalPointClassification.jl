@@ -30,22 +30,33 @@ counts = count_classifications(df)
 """
 
 """
-    classify_critical_point(eigenvalues::Vector{Float64}; tol::Float64=1e-6) -> String
+    classify_critical_point(eigenvalues::Vector{Float64};
+                            tol::Float64=1e-6,
+                            relative_tol::Float64=0.0,
+                            sub_classify_degenerate::Bool=false) -> String
 
 Classify a single critical point based on its Hessian eigenvalues.
 
 # Arguments
 - `eigenvalues::Vector{Float64}`: Eigenvalues of the Hessian matrix at the critical point
-- `tol::Float64`: Tolerance for considering an eigenvalue as zero (default: 1e-6)
+- `tol::Float64`: Absolute tolerance for considering an eigenvalue as zero (default: 1e-6)
+- `relative_tol::Float64`: Relative tolerance — effective tolerance is
+  `max(tol, relative_tol * max(|eigenvalues|))`. This adapts to the scale of the
+  Hessian, useful for ODE objectives where eigenvalue magnitudes vary widely.
+  Default: 0.0 (disabled, preserving backward compatibility).
+- `sub_classify_degenerate::Bool`: If `true`, degenerate CPs are sub-classified as
+  "degenerate_min", "degenerate_max", "degenerate_saddle", or "degenerate" based
+  on the signs of non-zero eigenvalues. Default: `false` (returns plain "degenerate").
 
 # Returns
-- `String`: One of "minimum", "maximum", "saddle", "degenerate"
+- `String`: One of "minimum", "maximum", "saddle", "degenerate" (or sub-types when enabled)
 
 # Algorithm
-1. Check for near-zero eigenvalues (|λ| < tol) → "degenerate"
-2. All eigenvalues > tol → "minimum" (positive definite)
-3. All eigenvalues < -tol → "maximum" (negative definite)
-4. Mixed signs → "saddle" (indefinite)
+1. Compute effective tolerance: `effective_tol = max(tol, relative_tol * max(|eigenvalues|))`
+2. Check for near-zero eigenvalues (|λ| < effective_tol) → "degenerate" (or sub-type)
+3. All eigenvalues > effective_tol → "minimum" (positive definite)
+4. All eigenvalues < -effective_tol → "maximum" (negative definite)
+5. Mixed signs → "saddle" (indefinite)
 
 # Examples
 ```julia
@@ -53,17 +64,44 @@ classify_critical_point([2.5, 1.3, 0.8])        # "minimum"
 classify_critical_point([-3.2, -1.5, -0.9])     # "maximum"
 classify_critical_point([2.1, -1.8, 0.5])       # "saddle"
 classify_critical_point([1.2, 0.00001, 0.9])    # "degenerate"
+classify_critical_point([1.2, 0.00001, 0.9]; sub_classify_degenerate=true)  # "degenerate_min"
 ```
 """
-function classify_critical_point(eigenvalues::Vector{Float64}; tol::Float64=1e-6)
+function classify_critical_point(eigenvalues::Vector{Float64};
+                                 tol::Float64=1e-6,
+                                 relative_tol::Float64=0.0,
+                                 sub_classify_degenerate::Bool=false)
+    # Compute effective tolerance (adaptive to eigenvalue scale)
+    effective_tol = if relative_tol > 0.0 && !isempty(eigenvalues)
+        max(tol, relative_tol * maximum(abs, eigenvalues))
+    else
+        tol
+    end
+
     # Check for degenerate case first
-    if any(abs.(eigenvalues) .< tol)
+    if any(abs.(eigenvalues) .< effective_tol)
+        if sub_classify_degenerate
+            # Sub-classify based on signs of non-zero eigenvalues
+            nonzero = filter(λ -> abs(λ) >= effective_tol, eigenvalues)
+            if isempty(nonzero)
+                return "degenerate"  # all eigenvalues near zero
+            end
+            n_pos = count(λ -> λ > effective_tol, nonzero)
+            n_neg = count(λ -> λ < -effective_tol, nonzero)
+            if n_neg == 0
+                return "degenerate_min"  # valley minimum: all non-zero eigenvalues positive
+            elseif n_pos == 0
+                return "degenerate_max"  # all non-zero eigenvalues negative
+            else
+                return "degenerate_saddle"  # mixed non-zero signs
+            end
+        end
         return "degenerate"
     end
 
     # Count positive and negative eigenvalues
-    num_positive = count(λ -> λ > tol, eigenvalues)
-    num_negative = count(λ -> λ < -tol, eigenvalues)
+    num_positive = count(λ -> λ > effective_tol, eigenvalues)
+    num_negative = count(λ -> λ < -effective_tol, eigenvalues)
 
     # Classify based on eigenvalue signs
     if num_positive == length(eigenvalues)
@@ -360,4 +398,185 @@ function get_classification_summary(df::DataFrame;
         "percentages" => percentages,
         "distinct_local_minima" => length(distinct_minima_indices)
     )
+end
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Polynomial Approximant Hessian Classification
+#
+# Classifies critical points using the Hessian of the polynomial approximant
+# (cheap and exact via ForwardDiff) rather than the expensive ODE objective.
+# Acts as a quality indicator before expensive ODE refinement.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+"""
+    ApproximantCPClassification
+
+Result of classifying a critical point on the polynomial approximant's landscape.
+
+The Hessian of the polynomial is computed cheaply and exactly via ForwardDiff,
+giving reliable eigenvalue signs. This classification acts as a quality indicator:
+CPs that are minima of the polynomial approximant are more likely to be near
+true minima of the ODE objective.
+
+# Fields
+- `cp_type::Symbol`: Classification — `:min`, `:max`, `:saddle`, `:degenerate`,
+  `:degenerate_min`, `:degenerate_max`, `:degenerate_saddle`
+- `eigenvalues::Vector{Float64}`: Sorted Hessian eigenvalues (ascending)
+- `min_eigenvalue::Float64`: Smallest eigenvalue — "strength" of minimum.
+  Larger positive = more strongly a local minimum.
+- `condition_number::Float64`: κ(H) = |λ_max|/|λ_min|. Indicates well-conditioning
+  of the critical point. `Inf` when λ_min ≈ 0.
+"""
+struct ApproximantCPClassification
+    cp_type::Symbol
+    eigenvalues::Vector{Float64}
+    min_eigenvalue::Float64
+    condition_number::Float64
+end
+
+"""
+    classify_cp_on_approximant(
+        poly_eval::Function,
+        cp::Vector{Float64};
+        tol::Float64 = 1e-6,
+        relative_tol::Float64 = 0.0,
+    ) -> ApproximantCPClassification
+
+Classify a single critical point on the polynomial approximant's landscape
+using ForwardDiff to compute an exact Hessian.
+
+# Arguments
+- `poly_eval::Function`: Callable `x -> polynomial_value(x)`. Typically
+  `x -> Globtim.evaluate(pol, x)`. Must support ForwardDiff (Dual number propagation).
+- `cp::Vector{Float64}`: The critical point to classify.
+- `tol::Float64`: Absolute tolerance for zero-eigenvalue detection (default: 1e-6).
+- `relative_tol::Float64`: Relative tolerance — effective tolerance is
+  `max(tol, relative_tol * max(|eigenvalues|))`. Default: 0.0 (disabled).
+
+# Returns
+- `ApproximantCPClassification`: Classification with eigenvalues and quality indicators.
+
+# Example
+```julia
+poly_eval = x -> Globtim.evaluate(pol, x)
+classification = classify_cp_on_approximant(poly_eval, [1.0, 2.0])
+classification.cp_type        # :min
+classification.min_eigenvalue  # 0.42 (strength of minimum)
+classification.condition_number # 3.7 (well-conditioned)
+```
+"""
+function classify_cp_on_approximant(
+    poly_eval::Function,
+    cp::Vector{Float64};
+    tol::Float64 = 1e-6,
+    relative_tol::Float64 = 0.0,
+)::ApproximantCPClassification
+    # Compute exact Hessian via ForwardDiff (cheap for polynomials)
+    H = ForwardDiff.hessian(poly_eval, cp)
+    H_sym = LinearAlgebra.Symmetric(H)
+    eig_vals = sort(collect(LinearAlgebra.eigvals(H_sym)))
+
+    # Classify using Symbol-based internal classifier (with sub-classification)
+    cp_type = _classify_eigenvalues_sub(eig_vals, tol, relative_tol)
+
+    # Quality indicators
+    min_eig = eig_vals[1]
+    max_abs_eig = maximum(abs, eig_vals)
+    min_abs_eig = minimum(abs, eig_vals)
+    cond = min_abs_eig > 1e-30 ? max_abs_eig / min_abs_eig : Inf
+
+    return ApproximantCPClassification(cp_type, eig_vals, min_eig, cond)
+end
+
+"""
+    classify_cps_on_approximant(
+        poly_eval::Function,
+        cps::Vector{Vector{Float64}};
+        tol::Float64 = 1e-6,
+        relative_tol::Float64 = 0.0,
+    ) -> Vector{ApproximantCPClassification}
+
+Batch version of [`classify_cp_on_approximant`](@ref). Classifies each critical
+point on the polynomial approximant's landscape.
+
+# Arguments
+- `poly_eval::Function`: Callable `x -> polynomial_value(x)`.
+- `cps::Vector{Vector{Float64}}`: Critical points to classify.
+- `tol::Float64`: Absolute tolerance for zero-eigenvalue detection (default: 1e-6).
+- `relative_tol::Float64`: Relative tolerance (default: 0.0).
+
+# Returns
+- `Vector{ApproximantCPClassification}`: One classification per input point.
+"""
+function classify_cps_on_approximant(
+    poly_eval::Function,
+    cps::Vector{Vector{Float64}};
+    tol::Float64 = 1e-6,
+    relative_tol::Float64 = 0.0,
+)::Vector{ApproximantCPClassification}
+    return [classify_cp_on_approximant(poly_eval, cp; tol=tol, relative_tol=relative_tol)
+            for cp in cps]
+end
+
+"""
+    _classify_eigenvalues_sub(eigenvalues, tol, relative_tol) -> Symbol
+
+Internal helper: classify eigenvalues into Symbol types with degenerate sub-classification.
+Used by both `ApproximantCPClassification` and enhanced `_classify_eigenvalues`.
+
+Returns `:min`, `:max`, `:saddle`, `:degenerate`, `:degenerate_min`,
+`:degenerate_max`, or `:degenerate_saddle`.
+"""
+function _classify_eigenvalues_sub(
+    eigenvalues::AbstractVector{<:Real},
+    tol::Float64,
+    relative_tol::Float64,
+)::Symbol
+    # Compute effective tolerance (adaptive to eigenvalue scale)
+    effective_tol = if relative_tol > 0.0 && !isempty(eigenvalues)
+        max(tol, relative_tol * maximum(abs, eigenvalues))
+    else
+        tol
+    end
+
+    n_pos = count(λ -> λ > effective_tol, eigenvalues)
+    n_neg = count(λ -> λ < -effective_tol, eigenvalues)
+    n_zero = count(λ -> abs(λ) <= effective_tol, eigenvalues)
+
+    if n_zero > 0
+        # Sub-classify degenerate CPs based on signs of non-zero eigenvalues
+        if n_pos == 0 && n_neg == 0
+            return :degenerate  # all eigenvalues near zero
+        elseif n_neg == 0
+            return :degenerate_min  # valley minimum: all non-zero positive
+        elseif n_pos == 0
+            return :degenerate_max  # all non-zero negative
+        else
+            return :degenerate_saddle  # mixed non-zero signs
+        end
+    elseif n_pos == length(eigenvalues)
+        return :min
+    elseif n_neg == length(eigenvalues)
+        return :max
+    else
+        return :saddle
+    end
+end
+
+"""
+    is_degenerate(cp_type::Symbol) -> Bool
+
+Check whether a CP type is any degenerate variant.
+
+# Examples
+```julia
+is_degenerate(:degenerate)        # true
+is_degenerate(:degenerate_min)    # true
+is_degenerate(:degenerate_saddle) # true
+is_degenerate(:min)               # false
+is_degenerate(:saddle)            # false
+```
+"""
+function is_degenerate(cp_type::Symbol)::Bool
+    return cp_type in (:degenerate, :degenerate_min, :degenerate_max, :degenerate_saddle)
 end

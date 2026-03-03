@@ -179,6 +179,9 @@ Most polynomial CPs are spurious. The early-exit mechanism (controlled by `patie
 - `max_iterations::Int`: Maximum Newton iterations (default: 100)
 - `bounds`: Box constraints as Vector{Tuple{Float64,Float64}}. Iterates are clamped in-domain.
 - `hessian_tol::Float64`: Tolerance for Hessian eigenvalue classification (default: 1e-6)
+- `hessian_relative_tol::Float64`: Relative tolerance for eigenvalue classification —
+  effective tolerance is `max(hessian_tol, hessian_relative_tol * max(|eigenvalues|))`.
+  Adapts to ODE objectives with varying eigenvalue scales. Default: 0.0 (disabled).
 - `trust_radius_fraction::Float64`: Initial trust-region radius as fraction of domain
   diameter (default: 0.1). For a [0,100]² domain (diameter ≈ 141), Δ₀ ≈ 14.
 - `trust_expand::Float64`: Factor to expand Δ when ρ > 0.75 (default: 2.0)
@@ -205,6 +208,7 @@ function refine_to_critical_point(
     max_iterations::Int = 100,
     bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing,
     hessian_tol::Float64 = 1e-6,
+    hessian_relative_tol::Float64 = 0.0,
     trust_radius_fraction::Float64 = 0.1,
     trust_expand::Float64 = 2.0,
     trust_shrink::Float64 = 0.25,
@@ -395,7 +399,7 @@ function refine_to_critical_point(
         H_final = compute_hess(x)
         if all(isfinite, H_final)
             eig_final = LinearAlgebra.eigvals(LinearAlgebra.Symmetric(H_final))
-            cp_type = _classify_eigenvalues(eig_final, hessian_tol)
+            cp_type = _classify_eigenvalues(eig_final, hessian_tol; relative_tol=hessian_relative_tol)
             eigenvalues = collect(eig_final)
         else
             cp_type = :unknown
@@ -596,6 +600,7 @@ function _wrap_neldermead_as_cpresult(
     objective;
     gradient_method::Symbol = :finitediff,
     hessian_tol::Float64 = 1e-6,
+    hessian_relative_tol::Float64 = 0.0,
     bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}} = nothing,
     initial_point::Union{Nothing, Vector{Float64}} = nothing,
 )::CriticalPointRefinementResult
@@ -627,7 +632,7 @@ function _wrap_neldermead_as_cpresult(
         end
         if all(isfinite, H)
             eig_vals = LinearAlgebra.eigvals(LinearAlgebra.Symmetric(H))
-            cp_type = _classify_eigenvalues(eig_vals, hessian_tol)
+            cp_type = _classify_eigenvalues(eig_vals, hessian_tol; relative_tol=hessian_relative_tol)
             eigenvalues = collect(eig_vals)
         end
     end
@@ -652,23 +657,23 @@ function _wrap_neldermead_as_cpresult(
 end
 
 """
-    _classify_eigenvalues(eigenvalues, tol) -> Symbol
+    _classify_eigenvalues(eigenvalues, tol; relative_tol=0.0) -> Symbol
 
 Classify a critical point based on Hessian eigenvalues.
-Returns `:min`, `:max`, `:saddle`, or `:degenerate`.
-"""
-function _classify_eigenvalues(eigenvalues::AbstractVector{<:Real}, tol::Float64)::Symbol
-    n_pos = count(λ -> λ > tol, eigenvalues)
-    n_neg = count(λ -> λ < -tol, eigenvalues)
-    n_zero = count(λ -> abs(λ) <= tol, eigenvalues)
 
-    if n_zero > 0
-        return :degenerate
-    elseif n_pos == length(eigenvalues)
-        return :min
-    elseif n_neg == length(eigenvalues)
-        return :max
-    else
-        return :saddle
-    end
+Returns `:min`, `:max`, `:saddle`, or degenerate sub-types:
+`:degenerate_min`, `:degenerate_max`, `:degenerate_saddle`, `:degenerate`.
+
+# Arguments
+- `eigenvalues`: Hessian eigenvalues
+- `tol::Float64`: Absolute tolerance for zero-eigenvalue detection
+- `relative_tol::Float64`: Relative tolerance — effective tolerance is
+  `max(tol, relative_tol * max(|eigenvalues|))`. Default: 0.0 (disabled).
+"""
+function _classify_eigenvalues(
+    eigenvalues::AbstractVector{<:Real},
+    tol::Float64;
+    relative_tol::Float64 = 0.0,
+)::Symbol
+    return _classify_eigenvalues_sub(eigenvalues, tol, relative_tol)
 end

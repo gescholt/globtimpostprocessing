@@ -106,6 +106,10 @@ export print_sparsification_summary, build_sparsification_plot_entries
 export classify_critical_point, classify_all_critical_points!
 export count_classifications, find_distinct_local_minima
 export get_classification_summary
+# Polynomial approximant Hessian classification exports
+export ApproximantCPClassification
+export classify_cp_on_approximant, classify_cps_on_approximant
+export is_degenerate
 
 # Landscape fidelity exports
 export check_objective_proximity, estimate_basin_radius, check_hessian_basin

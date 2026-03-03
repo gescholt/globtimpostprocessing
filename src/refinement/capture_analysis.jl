@@ -486,7 +486,10 @@ const _CLASSIFICATION_TO_SYMBOL = Dict{String, Symbol}(
     "minimum" => :min,
     "maximum" => :max,
     "saddle" => :saddle,
-    "degenerate" => :saddle  # treat degenerate as saddle for capture purposes
+    "degenerate" => :saddle,          # treat degenerate as saddle for capture purposes
+    "degenerate_min" => :min,         # valley minimum → treat as min for capture
+    "degenerate_max" => :max,         # valley maximum → treat as max for capture
+    "degenerate_saddle" => :saddle,   # mixed → treat as saddle for capture
 )
 
 """
@@ -498,6 +501,33 @@ to capture analysis symbols (`:min`, `:max`, `:saddle`).
 function _classification_string_to_symbol(s::String)::Symbol
     haskey(_CLASSIFICATION_TO_SYMBOL, s) || error("Unknown classification: $(repr(s))")
     return _CLASSIFICATION_TO_SYMBOL[s]
+end
+
+"""
+    _map_cp_type_for_capture(cp_type::Symbol) -> Symbol
+
+Map a CP type (possibly a degenerate sub-type) to a capture-analysis-compatible
+type (`:min`, `:max`, or `:saddle`).
+
+Degenerate sub-types are mapped to their "effective" type for capture analysis:
+- `:degenerate_min` → `:min`
+- `:degenerate_max` → `:max`
+- `:degenerate_saddle` → `:saddle`
+- `:degenerate` → `:saddle`
+- `:unknown` → `:saddle`
+
+Non-degenerate types pass through unchanged.
+"""
+function _map_cp_type_for_capture(cp_type::Symbol)::Symbol
+    cp_type == :min && return :min
+    cp_type == :max && return :max
+    cp_type == :saddle && return :saddle
+    cp_type == :degenerate_min && return :min
+    cp_type == :degenerate_max && return :max
+    cp_type == :degenerate_saddle && return :saddle
+    cp_type == :degenerate && return :saddle
+    cp_type == :unknown && return :saddle
+    return :saddle  # conservative default
 end
 
 """
@@ -829,10 +859,10 @@ function build_known_cps_from_refinement(
     end
 
     # Step 4: Build KnownCriticalPoints
-    # Filter out :degenerate — treat as :saddle for capture purposes
+    # Map degenerate sub-types to capture-compatible types (:min, :max, :saddle)
     points = [r.point for r in unique_results]
     values = [r.objective_value for r in unique_results]
-    types = Symbol[r.cp_type == :degenerate ? :saddle : r.cp_type for r in unique_results]
+    types = Symbol[_map_cp_type_for_capture(r.cp_type) for r in unique_results]
 
     n_deduped = length(accepted) - length(unique_results)
     n_min = count(==(:min), types)
@@ -1088,7 +1118,15 @@ function compute_capture_verdict(
     )
 end
 
-const _CP_TYPE_DISPLAY = Dict(:min => "Minima", :max => "Maxima", :saddle => "Saddles")
+const _CP_TYPE_DISPLAY = Dict(
+    :min => "Minima",
+    :max => "Maxima",
+    :saddle => "Saddles",
+    :degenerate => "Degenerate",
+    :degenerate_min => "Degen. Min",
+    :degenerate_max => "Degen. Max",
+    :degenerate_saddle => "Degen. Saddle",
+)
 
 """
     print_capture_verdict(
