@@ -101,6 +101,8 @@ export print_best_minimum, print_error_banner
 export SparsifyCompare, analyze_sparsification
 export print_sparsification_metrics_table, print_sparsification_capture_table
 export print_sparsification_summary, build_sparsification_plot_entries
+# Formal postprocessing pipeline
+export PostprocessingResult, postprocess_experiment
 
 # Critical point classification exports
 export classify_critical_point, classify_all_critical_points!

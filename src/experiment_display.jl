@@ -851,3 +851,353 @@ function _count_thresholds(comparisons::Vector{SparsifyCompare})
     first_deg = comparisons[1].degree
     return count(sc -> sc.degree == first_deg, comparisons)
 end
+
+#==============================================================================#
+#             FORMAL POSTPROCESSING PIPELINE                                   #
+#==============================================================================#
+
+"""
+    PostprocessingResult
+
+Container for the full postprocessing output of an experiment directory.
+
+Holds per-degree refinement results, known critical points (reference set),
+per-degree capture analysis, and the overall verdict.
+
+# Fields
+- `experiment_dir::String`: Path to the experiment directory
+- `degrees::Vector{Int}`: Degrees that were postprocessed (sorted ascending)
+- `refinements::Dict{Int, RefinedExperimentResult}`: Per-degree refinement results
+- `known_cps::Union{Nothing, KnownCriticalPoints}`: Reference CP set (from highest degree)
+- `degree_capture_results::Vector{Tuple{Int, CaptureResult}}`: Capture analysis per degree
+- `verdict::Union{Nothing, CaptureVerdict}`: Overall capture verdict
+- `timestamp::DateTime`: When postprocessing was run
+"""
+struct PostprocessingResult
+    experiment_dir::String
+    degrees::Vector{Int}
+    refinements::Dict{Int, RefinedExperimentResult}
+    known_cps::Union{Nothing, KnownCriticalPoints}
+    degree_capture_results::Vector{Tuple{Int, CaptureResult}}
+    verdict::Union{Nothing, CaptureVerdict}
+    timestamp::DateTime
+end
+
+"""
+    postprocess_experiment(
+        experiment_dir::String,
+        objective;
+        bounds::Vector{Tuple{Float64,Float64}},
+        refinement_config::RefinementConfig = ode_refinement_config(),
+        gradient_method::Symbol = :finitediff,
+        reference_goal::Symbol = :critical_point,
+        reference_accept_tol::Float64 = 1e-2,
+        reference_f_accept_tol::Union{Nothing, Float64} = nothing,
+        reference_top_k::Union{Nothing, Int} = nothing,
+        capture_tolerance_fractions::Vector{Float64} = [0.01, 0.025, 0.05, 0.1],
+        verdict_tolerance_fraction::Float64 = 0.05,
+        save_summary::Bool = true,
+        io::IO = stdout,
+    ) -> PostprocessingResult
+
+Run the full postprocessing pipeline on an experiment directory:
+
+1. **Discover** all available raw CP degrees
+2. **Refine** each degree via `refine_experiment_results` (NelderMead, saves per-degree CSVs)
+3. **Build reference CPs** from highest-degree raw CPs via `build_known_cps_from_refinement`
+4. **Capture analysis** per degree against the reference set
+5. **Verdict** — overall assessment (EXCELLENT/GOOD/POOR)
+6. **Save** consolidated `postprocessing_summary.json`
+
+Requires the objective function to be provided — the experiment directory only stores
+results, not the objective itself. Reconstruct the objective from the experiment config
+before calling this function.
+
+# Arguments
+- `experiment_dir::String`: Path to experiment results directory (must contain `critical_points_raw_deg_*.csv`)
+- `objective`: Callable `f(x::Vector{Float64}) → Float64`
+- `bounds`: Domain bounds as `Vector{Tuple{Float64,Float64}}`
+
+# Keyword Arguments
+- `refinement_config`: Config for NelderMead refinement (default: `ode_refinement_config()`)
+- `gradient_method`: `:finitediff` or `:forwarddiff` for gradient computation
+- `reference_goal`: `:critical_point` (Newton, finds all CP types) or `:minimum` (NelderMead)
+- `reference_accept_tol`: Gradient tolerance for accepting reference CPs
+- `reference_f_accept_tol`: Optional function-value acceptance threshold
+- `reference_top_k`: Pre-filter: keep top_k raw CPs by f(x) before reference refinement
+- `capture_tolerance_fractions`: Tolerance levels for capture analysis
+- `verdict_tolerance_fraction`: Reference tolerance for the verdict
+- `save_summary`: Whether to save `postprocessing_summary.json` (default: true)
+- `io`: Output stream for progress messages
+
+# Returns
+`PostprocessingResult` with all computed data.
+
+# Files Created (per degree)
+- `critical_points_refined_deg_X.csv` — refined coordinates + values
+- `refinement_comparison_deg_X.csv` — raw vs refined comparison
+- `refinement_summary_deg_X.json` — per-degree statistics
+
+# Files Created (consolidated)
+- `postprocessing_summary.json` — full pipeline summary with capture rates and verdict
+
+# Example
+```julia
+using GlobtimPostProcessing
+
+# Reconstruct objective (problem-specific)
+objective = make_lv4d_objective(p_true, ic, tspan, numpoints)
+
+# Run full pipeline
+result = postprocess_experiment(
+    "globtim_results/lv4d_basic",
+    objective;
+    bounds = [(0.195, 0.205), (0.295, 0.305), (0.495, 0.505), (0.595, 0.605)],
+)
+println("Verdict: ", result.verdict.label)
+```
+"""
+function postprocess_experiment(
+    experiment_dir::String,
+    objective;
+    bounds::Vector{Tuple{Float64,Float64}},
+    refinement_config::RefinementConfig = ode_refinement_config(),
+    gradient_method::Symbol = :finitediff,
+    reference_goal::Symbol = :critical_point,
+    reference_accept_tol::Float64 = 1e-2,
+    reference_f_accept_tol::Union{Nothing, Float64} = nothing,
+    reference_top_k::Union{Int, Nothing} = nothing,
+    capture_tolerance_fractions::Vector{Float64} = [0.01, 0.025, 0.05, 0.1],
+    verdict_tolerance_fraction::Float64 = 0.05,
+    save_summary::Bool = true,
+    io::IO = stdout,
+)
+    isdir(experiment_dir) || error("Experiment directory not found: $experiment_dir")
+
+    println(io, "="^70)
+    println(io, "POSTPROCESSING PIPELINE")
+    println(io, "="^70)
+    println(io, "  Directory: $experiment_dir")
+
+    # ── Step 1: Discover available degrees ───────────────────────────────────
+    raw_pattern = r"critical_points_raw_deg_(\d+)\.csv"
+    csv_files = filter(f -> occursin(raw_pattern, f), readdir(experiment_dir))
+    if isempty(csv_files)
+        error("No critical_points_raw_deg_*.csv files found in $experiment_dir")
+    end
+
+    degrees = sort([parse(Int, match(raw_pattern, f).captures[1]) for f in csv_files])
+    println(io, "  Degrees found: $degrees")
+    println(io)
+
+    # ── Step 2: Per-degree refinement ────────────────────────────────────────
+    println(io, "── Step 1/4: Refining critical points per degree ──")
+    refinements = Dict{Int, RefinedExperimentResult}()
+
+    for deg in degrees
+        println(io, "  Degree $deg...")
+        try
+            refined = refine_experiment_results(experiment_dir, objective, refinement_config;
+                                                  degree=deg)
+            refinements[deg] = refined
+            @printf(io, "    %d/%d converged, best f = %.4e (%.1fs)\n",
+                refined.n_converged, refined.n_raw, refined.best_refined_value, refined.total_time)
+        catch e
+            @warn "Refinement failed for degree $deg" exception=(e, catch_backtrace())
+            println(io, "    FAILED: $(sprint(showerror, e))")
+        end
+    end
+
+    refined_degrees = sort(collect(keys(refinements)))
+    if isempty(refined_degrees)
+        error("All degree refinements failed — cannot continue postprocessing")
+    end
+    println(io)
+
+    # ── Step 3: Build reference CPs from highest degree ──────────────────────
+    println(io, "── Step 2/4: Building reference critical points ──")
+    highest_deg = maximum(refined_degrees)
+    raw_highest = load_raw_critical_points(experiment_dir; degree=highest_deg)
+    println(io, "  Using degree $highest_deg ($(raw_highest.n_points) raw CPs)")
+
+    known_cps = nothing
+    ref_result = try
+        build_known_cps_from_refinement(
+            objective, raw_highest.points, bounds;
+            refinement_goal = reference_goal,
+            gradient_method = gradient_method,
+            accept_tol = reference_accept_tol,
+            f_accept_tol = reference_f_accept_tol,
+            top_k = reference_top_k,
+        )
+    catch e
+        @warn "Reference CP construction failed" exception=(e, catch_backtrace())
+        println(io, "  FAILED: $(sprint(showerror, e))")
+        nothing
+    end
+
+    if ref_result !== nothing
+        known_cps = ref_result.known_cps
+        n_min = count(t -> t == :min, known_cps.types)
+        n_saddle = count(t -> t == :saddle, known_cps.types)
+        n_max = count(t -> t == :max, known_cps.types)
+        println(io, "  Found $(length(known_cps.points)) reference CPs: $n_min min, $n_saddle saddle, $n_max max")
+    end
+    println(io)
+
+    # ── Step 4: Capture analysis per degree ──────────────────────────────────
+    degree_capture_results = Tuple{Int, CaptureResult}[]
+    verdict = nothing
+
+    if known_cps !== nothing && !isempty(known_cps.points)
+        println(io, "── Step 3/4: Capture analysis per degree ──")
+
+        for deg in refined_degrees
+            raw_data = load_raw_critical_points(experiment_dir; degree=deg)
+            cr = compute_capture_analysis(known_cps, raw_data.points;
+                                           tolerance_fractions=capture_tolerance_fractions)
+            push!(degree_capture_results, (deg, cr))
+
+            # Find 5% capture rate for display
+            idx_5pct = findfirst(f -> f ≈ verdict_tolerance_fraction, cr.tolerance_fractions)
+            rate_5pct = idx_5pct !== nothing ? cr.capture_rates[idx_5pct] : NaN
+            @printf(io, "  Degree %d: capture rate = %.1f%% at %.0f%% tolerance\n",
+                deg, 100 * rate_5pct, 100 * verdict_tolerance_fraction)
+        end
+
+        # ── Step 5: Verdict ──────────────────────────────────────────────────
+        println(io)
+        println(io, "── Step 4/4: Verdict ──")
+        verdict = compute_capture_verdict(degree_capture_results;
+                                           reference_tolerance_fraction=verdict_tolerance_fraction)
+        print_capture_verdict(verdict; io=io)
+    else
+        println(io, "── Steps 3-4 skipped: no reference CPs available ──")
+    end
+
+    println(io)
+
+    # ── Save consolidated summary ────────────────────────────────────────────
+    timestamp = Dates.now()
+
+    if save_summary
+        _save_postprocessing_summary(
+            experiment_dir, degrees, refinements, known_cps,
+            degree_capture_results, verdict, timestamp,
+        )
+        println(io, "  Saved: $(joinpath(experiment_dir, "postprocessing_summary.json"))")
+    end
+
+    println(io, "="^70)
+
+    return PostprocessingResult(
+        experiment_dir, degrees, refinements,
+        known_cps, degree_capture_results, verdict, timestamp,
+    )
+end
+
+"""
+    _save_postprocessing_summary(experiment_dir, degrees, refinements, known_cps,
+                                  degree_capture_results, verdict, timestamp)
+
+Save a consolidated `postprocessing_summary.json` to the experiment directory.
+"""
+function _save_postprocessing_summary(
+    experiment_dir::String,
+    degrees::Vector{Int},
+    refinements::Dict{Int, RefinedExperimentResult},
+    known_cps::Union{Nothing, KnownCriticalPoints},
+    degree_capture_results::Vector{Tuple{Int, CaptureResult}},
+    verdict::Union{Nothing, CaptureVerdict},
+    timestamp::DateTime,
+)
+    # Per-degree refinement summary
+    degree_summaries = Dict{String, Any}()
+    for deg in degrees
+        if haskey(refinements, deg)
+            ref = refinements[deg]
+            degree_summaries["degree_$deg"] = Dict{String, Any}(
+                "n_raw" => ref.n_raw,
+                "n_converged" => ref.n_converged,
+                "n_failed" => ref.n_failed,
+                "n_timeout" => ref.n_timeout,
+                "convergence_rate" => ref.n_raw > 0 ? ref.n_converged / ref.n_raw : 0.0,
+                "best_raw_value" => _json_safe(ref.best_raw_value),
+                "best_refined_value" => _json_safe(ref.best_refined_value),
+                "total_time" => ref.total_time,
+            )
+        else
+            degree_summaries["degree_$deg"] = Dict{String, Any}("status" => "failed")
+        end
+    end
+
+    # Per-degree capture rates
+    capture_summaries = Dict{String, Any}()
+    for (deg, cr) in degree_capture_results
+        rates = Dict{String, Any}()
+        for (frac, rate) in zip(cr.tolerance_fractions, cr.capture_rates)
+            rates[@sprintf("%.1f%%", 100 * frac)] = rate
+        end
+        capture_summaries["degree_$deg"] = Dict{String, Any}(
+            "n_known" => cr.n_known,
+            "n_computed" => cr.n_computed,
+            "capture_rates" => rates,
+            "type_counts" => Dict(string(k) => v for (k, v) in cr.type_counts),
+        )
+    end
+
+    # Reference CPs
+    reference = if known_cps !== nothing
+        Dict{String, Any}(
+            "n_total" => length(known_cps.points),
+            "n_min" => count(t -> t == :min, known_cps.types),
+            "n_max" => count(t -> t == :max, known_cps.types),
+            "n_saddle" => count(t -> t == :saddle, known_cps.types),
+            "domain_diameter" => known_cps.domain_diameter,
+            "points" => [collect(p) for p in known_cps.points],
+            "values" => [_json_safe(v) for v in known_cps.values],
+            "types" => [string(t) for t in known_cps.types],
+        )
+    else
+        nothing
+    end
+
+    # Verdict
+    verdict_data = if verdict !== nothing
+        Dict{String, Any}(
+            "label" => verdict.label,
+            "best_degree" => verdict.best_degree,
+            "capture_rate" => verdict.capture_rate,
+            "n_captured" => verdict.n_captured,
+            "n_known" => verdict.n_known,
+            "tolerance_fraction" => verdict.tolerance_fraction,
+            "tolerance_absolute" => verdict.tolerance_absolute,
+        )
+    else
+        nothing
+    end
+
+    summary = Dict{String, Any}(
+        "pipeline_version" => "1.0.0",
+        "timestamp" => string(timestamp),
+        "experiment_dir" => experiment_dir,
+        "degrees" => degrees,
+        "refinement" => degree_summaries,
+        "reference_critical_points" => reference,
+        "capture_analysis" => capture_summaries,
+        "verdict" => verdict_data,
+    )
+
+    path = joinpath(experiment_dir, "postprocessing_summary.json")
+    open(path, "w") do f
+        JSON.print(f, summary, 2)
+    end
+end
+
+"""
+    _json_safe(x::Float64) -> Union{Float64, Nothing}
+
+Convert NaN/Inf to `nothing` for JSON serialization.
+"""
+_json_safe(x::Float64) = (isnan(x) || isinf(x)) ? nothing : x
+_json_safe(x) = x
