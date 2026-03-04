@@ -103,6 +103,9 @@ export print_sparsification_metrics_table, print_sparsification_capture_table
 export print_sparsification_summary, build_sparsification_plot_entries
 # Formal postprocessing pipeline
 export PostprocessingResult, postprocess_experiment
+# Landscape capture data types (promoted from sandbox)
+export LandscapeRefinementDetails, LandscapeMethodResult, LandscapeSubdivisionData
+export parse_landscape_refinement, load_landscape_degree_sweep, load_landscape_subdivision
 
 # Critical point classification exports
 export classify_critical_point, classify_all_critical_points!
@@ -252,6 +255,9 @@ include("ValleyWalking.jl")
 
 # Subdivision tree analysis (adaptive subdivision postprocessing - January 2026)
 include("SubdivisionTreeAnalysis.jl")
+
+# Landscape capture data types (promoted from sandbox - March 2026)
+include("LandscapeCaptureTypes.jl")
 
 # Enhanced analysis (moved from globtim - January 2026)
 # Statistical tables, condition number analysis, and mathematical validation

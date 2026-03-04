@@ -125,6 +125,11 @@ include(joinpath(@__DIR__, "fixtures", "test_functions.jl"))
         include("test_postprocessing_pipeline.jl")
     end
 
+    # Landscape capture data types (March 2026)
+    @testset "Landscape Capture Types" begin
+        include("test_landscape_capture_types.jl")
+    end
+
     # Aqua.jl quality assurance tests
     include("test_aqua.jl")
 end

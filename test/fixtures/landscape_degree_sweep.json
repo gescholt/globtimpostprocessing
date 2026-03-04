@@ -1,0 +1,45 @@
+{
+  "problem": "test_2d",
+  "bounds": [[0.0, 1.0], [0.0, 1.0]],
+  "p_true": [0.5, 0.5],
+  "GN": 20,
+  "timestamp": "2026-03-04T12:00:00",
+  "degrees": [
+    {
+      "degree": 4,
+      "n_min": 1,
+      "n_saddle": 1,
+      "n_max": 0,
+      "n_verified": 2,
+      "cp_points": [[0.48, 0.52], [0.1, 0.9]],
+      "cp_values": [0.001, 0.5],
+      "cp_types": ["min", "saddle"],
+      "best_objective": 0.001,
+      "l2_error": 0.01,
+      "refinement_details": {
+        "raw_points": [[0.47, 0.53], [0.12, 0.88]],
+        "refined_points": [[0.48, 0.52], [0.1, 0.9]],
+        "converged": [true, true],
+        "cp_types": ["min", "saddle"],
+        "gradient_norms": [1e-10, 1e-8],
+        "objective_values": [0.001, 0.5],
+        "iterations": [5, 8]
+      }
+    },
+    {
+      "degree": 6,
+      "n_min": 2,
+      "n_saddle": 0,
+      "n_max": 1,
+      "n_verified": 3,
+      "cp_points": [[0.49, 0.51], [0.3, 0.7], [0.8, 0.2]],
+      "cp_values": [0.0001, 0.02, 1.5],
+      "cp_types": ["min", "min", "max"],
+      "best_objective": 0.0001
+    },
+    {
+      "degree": 20,
+      "error": "SingularException"
+    }
+  ]
+}

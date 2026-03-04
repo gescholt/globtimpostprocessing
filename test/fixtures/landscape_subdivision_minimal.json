@@ -1,0 +1,12 @@
+{
+  "problem": "test_minimal",
+  "parameters": {
+    "degree": 6,
+    "max_depth": 3,
+    "l2_tolerance": 0.01
+  },
+  "tree": {
+    "n_total_leaves": 2,
+    "n_converged": 2
+  }
+}
