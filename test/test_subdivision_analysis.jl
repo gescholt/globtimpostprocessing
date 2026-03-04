@@ -13,7 +13,9 @@ using GlobtimPostProcessing:
     tree_depth_summary,
     print_subdivision_tree_report,
     compare_subdivision_trees,
-    print_tree_comparison_table
+    print_tree_comparison_table,
+    SubdivisionResult,
+    load_subdivision_result
 
 #==============================================================================#
 #                    MOCK OBJECTS (DUCK TYPING)                                #
@@ -234,4 +236,156 @@ end
     # Check labels appear
     @test occursin("Tree1", output)
     @test occursin("Tree2", output)
+end
+
+#==============================================================================#
+#                    JSON RESULT LOADING TESTS                                 #
+#==============================================================================#
+
+const FIXTURES_DIR = joinpath(@__DIR__, "fixtures")
+
+@testset "load_subdivision_result — full fixture" begin
+    path = joinpath(FIXTURES_DIR, "subdivision_result.json")
+    r = load_subdivision_result(path)
+
+    @test r isa SubdivisionResult
+
+    # Experiment parameters
+    @test r.problem == "lv2d_sciml"
+    @test r.degree == 4
+    @test r.max_degree == 8
+    @test r.max_depth == 5
+    @test r.l2_tolerance ≈ 0.0001
+    @test r.anisotropic == false
+    @test occursin("Isotropic", r.label)
+    @test occursin("4", r.label) && occursin("8", r.label)
+
+    # Tree structure
+    @test r.n_leaves == 5
+    @test r.n_converged == 3
+
+    # Leaf bounds: 5 leaves × 2 dims × [lo, hi]
+    @test r.leaf_bounds !== nothing
+    @test length(r.leaf_bounds) == 5
+    @test length(r.leaf_bounds[1]) == 2        # 2D
+    @test length(r.leaf_bounds[1][1]) == 2     # [lo, hi]
+    @test r.leaf_bounds[1][1] ≈ [0.0, 0.5]
+    @test r.leaf_bounds[3][2] ≈ [0.5, 1.0]
+
+    # Leaf L2 errors
+    @test r.leaf_l2_errors !== nothing
+    @test length(r.leaf_l2_errors) == 5
+    @test r.leaf_l2_errors[1] ≈ 1e-5
+    @test r.leaf_l2_errors[5] ≈ 1e-2
+
+    # Leaf degrees — mixed isotropic/anisotropic
+    @test r.leaf_degrees !== nothing
+    @test length(r.leaf_degrees) == 5
+    @test r.leaf_degrees[1] == 4           # scalar (isotropic)
+    @test r.leaf_degrees[2] == 6           # scalar
+    @test r.leaf_degrees[3] == [4, 8]      # per-dim (anisotropic)
+    @test r.leaf_degrees[4] == 8           # scalar
+
+    # Recovery metrics
+    @test r.raw_best_objective ≈ 0.00123
+    @test r.raw_best_distance ≈ 0.045
+    @test r.refined_best_objective ≈ 1.5e-6
+    @test r.refined_best_distance ≈ 0.0012
+    @test r.n_min == 2
+    @test r.n_dedup == 3
+
+    # Critical points
+    @test length(r.cp_points) == 3
+    @test r.cp_points[1] ≈ [0.201, 0.299]
+    @test length(r.cp_types) == 3
+    @test r.cp_types[1] == "min"
+    @test r.cp_types[2] == "saddle"
+
+    # Raw critical points
+    @test length(r.raw_cp_points) == 4
+    @test r.raw_cp_points[1] ≈ [0.19, 0.31]
+
+    # True parameters
+    @test r.p_true ≈ [0.2, 0.3]
+end
+
+@testset "load_subdivision_result — minimal fixture (no refined, no leaf data)" begin
+    path = joinpath(FIXTURES_DIR, "subdivision_result_minimal.json")
+    r = load_subdivision_result(path)
+
+    @test r isa SubdivisionResult
+
+    # Parameters
+    @test r.problem == "rosenbrock_2d"
+    @test r.degree == 6
+    @test r.max_degree == 6   # defaults to degree when missing
+    @test r.max_depth == 3
+    @test r.l2_tolerance ≈ 0.001
+    @test r.anisotropic == false
+    @test occursin("Subdivision only", r.label)
+    @test occursin("6", r.label)
+
+    # Tree structure
+    @test r.n_leaves == 2
+    @test r.n_converged == 1
+
+    # Missing optional fields → nothing
+    @test r.leaf_bounds === nothing
+    @test r.leaf_l2_errors === nothing
+    @test r.leaf_degrees === nothing
+
+    # No refined section → nothing/empty
+    @test r.refined_best_objective === nothing
+    @test r.refined_best_distance === nothing
+    @test r.n_min === nothing
+    @test r.n_dedup === nothing
+    @test isempty(r.cp_points)
+    @test isempty(r.cp_types)
+    @test isempty(r.raw_cp_points)
+
+    # No p_true in recovery_raw
+    @test isempty(r.p_true)
+
+    # Raw recovery — no distance key
+    @test r.raw_best_objective ≈ 0.05
+    @test r.raw_best_distance === nothing
+end
+
+@testset "load_subdivision_result — error cases" begin
+    # File not found
+    @test_throws ErrorException load_subdivision_result("/nonexistent/file.json")
+
+    # Not a .json file
+    @test_throws ErrorException load_subdivision_result(joinpath(FIXTURES_DIR, "experiment_config.json")[1:end-5] * ".txt")
+
+    # Create a temporary JSON missing required sections
+    tmpdir = mktempdir()
+    missing_params = joinpath(tmpdir, "bad.json")
+    write(missing_params, """{"problem": "test", "tree": {"n_total_leaves": 1, "n_converged": 0}}""")
+    @test_throws ErrorException load_subdivision_result(missing_params)
+
+    missing_tree = joinpath(tmpdir, "bad2.json")
+    write(missing_tree, """{"problem": "test", "parameters": {"degree": 4, "max_depth": 3, "l2_tolerance": 0.01}}""")
+    @test_throws ErrorException load_subdivision_result(missing_tree)
+end
+
+@testset "SubdivisionResult struct field types" begin
+    path = joinpath(FIXTURES_DIR, "subdivision_result.json")
+    r = load_subdivision_result(path)
+
+    # Verify concrete types (not Any)
+    @test r.problem isa String
+    @test r.degree isa Int
+    @test r.max_degree isa Int
+    @test r.max_depth isa Int
+    @test r.l2_tolerance isa Float64
+    @test r.anisotropic isa Bool
+    @test r.label isa String
+    @test r.n_leaves isa Int
+    @test r.n_converged isa Int
+    @test r.raw_best_objective isa Float64
+    @test r.cp_points isa Vector{Vector{Float64}}
+    @test r.cp_types isa Vector{String}
+    @test r.raw_cp_points isa Vector{Vector{Float64}}
+    @test r.p_true isa Vector{Float64}
 end

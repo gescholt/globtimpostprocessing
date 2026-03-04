@@ -3,8 +3,14 @@
 #
 # This module loads subdivision trees saved by globtim and computes
 # additional analysis metrics for postprocessing.
+#
+# Supports two formats:
+#   1. JLD2 (binary): load_subdivision_tree() — loads full SubdivisionTree objects
+#   2. JSON (portable): load_subdivision_result() — loads summary results with
+#      leaf bounds, degrees, L2 errors, and refined critical points
 
 using JLD2
+using JSON
 using DataFrames
 using Statistics
 using Printf
@@ -37,6 +43,221 @@ function load_subdivision_tree(filename::AbstractString)
         metadata = haskey(file, "metadata") ? file["metadata"] : Dict()
         return (tree, metadata)
     end
+end
+
+#==============================================================================#
+#                    JSON RESULT LOADING                                       #
+#==============================================================================#
+
+"""
+    SubdivisionResult
+
+Typed container for a subdivision experiment result loaded from JSON.
+
+Holds the experiment parameters, tree structure summary (leaf bounds, degrees,
+L2 errors), raw/refined recovery metrics, and critical point data.
+
+# Fields
+
+**Experiment parameters:**
+- `problem::String`: Problem identifier (e.g. "lv2d_sciml")
+- `degree::Int`: Initial polynomial degree
+- `max_degree::Int`: Maximum degree (equals `degree` if no degree bumping)
+- `max_depth::Int`: Maximum subdivision depth
+- `l2_tolerance::Float64`: L2 convergence tolerance
+- `anisotropic::Bool`: Whether anisotropic degree bumping was used
+- `label::String`: Human-readable run label
+
+**Tree structure:**
+- `n_leaves::Int`: Total number of leaf subdomains
+- `n_converged::Int`: Number of converged leaves
+- `leaf_bounds::Union{Nothing, Vector{Vector{Vector{Float64}}}}`: Per-leaf bounds `[leaf][dim] → [lo, hi]`
+- `leaf_l2_errors::Union{Nothing, Vector{Float64}}`: Per-leaf L2 approximation errors
+- `leaf_degrees::Union{Nothing, Vector{Union{Int, Vector{Int}}}}`: Per-leaf polynomial degrees (scalar or per-dim)
+
+**Recovery metrics:**
+- `raw_best_objective::Float64`: Best objective value from raw polynomial CPs
+- `raw_best_distance::Union{Nothing, Float64}`: Distance to p_true from best raw CP
+- `refined_best_objective::Union{Nothing, Float64}`: Best objective after refinement
+- `refined_best_distance::Union{Nothing, Float64}`: Distance to p_true after refinement
+- `n_min::Union{Nothing, Int}`: Number of local minima found
+- `n_dedup::Union{Nothing, Int}`: Number of distinct CPs after deduplication
+
+**Critical points:**
+- `cp_points::Vector{Vector{Float64}}`: Refined critical point locations
+- `cp_types::Vector{String}`: Classification of each refined CP ("min", "saddle", etc.)
+- `raw_cp_points::Vector{Vector{Float64}}`: Raw (pre-refinement) critical points
+- `p_true::Vector{Float64}`: True parameter vector (ground truth)
+"""
+struct SubdivisionResult
+    # Experiment parameters
+    problem::String
+    degree::Int
+    max_degree::Int
+    max_depth::Int
+    l2_tolerance::Float64
+    anisotropic::Bool
+    label::String
+    # Tree structure
+    n_leaves::Int
+    n_converged::Int
+    leaf_bounds::Union{Nothing, Vector{Vector{Vector{Float64}}}}
+    leaf_l2_errors::Union{Nothing, Vector{Float64}}
+    leaf_degrees::Union{Nothing, Vector{Union{Int, Vector{Int}}}}
+    # Recovery metrics
+    raw_best_objective::Float64
+    raw_best_distance::Union{Nothing, Float64}
+    refined_best_objective::Union{Nothing, Float64}
+    refined_best_distance::Union{Nothing, Float64}
+    n_min::Union{Nothing, Int}
+    n_dedup::Union{Nothing, Int}
+    # Critical points
+    cp_points::Vector{Vector{Float64}}
+    cp_types::Vector{String}
+    raw_cp_points::Vector{Vector{Float64}}
+    p_true::Vector{Float64}
+end
+
+"""
+    _parse_leaf_degrees(raw::Vector) -> Vector{Union{Int, Vector{Int}}}
+
+Parse leaf_degrees from JSON, handling both scalar ints (isotropic) and
+per-dimension arrays (anisotropic).
+
+JSON examples: `[4, 4, [4, 8], 6]` or `[4, 4, 4]`.
+"""
+function _parse_leaf_degrees(raw::Vector)
+    result = Union{Int, Vector{Int}}[]
+    for el in raw
+        if el isa AbstractVector
+            push!(result, Int.(el))
+        else
+            push!(result, Int(el))
+        end
+    end
+    return result
+end
+
+"""
+    load_subdivision_result(path::String) -> SubdivisionResult
+
+Load a subdivision experiment result from a JSON file.
+
+The JSON format contains sections: `parameters`, `tree`, `recovery_raw`,
+`refined`, and optionally `refinement_details`. This is the portable format
+produced by sandbox experiment scripts, as opposed to the binary JLD2 format
+loaded by [`load_subdivision_tree`](@ref).
+
+# JSON structure
+```json
+{
+  "problem": "lv2d_sciml",
+  "parameters": {
+    "degree": 4, "max_degree": 8, "max_depth": 5,
+    "l2_tolerance": 0.0001, "anisotropic": false
+  },
+  "tree": {
+    "n_total_leaves": 12, "n_converged": 10,
+    "leaf_bounds": [[[lo, hi], [lo, hi]], ...],
+    "leaf_l2_errors": [0.001, ...],
+    "leaf_degrees": [4, [4, 8], ...]
+  },
+  "recovery_raw": {
+    "best_objective": 0.001, "best_distance": 0.05,
+    "p_true": [0.2, 0.3]
+  },
+  "refined": {
+    "n_min": 2, "n_after_dedup": 3,
+    "best_min_objective": 1e-4, "best_min_distance": 0.01,
+    "points": [[0.2, 0.3], ...], "cp_types": ["min", "saddle", ...]
+  }
+}
+```
+
+# Example
+```julia
+result = load_subdivision_result("results/lv2d_deg4to8.json")
+println(result.problem)          # "lv2d_sciml"
+println(result.n_leaves)         # 12
+println(result.leaf_bounds[1])   # [[lo1, hi1], [lo2, hi2]]
+```
+"""
+function load_subdivision_result(path::String)
+    !isfile(path) && error("File not found: $path")
+    endswith(path, ".json") || error("Expected .json file, got: $path")
+
+    data = JSON.parsefile(path)
+
+    # Required sections
+    haskey(data, "parameters") || error("Missing 'parameters' section in $path")
+    haskey(data, "tree") || error("Missing 'tree' section in $path")
+
+    params = data["parameters"]
+    tree = data["tree"]
+
+    deg = Int(params["degree"])
+    max_deg = Int(get(params, "max_degree", deg))
+
+    # Recovery (raw)
+    recovery_raw = get(data, "recovery_raw", nothing)
+    raw_obj = recovery_raw !== nothing ? Float64(recovery_raw["best_objective"]) : NaN
+    raw_dist = recovery_raw !== nothing ? (
+        haskey(recovery_raw, "best_distance") && recovery_raw["best_distance"] !== nothing ?
+            Float64(recovery_raw["best_distance"]) : nothing
+    ) : nothing
+
+    # Refined results
+    refined = get(data, "refined", nothing)
+    has_refined = refined !== nothing && get(refined, "n_after_dedup", 0) > 0
+    ref_obj = has_refined && haskey(refined, "best_min_objective") ?
+        Float64(refined["best_min_objective"]) : nothing
+    ref_dist = has_refined && haskey(refined, "best_min_distance") ?
+        Float64(refined["best_min_distance"]) : nothing
+
+    # Tree structure (leaf data for visualization)
+    leaf_bounds = haskey(tree, "leaf_bounds") ?
+        [Vector{Float64}[Float64.(b) for b in lb] for lb in tree["leaf_bounds"]] :
+        nothing
+    leaf_l2_errors = haskey(tree, "leaf_l2_errors") ?
+        Float64.(tree["leaf_l2_errors"]) : nothing
+    leaf_degrees = haskey(tree, "leaf_degrees") ?
+        _parse_leaf_degrees(tree["leaf_degrees"]) : nothing
+
+    # Critical points (refined)
+    cp_points = has_refined && haskey(refined, "points") ?
+        Vector{Float64}[Float64.(p) for p in refined["points"]] : Vector{Float64}[]
+    cp_types = has_refined && haskey(refined, "cp_types") ?
+        String.(refined["cp_types"]) : String[]
+
+    # Raw critical points (pre-refinement)
+    ref_details = get(data, "refinement_details", nothing)
+    raw_cp_points = ref_details !== nothing && haskey(ref_details, "raw_points") ?
+        Vector{Float64}[Float64.(p) for p in ref_details["raw_points"]] : Vector{Float64}[]
+
+    # True parameters
+    p_true = recovery_raw !== nothing && haskey(recovery_raw, "p_true") ?
+        Float64.(recovery_raw["p_true"]) : Float64[]
+
+    # Build label
+    aniso = Bool(get(params, "anisotropic", false))
+    label = if max_deg > deg
+        aniso ? "Anisotropic deg bump ($deg→$max_deg)" :
+                "Isotropic deg bump ($deg→$max_deg)"
+    else
+        "Subdivision only (deg $deg)"
+    end
+
+    return SubdivisionResult(
+        String(data["problem"]),
+        deg, max_deg, Int(params["max_depth"]),
+        Float64(params["l2_tolerance"]), aniso, label,
+        Int(tree["n_total_leaves"]), Int(tree["n_converged"]),
+        leaf_bounds, leaf_l2_errors, leaf_degrees,
+        raw_obj, raw_dist, ref_obj, ref_dist,
+        has_refined ? get(refined, "n_min", nothing) : nothing,
+        has_refined ? get(refined, "n_after_dedup", nothing) : nothing,
+        cp_points, cp_types, raw_cp_points, p_true,
+    )
 end
 
 #==============================================================================#

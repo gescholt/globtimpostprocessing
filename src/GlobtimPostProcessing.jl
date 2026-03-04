@@ -159,6 +159,7 @@ export load_subdivision_tree, analyze_subdivision_tree, SubdivisionTreeStats
 export tree_leaves_to_dataframe, tree_depth_summary
 export print_subdivision_tree_report
 export compare_subdivision_trees, print_tree_comparison_table
+export SubdivisionResult, load_subdivision_result
 
 # Enhanced analysis exports (moved from globtim - January 2026)
 # Statistical table types
