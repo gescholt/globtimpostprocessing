@@ -42,6 +42,7 @@ using CSV
 using ProgressMeter
 using StatsBase
 using Optim  # Critical point refinement
+using LineSearches  # Step size control for LBFGS
 using ForwardDiff  # Gradient computation for validation (algebraic objectives)
 using FiniteDiff   # Numerical gradients for ODE-based objectives
 using PrettyTables  # Rich terminal table formatting

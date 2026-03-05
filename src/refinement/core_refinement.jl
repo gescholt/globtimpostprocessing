@@ -74,6 +74,23 @@ struct RefinementResult
     g_converged::Bool
     iteration_limit_reached::Bool
     convergence_reason::Symbol
+
+    # Iteration trace (optional, populated when store_trace=true)
+    trace::Vector{Vector{Float64}}
+end
+
+# Backward-compatible constructor: 17 positional args (pre-trace)
+function RefinementResult(
+    refined, value_raw, value_refined, converged, iterations, improvement,
+    timed_out, error_message, f_calls, g_calls, h_calls, time_elapsed,
+    x_converged, f_converged, g_converged, iteration_limit_reached, convergence_reason,
+)
+    RefinementResult(
+        refined, value_raw, value_refined, converged, iterations, improvement,
+        timed_out, error_message, f_calls, g_calls, h_calls, time_elapsed,
+        x_converged, f_converged, g_converged, iteration_limit_reached, convergence_reason,
+        Vector{Float64}[],
+    )
 end
 
 """
@@ -129,7 +146,8 @@ function refine_critical_point(
     f_abstol::Float64 = 1e-6,
     x_abstol::Float64 = 1e-6,
     max_time::Union{Float64,Nothing} = nothing,
-    max_iterations::Int = 300
+    max_iterations::Int = 300,
+    store_trace::Bool = false,
 )
     # Unpack bounds
     lb, ub = split_bounds(bounds)
@@ -177,7 +195,9 @@ function refine_critical_point(
             f_abstol = f_abstol,
             x_abstol = x_abstol,
             time_limit = max_time === nothing ? Inf : max_time,
-            iterations = max_iterations
+            iterations = max_iterations,
+            store_trace = store_trace,
+            extended_trace = store_trace,
         )
 
         # Choose bounded or unbounded optimization
@@ -257,6 +277,20 @@ function refine_critical_point(
             nothing
         end
 
+        # Extract iteration trace if requested
+        optim_trace = if store_trace
+            try
+                trace_states = Optim.trace(result)
+                Vector{Float64}[copy(state.metadata["x"]) for state in trace_states
+                                if haskey(state.metadata, "x")]
+            catch
+                # Fallback: 2-point trace (NelderMead doesn't store "x" in metadata)
+                Vector{Float64}[copy(initial_point), copy(refined_point)]
+            end
+        else
+            Vector{Float64}[]
+        end
+
         return RefinementResult(
             refined_point,
             value_raw,
@@ -275,7 +309,9 @@ function refine_critical_point(
             f_conv,
             g_conv,
             iter_limit,
-            convergence_reason
+            convergence_reason,
+            # Iteration trace
+            optim_trace,
         )
     catch e
         # If optimization fails (e.g., non-finite values, errors), return initial point

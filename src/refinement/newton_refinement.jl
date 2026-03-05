@@ -593,7 +593,8 @@ classification. This is a one-shot evaluation (not iterative), so cost is
 negligible compared to the refinement itself.
 
 When `initial_point` is provided, builds a 2-point trace `[initial_point, refined]`
-for trajectory visualization on level set plots.
+for trajectory visualization on level set plots. If the `RefinementResult` already
+contains a non-empty trace (from `store_trace=true`), that trace is used instead.
 """
 function _wrap_neldermead_as_cpresult(
     r::RefinementResult,
@@ -637,6 +638,15 @@ function _wrap_neldermead_as_cpresult(
         end
     end
 
+    # Build trace: prefer stored trace from Optim (LBFGS), fall back to 2-point
+    trace = if !isempty(r.trace)
+        r.trace
+    elseif initial_point !== nothing
+        [copy(initial_point), copy(point)]
+    else
+        Vector{Float64}[]
+    end
+
     return CriticalPointRefinementResult(
         point,
         gradient_norm,
@@ -645,14 +655,11 @@ function _wrap_neldermead_as_cpresult(
         r.iterations,
         cp_type,
         eigenvalues,
-        Inf,    # initial_gradient_norm — not available from NelderMead
-        NaN,    # final_trust_radius — N/A for NelderMead
+        Inf,    # initial_gradient_norm — not available from Optim methods
+        NaN,    # final_trust_radius — N/A for Optim methods
         0,      # rejected_steps — N/A
         0,      # f_safeguard_count — N/A
-        # 2-point trace (start → end) for trajectory visualization.
-        # NelderMead doesn't record per-iteration points, but the start→end line
-        # is sufficient for plotting refinement paths on level set plots.
-        initial_point !== nothing ? [copy(initial_point), copy(point)] : Vector{Float64}[],
+        trace,
     )
 end
 
