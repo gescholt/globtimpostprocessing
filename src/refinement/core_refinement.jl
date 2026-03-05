@@ -101,12 +101,13 @@ Refine a single critical point using local optimization with adaptive tolerances
 # Arguments
 - `objective_func`: Function to minimize, signature f(x::Vector{Float64}) -> Float64
 - `initial_point::Vector{Float64}`: Initial guess from HomotopyContinuation
-- `method`: Optimization method (default: NelderMead() - gradient-free, robust)
+- `method`: Optimization method — either an Optim method object (default: `NelderMead()`) or a symbol (`:neldermead`, `:lbfgs`)
 - `bounds::Union{Nothing, Vector{Tuple{Float64,Float64}}}`: Box constraints as (lo, hi) tuples (default: nothing = unconstrained)
 - `f_abstol::Float64`: Absolute function tolerance for convergence (default: 1e-6, relaxed for robustness)
 - `x_abstol::Float64`: Absolute parameter tolerance for convergence (default: 1e-6)
 - `max_time::Union{Float64,Nothing}`: Maximum time in seconds per refinement (default: nothing = no timeout)
 - `max_iterations::Int`: Maximum number of iterations (default: 300, balanced for speed/convergence)
+- `step_size::Float64`: Initial step length for LBFGS (default: 1.0). Uses `LineSearches.InitialStatic(alpha=step_size)`. Ignored for NelderMead.
 
 # Returns
 `RefinementResult` with refined point, values, convergence status, and improvement
@@ -138,6 +139,21 @@ end
 - When bounds are provided, uses Optim.Fminbox for box-constrained optimization
 - Initial point is clamped to bounds before optimization when bounds are provided
 """
+
+# Resolve symbol method names to Optim method objects.
+# Accepted symbols: :neldermead, :lbfgs.
+# For :lbfgs, uses LineSearches.InitialStatic(alpha=step_size) as initial step length.
+function _resolve_optim_method(method::Symbol; step_size::Float64=1.0)
+    if method === :neldermead
+        Optim.NelderMead()
+    elseif method === :lbfgs
+        Optim.LBFGS(alphaguess=LineSearches.InitialStatic(alpha=step_size))
+    else
+        error("Unknown optimization method symbol: $method. Use :neldermead or :lbfgs")
+    end
+end
+_resolve_optim_method(method; step_size::Float64=1.0) = method  # passthrough for Optim objects
+
 function refine_critical_point(
     objective_func,
     initial_point::Vector{Float64};
@@ -148,7 +164,11 @@ function refine_critical_point(
     max_time::Union{Float64,Nothing} = nothing,
     max_iterations::Int = 300,
     store_trace::Bool = false,
+    step_size::Float64 = 1.0,
 )
+    # Resolve symbol methods to Optim objects
+    method = _resolve_optim_method(method; step_size=step_size)
+
     # Unpack bounds
     lb, ub = split_bounds(bounds)
 
