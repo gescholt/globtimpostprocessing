@@ -1,11 +1,11 @@
 name: Documentation
 
 on:
-  push:
-    branches:
-      - main
-    tags: '*'
-  pull_request:
+  workflow_dispatch:
+  # Auto-triggers disabled until Globtim is registered on
+  # JuliaRegistries/General — the docs build resolves Globtim transitively
+  # through GlobtimPostProcessing's deps. Re-enable push/PR triggers after
+  # Globtim 1.1.0 is in General.
 
 jobs:
   build:
