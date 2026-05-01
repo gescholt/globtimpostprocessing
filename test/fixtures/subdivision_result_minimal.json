@@ -1,0 +1,15 @@
+{
+  "problem": "rosenbrock_2d",
+  "parameters": {
+    "degree": 6,
+    "max_depth": 3,
+    "l2_tolerance": 0.001
+  },
+  "tree": {
+    "n_total_leaves": 2,
+    "n_converged": 1
+  },
+  "recovery_raw": {
+    "best_objective": 0.05
+  }
+}

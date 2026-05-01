@@ -1,0 +1,39 @@
+{
+  "problem": "lv2d_sciml",
+  "parameters": {
+    "degree": 4,
+    "max_degree": 8,
+    "max_depth": 5,
+    "l2_tolerance": 0.0001,
+    "anisotropic": false
+  },
+  "tree": {
+    "n_total_leaves": 5,
+    "n_converged": 3,
+    "leaf_bounds": [
+      [[0.0, 0.5], [0.0, 0.5]],
+      [[0.5, 1.0], [0.0, 0.5]],
+      [[0.0, 0.5], [0.5, 1.0]],
+      [[0.5, 0.75], [0.5, 0.75]],
+      [[0.75, 1.0], [0.75, 1.0]]
+    ],
+    "leaf_l2_errors": [1e-5, 2e-5, 3e-4, 5e-6, 1e-2],
+    "leaf_degrees": [4, 6, [4, 8], 8, 4]
+  },
+  "recovery_raw": {
+    "best_objective": 0.00123,
+    "best_distance": 0.045,
+    "p_true": [0.2, 0.3]
+  },
+  "refined": {
+    "n_min": 2,
+    "n_after_dedup": 3,
+    "best_min_objective": 1.5e-6,
+    "best_min_distance": 0.0012,
+    "points": [[0.201, 0.299], [0.55, 0.61], [0.8, 0.15]],
+    "cp_types": ["min", "saddle", "min"]
+  },
+  "refinement_details": {
+    "raw_points": [[0.19, 0.31], [0.54, 0.60], [0.82, 0.14], [0.19, 0.32]]
+  }
+}

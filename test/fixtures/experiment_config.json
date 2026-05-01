@@ -1,0 +1,23 @@
+{
+    "p_true": [0.2, 0.3, 0.5, 0.6],
+    "domain_center": [
+        0,
+        0,
+        0,
+        0
+    ],
+    "degrees": [
+        4,
+        6
+    ],
+    "function_name": "Deuflhard_4d",
+    "total_grid_points": 10000,
+    "deuflhard_2d_form": "(exp(x² + y²) - 3)² + (x + y - sin(3(x + y)))²",
+    "description": "4D Deuflhard test function - composition of two 2D Deuflhard functions",
+    "generated_at": "2025-11-24T13:25:11",
+    "dimension": 4,
+    "basis": "chebyshev",
+    "GN": 10,
+    "mathematical_form": "f(p) = Deuflhard(p[1:2]) + Deuflhard(p[3:4])",
+    "domain_range": 1.2
+}

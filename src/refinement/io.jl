@@ -1,0 +1,518 @@
+"""
+Refinement I/O Utilities
+
+Provides functions to load raw critical points from globtim output
+and save refined results to CSV/JSON files.
+
+Created: 2025-11-22 (Architecture cleanup)
+"""
+
+"""
+    RawCriticalPointsData
+
+Container for loaded raw critical points data.
+
+# Fields
+- `points::Vector{Vector{Float64}}`: Raw critical points
+- `degree::Int`: Polynomial degree used
+- `n_points::Int`: Number of critical points
+- `source_file::String`: Path to source CSV file
+"""
+struct RawCriticalPointsData
+    points::Vector{Vector{Float64}}
+    degree::Int
+    n_points::Int
+    source_file::String
+end
+
+"""
+    load_raw_critical_points(experiment_dir::String; degree::Union{Int,Nothing}=nothing)
+
+Load raw critical points from globtim experiment output directory.
+
+Searches for `critical_points_raw_deg_X.csv`.
+
+# Arguments
+- `experiment_dir::String`: Path to globtim output directory
+- `degree::Union{Int,Nothing}`: Specific degree to load (default: highest degree found)
+
+# Returns
+`RawCriticalPointsData` containing points and metadata
+
+# Examples
+```julia
+# Load highest degree
+raw_data = load_raw_critical_points("/path/to/experiment_dir")
+
+# Load specific degree
+raw_data = load_raw_critical_points("/path/to/experiment_dir", degree=12)
+
+println("Loaded ", raw_data.n_points, " points at degree ", raw_data.degree)
+```
+
+# Errors
+Throws error if no critical points files found in directory.
+"""
+function load_raw_critical_points(
+    experiment_dir::String;
+    degree::Union{Int,Nothing} = nothing,
+)
+    raw_pattern = r"critical_points_raw_deg_(\d+)\.csv"
+
+    # Get all CSV files in directory
+    csv_files = filter(f -> endswith(f, ".csv"), readdir(experiment_dir))
+    raw_files = filter(f -> occursin(raw_pattern, f), csv_files)
+
+    if isempty(raw_files)
+        error("No critical_points_raw_deg_*.csv files found in $experiment_dir")
+    end
+
+    # Parse degrees from filenames
+    available_degrees = Int[]
+    degree_to_file = Dict{Int,String}()
+
+    for file in raw_files
+        m = match(raw_pattern, file)
+        if m !== nothing
+            deg = parse(Int, m.captures[1])
+            push!(available_degrees, deg)
+            degree_to_file[deg] = joinpath(experiment_dir, file)
+        end
+    end
+
+    # Select degree to load
+    if degree === nothing
+        # Load highest degree available
+        selected_degree = maximum(available_degrees)
+    else
+        # Load specified degree
+        if !(degree in available_degrees)
+            error("Degree $degree not found. Available degrees: $available_degrees")
+        end
+        selected_degree = degree
+    end
+
+    csv_path = degree_to_file[selected_degree]
+
+    # Load CSV
+    df = CSV.read(csv_path, DataFrame)
+
+    # Extract critical points (assuming columns are dimensions)
+    # Find dimension columns (starts with dim, x, or p)
+    dim_cols = filter(c -> occursin(r"^(dim|x|p)\d+$", String(c)), names(df))
+
+    if isempty(dim_cols)
+        error(
+            "No dimension columns found in CSV. Expected columns matching pattern ^(dim|x|p)\\d+\$ but found: $(names(df))",
+        )
+    end
+
+    # Convert to Vector{Vector{Float64}}
+    points = [Vector{Float64}(row[dim_cols]) for row in eachrow(df)]
+
+    return RawCriticalPointsData(points, selected_degree, length(points), csv_path)
+end
+
+"""
+    RefinedExperimentResult
+
+Results from refining critical points of an experiment.
+
+# Fields
+- `raw_points::Vector{Vector{Float64}}`: Original critical points from HomotopyContinuation
+- `refined_points::Vector{Vector{Float64}}`: Successfully refined critical points
+- `raw_values::Vector{Float64}`: Objective values at raw points
+- `refined_values::Vector{Float64}`: Objective values at refined points
+- `improvements::Vector{Float64}`: |f(refined) - f(raw)| for each point
+- `convergence_status::Vector{Bool}`: Convergence status for each raw point
+- `iterations::Vector{Int}`: Iterations per point
+- `n_raw::Int`: Total number of raw critical points
+- `n_converged::Int`: Number of successful refinements
+- `n_failed::Int`: Number of failed refinements
+- `n_timeout::Int`: Number of timeouts
+- `mean_improvement::Float64`: Mean improvement for converged points
+- `max_improvement::Float64`: Maximum improvement
+- `best_raw_idx::Int`: Index of best raw point
+- `best_refined_idx::Int`: Index of best refined point (among converged)
+- `best_raw_value::Float64`: Best objective value among raw points
+- `best_refined_value::Float64`: Best objective value among refined points
+- `output_dir::String`: Directory where results are saved
+- `degree::Int`: Polynomial degree used
+- `total_time::Float64`: Total refinement time (seconds)
+- `refinement_config::RefinementConfig`: Configuration used
+"""
+struct RefinedExperimentResult
+    raw_points::Vector{Vector{Float64}}
+    refined_points::Vector{Vector{Float64}}
+    raw_values::Vector{Float64}
+    refined_values::Vector{Float64}
+    improvements::Vector{Float64}
+    convergence_status::Vector{Bool}
+    iterations::Vector{Int}
+    n_raw::Int
+    n_converged::Int
+    n_failed::Int
+    n_timeout::Int
+    mean_improvement::Float64
+    max_improvement::Float64
+    best_raw_idx::Int
+    best_refined_idx::Int
+    best_raw_value::Float64
+    best_refined_value::Float64
+    output_dir::String
+    degree::Int
+    total_time::Float64
+    refinement_config::RefinementConfig
+end
+
+"""
+    save_refined_results(experiment_dir::String, result::RefinedExperimentResult, degree::Int, refinement_results::Vector{RefinementResult}; gradient_validation, raw_gradient_norms)
+
+Save refined critical points and comparison data to experiment directory.
+
+# Files Created
+- `critical_points_refined_deg_X.csv`: Refined critical points
+- `refinement_comparison_deg_X.csv`: Raw vs refined side-by-side (with Tier 1 diagnostics and gradient validation)
+- `refinement_summary.json`: Statistics and metadata (with convergence breakdown and gradient validation)
+
+# Arguments
+- `experiment_dir::String`: Experiment output directory
+- `result::RefinedExperimentResult`: Refinement results
+- `degree::Int`: Polynomial degree
+- `refinement_results::Vector{RefinementResult}`: Detailed per-point refinement results (for Tier 1 diagnostics)
+- `gradient_validation::Union{GradientValidationResult, Nothing}=nothing`: Optional refined gradient validation results
+- `raw_gradient_norms::Union{Vector{Float64}, Nothing}=nothing`: Optional ||∇f(x_raw)|| for each raw point
+- `hessian_classifications::Union{Vector{Symbol}, Nothing}=nothing`: Optional Hessian-based classification (:minimum, :saddle, :maximum, :degenerate, :error) for each refined point
+
+# Examples
+```julia
+save_refined_results(experiment_dir, result, 12, refinement_results)
+
+# With gradient validation
+gradient_result = validate_critical_points(refined_points, objective_func)
+raw_norms = compute_gradient_norms(raw_points, objective_func)
+save_refined_results(experiment_dir, result, 12, refinement_results;
+                     gradient_validation=gradient_result, raw_gradient_norms=raw_norms)
+```
+"""
+function save_refined_results(
+    experiment_dir::String,
+    result::RefinedExperimentResult,
+    degree::Int,
+    refinement_results::Vector{RefinementResult};
+    gradient_validation::Union{GradientValidationResult,Nothing} = nothing,
+    step_validation::Union{StepNormValidationResult,Nothing} = nothing,
+    raw_gradient_norms::Union{Vector{Float64},Nothing} = nothing,
+    hessian_classifications::Union{Vector{Symbol},Nothing} = nothing,
+)
+    # 1. Save refined critical points CSV
+    refined_csv_path = joinpath(experiment_dir, "critical_points_refined_deg_$degree.csv")
+
+    if !isempty(result.refined_points)
+        n_dim = length(result.refined_points[1])
+        dim_cols = [Symbol("dim$i") for i in 1:n_dim]
+
+        # Build DataFrame
+        refined_df = DataFrame()
+        for (i, col) in enumerate(dim_cols)
+            refined_df[!, col] = [pt[i] for pt in result.refined_points]
+        end
+
+        # Add objective values and iterations
+        refined_df[!, :objective_value] = result.refined_values
+        refined_df[!, :improvement] = result.improvements
+        refined_df[!, :iterations] = result.iterations[result.convergence_status]
+
+        # Add Hessian-based critical point classification
+        if hessian_classifications !== nothing &&
+           length(hessian_classifications) == nrow(refined_df)
+            refined_df[!, :critical_point_type] = String.(hessian_classifications)
+        end
+
+        CSV.write(refined_csv_path, refined_df)
+    end
+
+    # 2. Save comparison CSV (raw vs refined)
+    comparison_csv_path = joinpath(experiment_dir, "refinement_comparison_deg_$degree.csv")
+
+    n_dim = length(result.raw_points[1])
+    comparison_df = DataFrame()
+
+    # Raw points
+    for i in 1:n_dim
+        comparison_df[!, Symbol("raw_dim$i")] = [pt[i] for pt in result.raw_points]
+    end
+    comparison_df[!, :raw_value] = result.raw_values
+
+    # Refined points (or NaN for failed)
+    for i in 1:n_dim
+        refined_col = Vector{Float64}(undef, result.n_raw)
+        for (j, converged) in enumerate(result.convergence_status)
+            if converged
+                # Find index in refined_points
+                converged_idx = sum(result.convergence_status[1:j])
+                refined_col[j] = result.refined_points[converged_idx][i]
+            else
+                refined_col[j] = NaN
+            end
+        end
+        comparison_df[!, Symbol("refined_dim$i")] = refined_col
+    end
+
+    # Refined values (or NaN for failed)
+    refined_value_col = Vector{Float64}(undef, result.n_raw)
+    for (j, converged) in enumerate(result.convergence_status)
+        if converged
+            converged_idx = sum(result.convergence_status[1:j])
+            refined_value_col[j] = result.refined_values[converged_idx]
+        else
+            refined_value_col[j] = NaN
+        end
+    end
+    comparison_df[!, :refined_value] = refined_value_col
+
+    # Status and improvement
+    comparison_df[!, :converged] = result.convergence_status
+    comparison_df[!, :iterations] = result.iterations
+
+    # Tier 1 Diagnostics: Add call counts, timing, and convergence details
+    comparison_df[!, :f_calls] = [r.f_calls for r in refinement_results]
+    comparison_df[!, :g_calls] = [r.g_calls for r in refinement_results]
+    comparison_df[!, :h_calls] = [r.h_calls for r in refinement_results]
+    comparison_df[!, :time_elapsed] = [r.time_elapsed for r in refinement_results]
+    comparison_df[!, :x_converged] = [r.x_converged for r in refinement_results]
+    comparison_df[!, :f_converged] = [r.f_converged for r in refinement_results]
+    comparison_df[!, :g_converged] = [r.g_converged for r in refinement_results]
+    comparison_df[!, :iter_limit] = [r.iteration_limit_reached for r in refinement_results]
+    comparison_df[!, :convergence_reason] =
+        [String(r.convergence_reason) for r in refinement_results]
+
+    # Add raw gradient norms — ||∇f(x_raw)|| for each raw point
+    if raw_gradient_norms !== nothing
+        comparison_df[!, :raw_gradient_norm] = raw_gradient_norms
+    end
+
+    # Add Hessian classification — only covers converged points, expand to n_raw
+    if hessian_classifications !== nothing && !isempty(hessian_classifications)
+        cp_type_col = fill("", result.n_raw)
+        for (j, converged) in enumerate(result.convergence_status)
+            if converged
+                converged_idx = sum(result.convergence_status[1:j])
+                cp_type_col[j] = String(hessian_classifications[converged_idx])
+            end
+        end
+        comparison_df[!, :critical_point_type] = cp_type_col
+    end
+
+    # Add refined gradient validation columns if provided
+    # Gradient validation only covers converged points, so expand to n_raw
+    if gradient_validation !== nothing
+        gradient_norms = fill(Inf, result.n_raw)
+        gradient_valid_col = fill(false, result.n_raw)
+        for (j, converged) in enumerate(result.convergence_status)
+            if converged
+                converged_idx = sum(result.convergence_status[1:j])
+                gradient_norms[j] = gradient_validation.norms[converged_idx]
+                gradient_valid_col[j] = gradient_validation.valid[converged_idx]
+            end
+        end
+        comparison_df[!, :gradient_norm] = gradient_norms
+        comparison_df[!, :gradient_valid] = gradient_valid_col
+    end
+
+    CSV.write(comparison_csv_path, comparison_df)
+
+    # 3. Save summary JSON
+    summary_json_path = joinpath(experiment_dir, "refinement_summary_deg_$degree.json")
+
+    # Tier 1 Diagnostics: Compute convergence breakdown
+    convergence_reasons = [r.convergence_reason for r in refinement_results]
+    convergence_breakdown = Dict{String,Int}()
+    for reason in unique(convergence_reasons)
+        convergence_breakdown[String(reason)] = count(==(reason), convergence_reasons)
+    end
+
+    # Tier 1 Diagnostics: Call count statistics
+    f_calls_all = [r.f_calls for r in refinement_results]
+    g_calls_all = [r.g_calls for r in refinement_results]
+    time_elapsed_all = [r.time_elapsed for r in refinement_results]
+
+    call_counts = Dict(
+        "mean_f_calls" => Statistics.mean(f_calls_all),
+        "max_f_calls" => maximum(f_calls_all),
+        "min_f_calls" => minimum(f_calls_all),
+        "mean_g_calls" => Statistics.mean(g_calls_all),
+        "max_g_calls" => maximum(g_calls_all),
+    )
+
+    # Tier 1 Diagnostics: Timing statistics
+    timing = Dict(
+        "mean_time_per_point" => Statistics.mean(time_elapsed_all),
+        "max_time_per_point" => maximum(time_elapsed_all),
+        "min_time_per_point" => minimum(time_elapsed_all),
+        "points_timed_out" => result.n_timeout,
+    )
+
+    # Raw gradient norm statistics — how close are raw critical points to true critical points of f?
+    raw_gradient_stats = if raw_gradient_norms !== nothing
+        finite_norms = filter(isfinite, raw_gradient_norms)
+        if !isempty(finite_norms)
+            sorted = sort(finite_norms)
+            Dict(
+                "n_points" => length(raw_gradient_norms),
+                "n_finite" => length(finite_norms),
+                "min_norm" => minimum(sorted),
+                "median_norm" => sorted[div(length(sorted) + 1, 2)],
+                "mean_norm" => Statistics.mean(sorted),
+                "max_norm" => maximum(sorted),
+            )
+        else
+            Dict(
+                "n_points" => length(raw_gradient_norms),
+                "n_finite" => 0,
+                "min_norm" => nothing,
+                "median_norm" => nothing,
+                "mean_norm" => nothing,
+                "max_norm" => nothing,
+            )
+        end
+    else
+        nothing
+    end
+
+    # Refined gradient validation statistics (if provided)
+    gradient_stats = if gradient_validation !== nothing
+        Dict(
+            "n_valid" => gradient_validation.n_valid,
+            "n_invalid" => gradient_validation.n_invalid,
+            "tolerance" => gradient_validation.tolerance,
+            "mean_norm" => gradient_validation.mean_norm,
+            "median_norm" => gradient_validation.median_norm,
+            "max_norm" => gradient_validation.max_norm,
+            "min_norm" => gradient_validation.min_norm,
+            "validation_rate" =>
+                gradient_validation.n_valid / length(gradient_validation.norms),
+        )
+    else
+        nothing
+    end
+
+    # Newton-step-norm validation — ‖H⁻¹ ∇f‖ < step_tol. Invariant to ‖H‖ scale,
+    # so this is the right "is this a critical point?" criterion for ODE-error
+    # objectives where ‖∇f‖ is dominated by Hessian magnitude (bead 62qv).
+    step_stats = if step_validation !== nothing
+        Dict(
+            "n_step_valid" => step_validation.n_step_valid,
+            "n_step_invalid" => step_validation.n_step_invalid,
+            "step_tolerance" => step_validation.step_tolerance,
+            "eigenvalue_floor_relative" => step_validation.eigenvalue_floor_relative,
+            "mean_step_norm" => step_validation.mean_step_norm,
+            "median_step_norm" => step_validation.median_step_norm,
+            "max_step_norm" => step_validation.max_step_norm,
+            "min_step_norm" => step_validation.min_step_norm,
+            "step_validation_rate" =>
+                step_validation.n_step_valid / length(step_validation.step_norms),
+        )
+    else
+        nothing
+    end
+
+    # Hessian classification counts
+    hessian_stats =
+        if hessian_classifications !== nothing && !isempty(hessian_classifications)
+            Dict(
+                "n_minimum" => count(==(Symbol("minimum")), hessian_classifications),
+                "n_saddle" => count(==(Symbol("saddle")), hessian_classifications),
+                "n_maximum" => count(==(Symbol("maximum")), hessian_classifications),
+                "n_degenerate" => count(==(Symbol("degenerate")), hessian_classifications),
+                "n_error" => count(==(Symbol("error")), hessian_classifications),
+            )
+        else
+            nothing
+        end
+
+    # Refinement displacement — accuracy of polynomial CPs vs true objective CPs.
+    # Once L2 is small, displacement quantifies whether polynomial CPs *are* CPs of f.
+    displacement_stats = if result.n_converged > 0
+        dist_result = compute_refinement_distances(result)
+        d = dist_result.distances
+        stats = Dict{String,Any}(
+            "n_converged" => result.n_converged,
+            "median" => Statistics.median(d),
+            "mean" => dist_result.mean_distance,
+            "max" => dist_result.max_distance,
+            "min" => minimum(d),
+            "best_point" => dist_result.best_point_distance,
+        )
+        if hessian_classifications !== nothing &&
+           length(hessian_classifications) == length(d)
+            for type_sym in (:minimum, :saddle, :maximum, :degenerate)
+                mask = hessian_classifications .== type_sym
+                if any(mask)
+                    stats["$(type_sym)_n"] = count(mask)
+                    stats["$(type_sym)_median"] = Statistics.median(d[mask])
+                    stats["$(type_sym)_max"] = maximum(d[mask])
+                end
+            end
+        end
+        stats
+    else
+        nothing
+    end
+
+    summary = Dict(
+        "degree" => degree,
+        "n_raw_points" => result.n_raw,
+        "n_converged" => result.n_converged,
+        "n_failed" => result.n_failed,
+        "n_timeout" => result.n_timeout,
+        "convergence_rate" => result.n_converged / result.n_raw,
+        "mean_improvement" => result.mean_improvement,
+        "max_improvement" => result.max_improvement,
+        "best_raw_value" => result.best_raw_value,
+        "best_refined_value" => result.best_refined_value,
+        "total_refinement_time" => result.total_time,
+        # Tier 1 Diagnostics
+        "convergence_breakdown" => convergence_breakdown,
+        "call_counts" => call_counts,
+        "timing" => timing,
+        # Gradient validation
+        "raw_gradient_validation" => raw_gradient_stats,
+        "gradient_validation" => gradient_stats,
+        # Newton-step-norm validation (62qv) — ‖H⁻¹ ∇f‖ < step_tol; scale-invariant
+        "step_validation" => step_stats,
+        # Hessian classification
+        "hessian_classification" => hessian_stats,
+        # Refinement displacement (||x_raw - x_refined||): how far refinement moved each polynomial CP
+        "displacement" => displacement_stats,
+        "config" => Dict(
+            "method" => string(typeof(result.refinement_config.method)),
+            "max_time_per_point" => result.refinement_config.max_time_per_point,
+            "f_abstol" => result.refinement_config.f_abstol,
+            "x_abstol" => result.refinement_config.x_abstol,
+            "max_iterations" => result.refinement_config.max_iterations,
+        ),
+        "timestamp" => Dates.now(),
+    )
+
+    # Replace NaN/Inf with null for JSON compatibility
+    function sanitize_for_json(x)
+        if x isa Float64 && (isnan(x) || isinf(x))
+            return nothing
+        elseif x isa Dict
+            return Dict(k => sanitize_for_json(v) for (k, v) in x)
+        elseif x isa Vector
+            return [sanitize_for_json(v) for v in x]
+        else
+            return x
+        end
+    end
+
+    sanitized_summary = sanitize_for_json(summary)
+
+    open(summary_json_path, "w") do io
+        # Use JSON.json() which handles Inf/NaN by default
+        json_str = JSON.json(sanitized_summary)
+        write(io, json_str)
+    end
+end

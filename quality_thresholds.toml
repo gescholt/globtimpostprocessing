@@ -1,0 +1,90 @@
+# Quality Thresholds Configuration
+#
+# This file defines configurable thresholds for quality diagnostics in
+# GlobtimPostProcessing (Issue #7, Phase 3).
+#
+# These thresholds replace hardcoded "made up" values with explicit,
+# documented, and adjustable quality criteria.
+
+[l2_norm_thresholds]
+# Absolute L2 norm quality thresholds by dimension
+# Lower values indicate better approximation quality
+#
+# These are exponential because higher dimensions naturally have larger errors
+dim_2 = 1.0e-3
+dim_3 = 1.0e-2
+dim_4 = 1.0e-1
+dim_5 = 5.0e-1
+dim_6 = 1.0
+default = 10.0  # Used for dimensions > 6
+
+[relative_l2_thresholds]
+# Relative L2 error thresholds — empirically derived from 20+ experiments (March 2026)
+# These are dimension-independent: the relative L2 error normalizes by function norm,
+# so the same thresholds apply across 2D, 3D, and 4D ODE models.
+#
+# Evidence base:
+#   - Recovery (< 0.03): LV-2D T=10 (0.018), Goodwin-4D (0.024), DAISY-4D (0.027),
+#     FHN-3D (0.029), LV-2D T=100 (0.027), locally-id 2D (0.024)
+#   - Partial (0.03–0.05): LV-3D (0.034), LV-4D simple (0.037), Levy 3D (0.038)
+#   - Unreliable (0.05–0.10): LV-2D wide domain (0.056, no recovery)
+#   - No structure (> 0.10): Griewank 3D plateau at 0.33, daisy4d_entry5 at 0.74
+#
+reliable_recovery = 0.03    # Below this: true minima found, Newton converges
+structure_visible = 0.05    # Below this: CPs found, recovery may be partial
+unreliable = 0.10           # Above this: polynomial doesn't capture landscape
+#
+# Adaptive algorithm heuristic:
+#   1. Fit polynomial → check relative L2
+#   2. If rel L2 > structure_visible (0.05): try increasing degree
+#   3. If degree increase stagnates (see [convergence]): subdivide domain
+#   4. If rel L2 < reliable_recovery (0.03): proceed to CP solving
+
+[parameter_recovery]
+# Parameter recovery thresholds
+#
+# param_distance_threshold: Maximum distance to consider a parameter "recovered"
+#   (as fraction of domain size or absolute distance)
+param_distance_threshold = 0.01
+
+# trajectory_distance_threshold: Maximum trajectory distance for recovery
+trajectory_distance_threshold = 1.0e-3
+
+[convergence]
+# Convergence quality thresholds
+#
+# min_improvement_factor: Minimum improvement ratio between consecutive degrees
+#   L2_new <= L2_old * min_improvement_factor
+#   (1.0 = no improvement, 0.9 = 10% improvement required)
+min_improvement_factor = 0.95
+
+# stagnation_tolerance: Number of consecutive degrees without improvement
+#   before warning about stagnation
+stagnation_tolerance = 3
+
+# absolute_improvement_threshold: Absolute improvement threshold
+#   (ignore stagnation if L2 is already very small)
+absolute_improvement_threshold = 1.0e-6
+
+[objective_distribution]
+# Objective value distribution quality
+#
+# outlier_iqr_multiplier: IQR multiplier for outlier detection
+#   Values beyond Q1 - k*IQR or Q3 + k*IQR are considered outliers
+outlier_iqr_multiplier = 3.0
+
+# max_outlier_fraction: Maximum fraction of outliers before warning
+max_outlier_fraction = 0.1
+
+# min_points_for_distribution_check: Minimum critical points needed
+#   to check distribution quality
+min_points_for_distribution_check = 10
+
+[numerical_stability]
+# Numerical stability thresholds
+#
+# max_condition_number: Maximum acceptable condition number
+max_condition_number = 1.0e12
+
+# warn_condition_number: Condition number threshold for warnings
+warn_condition_number = 1.0e8

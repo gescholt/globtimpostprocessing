@@ -1,0 +1,514 @@
+"""
+    ResultsLoader.jl
+
+Handles loading experiment results from various formats (JSON, CSV, JLD2).
+Automatically discovers and parses globtim output structure.
+
+!!! note "Migration to Unified Pipeline"
+    For new code, prefer using `load_experiment()` from `UnifiedPipeline`:
+    ```julia
+    using GlobtimPostProcessing
+    data = load_experiment(path)  # Auto-detects experiment type
+    ```
+
+    The legacy `load_experiment_results()` returns `ExperimentResult`, while
+    `load_experiment()` returns type-specific data (e.g., `LV4DExperimentData`).
+"""
+
+"""
+    load_experiment_results(path::String) -> ExperimentResult
+
+Load experiment results from a file or directory.
+
+Automatically detects globtim output format and parses:
+- JSON metadata files with `enabled_tracking` labels
+- Critical points DataFrames
+- Performance metrics
+- Tolerance validation results
+
+# Arguments
+- `path::String`: Path to experiment directory or result file
+
+# Returns
+- `ExperimentResult`: Parsed experiment data with metadata
+
+!!! compat "Migration"
+    For new code, prefer `load_experiment(path)` which provides type-aware
+    loading and returns experiment-type-specific data structures.
+"""
+function load_experiment_results(path::String)
+    if !ispath(path)
+        error("Path not found: $path")
+    end
+
+    if isdir(path)
+        return load_from_directory(path)
+    else
+        return load_from_file(path)
+    end
+end
+
+"""
+    is_single_experiment(path::String) -> Bool
+
+Check if a directory is a single experiment (contains CSV/JSON result files directly).
+"""
+function is_single_experiment(path::String)
+    if !isdir(path)
+        return false
+    end
+
+    files = readdir(path)
+    has_csv =
+        any(f -> startswith(f, "critical_points_raw_deg_") && endswith(f, ".csv"), files)
+    has_results = "results_summary.json" in files || "results_summary.jld2" in files
+
+    return has_csv || has_results
+end
+
+"""
+    load_campaign_results(campaign_dir::String) -> CampaignResults
+
+Load experiment results from a campaign directory or single experiment.
+
+Auto-detects whether the path is:
+- A single experiment (contains CSV/JSON files directly) → loads as 1-experiment campaign
+- A campaign directory (contains experiment subdirectories) → loads all experiments
+
+Expects directory structure (campaign):
+```
+campaign_dir/
+├── experiment_1/
+├── experiment_2/
+└── campaign_metadata.json (optional)
+```
+
+Or single experiment:
+```
+experiment_dir/
+├── critical_points_deg_4.csv
+├── critical_points_deg_5.csv
+└── results_summary.json
+```
+
+# Arguments
+- `campaign_dir::String`: Path to campaign directory or single experiment
+
+# Returns
+- `CampaignResults`: Collection of experiment results (1 or more)
+"""
+function load_campaign_results(campaign_dir::String)
+    if !isdir(campaign_dir)
+        error("Campaign directory not found: $campaign_dir")
+    end
+
+    println("📂 Loading campaign results from: $campaign_dir")
+
+    experiments = ExperimentResult[]
+    campaign_metadata = Dict{String,Any}()
+
+    # Auto-detect: is this a single experiment or a campaign directory?
+    if is_single_experiment(campaign_dir)
+        # This is a single experiment - load it as a 1-experiment campaign
+        println("  ℹ️  Detected single experiment (will load as 1-experiment campaign)")
+        try
+            exp_result = load_experiment_results(campaign_dir)
+            push!(experiments, exp_result)
+            println("  ✓ Loaded: $(exp_result.experiment_id)")
+        catch e
+            error("Failed to load experiment: $e")
+        end
+    else
+        # This is a campaign directory - look for experiment subdirectories
+        # Look for campaign metadata
+        campaign_meta_path = joinpath(campaign_dir, "campaign_metadata.json")
+        if isfile(campaign_meta_path)
+            campaign_metadata = JSON.parsefile(campaign_meta_path)
+        end
+
+        # Find all experiment subdirectories
+        for entry in readdir(campaign_dir, join = true)
+            if isdir(entry)
+                try
+                    exp_result = load_experiment_results(entry)
+                    push!(experiments, exp_result)
+                    println("  ✓ Loaded: $(exp_result.experiment_id)")
+                catch e
+                    println("  ⚠ Skipped $(basename(entry)): $e")
+                end
+            end
+        end
+    end
+
+    campaign_id = get(campaign_metadata, "campaign_id", basename(campaign_dir))
+
+    return CampaignResults(campaign_id, experiments, campaign_metadata, now())
+end
+
+"""
+    load_from_directory(dir_path::String) -> ExperimentResult
+
+Load experiment result from a directory containing globtim outputs.
+
+Tries loading strategies:
+1. results_summary.json (primary format)
+2. experiment_result_*.json (alternative format)
+"""
+function load_from_directory(dir_path::String)
+    results_file = joinpath(dir_path, "results_summary.json")
+
+    if !isfile(results_file)
+        error("No results_summary.json found in $dir_path")
+    end
+
+    return load_from_results_summary(dir_path, results_file)
+end
+
+"""
+    load_from_results_summary(dir_path::String, results_file::String) -> ExperimentResult
+
+Load from results_summary.json format (primary globtim output).
+"""
+function load_from_results_summary(dir_path::String, results_file::String)
+    data = JSON.parsefile(results_file)
+
+    # Handle multiple formats:
+    # 1. Array format: [{degree: 4, ...}, {degree: 5, ...}]
+    # 2. Dict format with results_summary: {results_summary: {degree_4: {...}, degree_5: {...}}}
+    # 3. Dict format with degree_results: {degree_results: [{degree: 4, ...}, ...]}
+    if data isa Vector
+        # Format 1: Convert array format to dict format
+        normalized_data = Dict{String,Any}(
+            "results_summary" => Dict{String,Any}(
+                "degree_$(result["degree"])" => result for
+                result in data if haskey(result, "degree")
+            ),
+        )
+        data = normalized_data
+    elseif data isa AbstractDict &&
+           haskey(data, "degree_results") &&
+           !haskey(data, "results_summary")
+        # Format 3: Convert degree_results array to results_summary dict
+        degree_results = data["degree_results"]
+        results_summary = Dict{String,Any}(
+            "degree_$(result["degree"])" => result for
+            result in degree_results if haskey(result, "degree")
+        )
+        # Create new dict with results_summary, preserving other fields
+        normalized_data = Dict{String,Any}(data)
+        normalized_data["results_summary"] = results_summary
+        data = normalized_data
+    end
+
+    # Extract experiment ID
+    experiment_id = get(data, "experiment_id", basename(dir_path))
+
+    # Extract degrees from results_summary if not explicitly provided
+    results_summary = get(data, "results_summary", Dict())
+    degrees_processed = get(data, "degrees_processed", nothing)
+
+    # If degrees_processed not found, extract from results_summary keys
+    if degrees_processed === nothing && !isempty(results_summary)
+        extracted_degrees = Int[]
+        for key in keys(results_summary)
+            # Extract degree number from "degree_N" keys
+            degree_str = replace(string(key), "degree_" => "")
+            d = tryparse(Int, degree_str)
+            if d !== nothing
+                push!(extracted_degrees, d)
+            end
+        end
+        degrees_processed = sort(extracted_degrees)
+    end
+
+    # Build metadata
+    metadata = Dict{String,Any}(
+        "params_dict" => get(data, "params_dict", Dict()),
+        "system_info" => get(data, "system_info", Dict()),
+        "experiment_type" => get(data, "experiment_type", "unknown"),
+        "timestamp" => get(data, "timestamp", ""),
+        "schema_version" => get(data, "schema_version", "1.0.0"),
+        "total_time" => get(data, "total_time", nothing),
+        "success_rate" => get(data, "success_rate", nothing),
+        "total_critical_points" => get(data, "total_critical_points", nothing),
+        "degrees_processed" => degrees_processed,
+        "results_summary" => results_summary,
+    )
+
+    # Discover tracking labels from data
+    enabled_tracking, tracking_capabilities = discover_tracking_labels(data)
+
+    # Load critical points from CSV files
+    critical_points = load_critical_points_from_csvs(dir_path, data)
+
+    # Extract performance metrics
+    performance_metrics = extract_performance_metrics(data)
+
+    # Extract tolerance validation
+    tolerance_validation = extract_tolerance_validation(data)
+
+    return ExperimentResult(
+        experiment_id,
+        metadata,
+        enabled_tracking,
+        tracking_capabilities,
+        critical_points,
+        performance_metrics,
+        tolerance_validation,
+        dir_path,
+    )
+end
+
+"""
+    load_from_experiment_result(dir_path::String, result_file::String) -> ExperimentResult
+
+Load from experiment_result_*.json format (alternative format).
+"""
+function load_from_experiment_result(dir_path::String, result_file::String)
+    data = JSON.parsefile(result_file)
+
+    metadata = get(data, "experiment_metadata", Dict())
+    enabled_tracking = get(data, "enabled_tracking", String[])
+    tracking_capabilities = get(data, "tracking_capabilities", String[])
+    performance_metrics = get(data, "performance_metrics", nothing)
+    tolerance_validation = get(data, "tolerance_validation", nothing)
+
+    # Parse critical points DataFrame
+    critical_points = nothing
+    if haskey(data, "critical_points_dataframe")
+        cp_data = data["critical_points_dataframe"]
+        if haskey(cp_data, "columns") && haskey(cp_data, "data")
+            critical_points =
+                DataFrame([row for row in cp_data["data"]], cp_data["columns"])
+        end
+    end
+
+    experiment_id = get(metadata, "experiment_id", basename(dir_path))
+
+    return ExperimentResult(
+        experiment_id,
+        metadata,
+        enabled_tracking,
+        tracking_capabilities,
+        critical_points,
+        performance_metrics,
+        tolerance_validation,
+        dir_path,
+    )
+end
+
+"""
+    discover_tracking_labels(data::AbstractDict) -> (Vector{String}, Vector{String})
+
+Discover enabled tracking labels from results_summary.json data.
+"""
+function discover_tracking_labels(data::AbstractDict)
+    enabled_tracking = String[]
+    tracking_capabilities = String[]
+
+    results_summary = get(data, "results_summary", Dict())
+
+    if isempty(results_summary)
+        return enabled_tracking, tracking_capabilities
+    end
+
+    # Get first degree to discover fields
+    first_key = first(keys(results_summary))
+    first_data = results_summary[first_key]
+
+    # Label mappings
+    label_map = Dict(
+        "l2_approx_error" => "approximation_quality",
+        "condition_number" => "numerical_stability",
+        "critical_points" => "critical_point_count",
+        "critical_points_refined" => "refined_critical_points",
+        "recovery_error" => "parameter_recovery",
+        "best_objective" => "optimization_quality",
+        "polynomial_construction_time" => "polynomial_timing",
+        "critical_point_solving_time" => "solving_timing",
+        "refinement_time" => "refinement_timing",
+        "total_computation_time" => "total_timing",
+        "refinement_stats" => "refinement_quality",
+    )
+
+    for (field, label) in label_map
+        if haskey(first_data, field)
+            push!(tracking_capabilities, label)
+            value = first_data[field]
+            if value !== nothing
+                push!(enabled_tracking, label)
+            end
+        end
+    end
+
+    # Check for parameter recovery - support both flat and nested config formats
+    has_true_params = false
+    system_info = get(data, "system_info", Dict())
+    if haskey(system_info, "true_parameters")
+        has_true_params = true
+    end
+    # Also check nested model_config format (Schema v1.1.0+)
+    model_config = get(data, "model_config", Dict())
+    if model_config isa AbstractDict && haskey(model_config, "true_parameters")
+        has_true_params = true
+    end
+    # Also check flat p_true format (SciML / dynamic objectives)
+    if haskey(data, "p_true") && !isnothing(data["p_true"])
+        has_true_params = true
+    end
+    if has_true_params
+        push!(tracking_capabilities, "distance_to_true_parameters")
+        push!(enabled_tracking, "distance_to_true_parameters")
+    end
+
+    return enabled_tracking, tracking_capabilities
+end
+
+"""
+    load_critical_points_from_csvs(dir_path::String, data::AbstractDict) -> Union{DataFrame, Nothing}
+
+Load critical points from CSV files in an experiment directory.
+Delegates to `UnifiedPipeline._load_critical_points` which handles both
+`critical_points_deg_N.csv` and `critical_points_raw_deg_N.csv` naming conventions.
+The `data` argument is accepted for API compatibility but is not used.
+"""
+function load_critical_points_from_csvs(dir_path::String, data::AbstractDict)
+    return UnifiedPipeline._load_critical_points(dir_path)
+end
+
+"""
+    extract_performance_metrics(data::AbstractDict) -> Union{Dict, Nothing}
+
+Extract timing and performance metrics from results_summary.
+"""
+function extract_performance_metrics(data::AbstractDict)
+    results_summary = get(data, "results_summary", Dict())
+
+    if isempty(results_summary)
+        return nothing
+    end
+
+    metrics = Dict{String,Any}()
+
+    poly_times = Float64[]
+    solving_times = Float64[]
+    refinement_times = Float64[]
+    total_times = Float64[]
+
+    for (_, degree_data) in results_summary
+        push!(poly_times, get(degree_data, "polynomial_construction_time", 0.0))
+        push!(solving_times, get(degree_data, "critical_point_solving_time", 0.0))
+        push!(refinement_times, get(degree_data, "refinement_time", 0.0))
+        push!(total_times, get(degree_data, "total_computation_time", 0.0))
+    end
+
+    metrics["polynomial_construction"] = Dict(
+        "mean" => mean(poly_times),
+        "total" => sum(poly_times),
+        "max" => maximum(poly_times),
+    )
+
+    metrics["critical_point_solving"] = Dict(
+        "mean" => mean(solving_times),
+        "total" => sum(solving_times),
+        "max" => maximum(solving_times),
+    )
+
+    metrics["refinement"] = Dict(
+        "mean" => mean(refinement_times),
+        "total" => sum(refinement_times),
+        "max" => maximum(refinement_times),
+    )
+
+    metrics["total_computation"] = Dict(
+        "mean" => mean(total_times),
+        "total" => sum(total_times),
+        "max" => maximum(total_times),
+    )
+
+    metrics["experiment_total_time"] = get(data, "total_time", sum(total_times))
+
+    return metrics
+end
+
+"""
+    extract_tolerance_validation(data::AbstractDict) -> Union{Dict, Nothing}
+
+Extract refinement and validation statistics.
+"""
+function extract_tolerance_validation(data::AbstractDict)
+    results_summary = get(data, "results_summary", Dict())
+
+    if isempty(results_summary)
+        return nothing
+    end
+
+    validation = Dict{String,Any}()
+    refinement_stats = []
+
+    for (_, degree_data) in results_summary
+        if haskey(degree_data, "refinement_stats")
+            push!(refinement_stats, degree_data["refinement_stats"])
+        end
+    end
+
+    if !isempty(refinement_stats)
+        validation["refinement_stats"] = refinement_stats
+
+        total_converged =
+            sum(something(get(stat, "converged", nothing), 0) for stat in refinement_stats)
+        total_failed =
+            sum(something(get(stat, "failed", nothing), 0) for stat in refinement_stats)
+
+        validation["convergence_summary"] = Dict(
+            "total_converged" => total_converged,
+            "total_failed" => total_failed,
+            "success_rate" => total_converged / max(total_converged + total_failed, 1),
+        )
+    end
+
+    return isempty(validation) ? nothing : validation
+end
+
+"""
+    load_from_file(file_path::String) -> ExperimentResult
+
+Load experiment result from a single JSON file.
+"""
+function load_from_file(file_path::String)
+    if !endswith(file_path, ".json")
+        error("Only JSON files supported for single-file loading")
+    end
+
+    data = JSON.parsefile(file_path)
+
+    # Parse according to experiment_runner output format
+    metadata = get(data, "experiment_metadata", get(data, "input_config", Dict()))
+    enabled_tracking = get(data, "enabled_tracking", String[])
+    tracking_capabilities = get(data, "tracking_capabilities", String[])
+    performance_metrics = get(data, "performance_metrics", nothing)
+    tolerance_validation = get(data, "tolerance_validation", nothing)
+
+    # Parse DataFrame if present
+    critical_points = nothing
+    if haskey(data, "critical_points_dataframe")
+        cp_data = data["critical_points_dataframe"]
+        if haskey(cp_data, "columns") && haskey(cp_data, "data")
+            critical_points =
+                DataFrame([row for row in cp_data["data"]], cp_data["columns"])
+        end
+    end
+
+    experiment_id = get(metadata, "experiment_id", basename(dirname(file_path)))
+
+    return ExperimentResult(
+        experiment_id,
+        metadata,
+        enabled_tracking,
+        tracking_capabilities,
+        critical_points,
+        performance_metrics,
+        tolerance_validation,
+        file_path,
+    )
+end
